@@ -14,3 +14,10 @@ Thumbs.db
 *.tsbuildinfo
 .vscode/*
 !.vscode/extensions.json
+
+# Local-only: database binaries, scratch work, personal tool config
+pgsql/
+pgsql.zip
+scratch/
+scratch_*.txt
+.mcp.json
