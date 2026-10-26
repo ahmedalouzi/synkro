@@ -11,6 +11,8 @@ export interface UsageRecord {
   estimatedCost: number;
   timestamp: number;
   status: 'success' | 'failed' | 'cancelled' | 'rejected';
+  /** Defaults to 'chat'. */
+  purpose?: 'chat' | 'completion';
 }
 
 export class ServerUsageStore {
@@ -19,13 +21,13 @@ export class ServerUsageStore {
       `INSERT INTO usage_records (
         user_id, request_id, model_tier, resolved_model, 
         input_tokens, output_tokens, total_tokens, 
-        estimated_cost, status, timestamp
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+        estimated_cost, status, purpose, timestamp
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
       ON CONFLICT (request_id) DO NOTHING`,
       [
         record.userId, record.requestId, record.modelTier, record.resolvedModel,
         record.inputTokens, record.outputTokens, record.totalTokens,
-        record.estimatedCost, record.status
+        record.estimatedCost, record.status, record.purpose ?? 'chat'
       ]
     );
   }

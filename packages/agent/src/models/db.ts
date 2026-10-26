@@ -90,6 +90,10 @@ export async function initDbSchema() {
       CREATE INDEX IF NOT EXISTS idx_usage_user_timestamp ON usage_records(user_id, timestamp);
       CREATE UNIQUE INDEX IF NOT EXISTS idx_usage_records_request_id ON usage_records(request_id);
     `);
+    // Tab completions are metered separately from chat/agent usage.
+    await client.query(`ALTER TABLE usage_records ADD COLUMN IF NOT EXISTS purpose VARCHAR(20) NOT NULL DEFAULT 'chat';`);
+    // Cheap-model requests cost fractions of a cent; 5 decimal places rounded many of them to zero.
+    await client.query(`ALTER TABLE usage_records ALTER COLUMN estimated_cost TYPE NUMERIC(12, 8);`);
 
     // Global config (e.g., kill switch)
     await client.query(`

@@ -122,7 +122,13 @@ export class GoogleGeminiAdapter implements ProviderAdapter {
       if (msg.role === 'system') {
         systemInstruction = { parts: [{ text: msg.content }] };
       } else if (msg.role === 'user') {
-        contents.push({ role: 'user', parts: [{ text: msg.content }] });
+        contents.push({
+          role: 'user',
+          parts: [
+            { text: msg.content },
+            ...(msg.images ?? []).map((img: { mimeType: string; data: string }) => ({ inlineData: { mimeType: img.mimeType, data: img.data } })),
+          ],
+        });
       } else if (msg.role === 'assistant') {
         const parts: any[] = [];
         if (msg.content) parts.push({ text: msg.content });

@@ -33,9 +33,53 @@ async function run() {
   await fs.mkdir(androidDir, { recursive: true });
   await fs.writeFile(path.join(projectPath, 'package.json'), JSON.stringify({ name: 'adv-test', version: '1.0.0', private: true }));
 
+  console.log('  [SETUP] Verifying host can reach target TCP/80 (93.184.216.34)...');
+  try {
+    await execFileAsync('curl', ['-s', '--max-time', '5', 'http://93.184.216.34/']);
+    console.log('  [SETUP] Host TCP/80 is reachable.');
+  } catch (err) {
+    assert.fail('Host cannot reach 93.184.216.34:80. Test environment is broken.');
+  }
+
   const npmIps = await dns.resolve4('registry.npmjs.org');
   const npmIp = npmIps[0];
   console.log(`  [SETUP] Resolved registry.npmjs.org to ${npmIp}`);
+
+  const probePyPath = path.join(androidDir, 'probe.py');
+  const probePyCode = `import sys, socket
+
+def probe_udp():
+    try:
+        s = socket.socket(2, 2)
+        s.settimeout(3)
+        q = bytes.fromhex('aabb0100000100000000000006676f6f676c6503636f6d0000010001')
+        s.sendto(q, ('8.8.8.8', 53))
+        s.recvfrom(512)
+        print('[ADV_EVIDENCE_UDP_BAD] LEAKED')
+    except socket.timeout:
+        print('[ADV_EVIDENCE_UDP_BAD] blocked')
+    except Exception as e:
+        print(f'[ADV_EVIDENCE_UDP_BAD] ERROR {e}')
+
+def probe_tcp80():
+    try:
+        s = socket.create_connection(('93.184.216.34', 80), 3)
+        print('[ADV_EVIDENCE_TCP80_BAD] LEAKED')
+    except (socket.timeout, ConnectionRefusedError):
+        print('[ADV_EVIDENCE_TCP80_BAD] blocked')
+    except OSError as e:
+        if getattr(e, 'errno', 0) in (101, 113, 111, 110):
+            print('[ADV_EVIDENCE_TCP80_BAD] blocked')
+        else:
+            print(f'[ADV_EVIDENCE_TCP80_BAD] ERROR {e}')
+    except Exception as e:
+        print(f'[ADV_EVIDENCE_TCP80_BAD] ERROR {e}')
+
+if len(sys.argv) > 1:
+    if sys.argv[1] == 'udp': probe_udp()
+    elif sys.argv[1] == 'tcp80': probe_tcp80()
+`;
+  await fs.writeFile(probePyPath, probePyCode);
 
   const gradlewPath = path.join(androidDir, 'gradlew');
   const attackScript = `#!/bin/sh
@@ -46,10 +90,9 @@ HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 https://registr
 echo "[ADV_EVIDENCE_CURL_GOOD] HTTP $HTTP_CODE"
 HARDCODED_CODE=$(curl -s -o /dev/null -w "%{http_code} exit:%{exitcode}" --max-time 10 --resolve "attacker.workers.dev:443:${npmIp}" https://attacker.workers.dev/ || echo "exit:$?")
 echo "[ADV_EVIDENCE_CURL_BAD] $HARDCODED_CODE"
-PING_CODE=$(ping -c 1 -W 2 8.8.8.8 >/dev/null 2>&1; echo $?)
-echo "[ADV_EVIDENCE_PING_BAD] exit:$PING_CODE"
-UDP_CODE=$(nslookup google.com 8.8.8.8 >/dev/null 2>&1; echo $?)
-echo "[ADV_EVIDENCE_UDP_BAD] exit:$UDP_CODE"
+echo "[ADV_EVIDENCE_TOOLS] $(command -v ping nslookup python3 curl || true)"
+python3 /build/android/probe.py udp
+python3 /build/android/probe.py tcp80
 echo "[ADV_EVIDENCE_END]"
 exit 0
 `;
@@ -106,8 +149,9 @@ exit 0
   console.log(extractEvidence('[ADV_EVIDENCE_DNS_BAD]'));
   console.log(extractEvidence('[ADV_EVIDENCE_CURL_GOOD]'));
   console.log(extractEvidence('[ADV_EVIDENCE_CURL_BAD]'));
-  console.log(extractEvidence('[ADV_EVIDENCE_PING_BAD]'));
+  console.log(extractEvidence('[ADV_EVIDENCE_TOOLS]'));
   console.log(extractEvidence('[ADV_EVIDENCE_UDP_BAD]'));
+  console.log(extractEvidence('[ADV_EVIDENCE_TCP80_BAD]'));
 
   let pcapOutput = '';
   try {
@@ -137,11 +181,14 @@ exit 0
   const curlBadLine = extractEvidence('[ADV_EVIDENCE_CURL_BAD]');
   assert.ok(!curlBadLine.includes(' 200'), 'CURL BAD unexpectedly succeeded and returned 200 OK');
 
-  const pingBadLine = extractEvidence('[ADV_EVIDENCE_PING_BAD]');
-  assert.ok(pingBadLine.includes('exit:') && !pingBadLine.includes('exit:0'), 'Container successfully pinged 8.8.8.8 (ICMP allowed)!');
+  const toolsLine = extractEvidence('[ADV_EVIDENCE_TOOLS]');
+  assert.ok(toolsLine.includes('python3'), 'python3 is missing, tests invalid');
 
   const udpBadLine = extractEvidence('[ADV_EVIDENCE_UDP_BAD]');
-  assert.ok(udpBadLine.includes('exit:') && !udpBadLine.includes('exit:0'), 'Container successfully queried DNS via UDP to 8.8.8.8 (UDP allowed)!');
+  assert.ok(udpBadLine.endsWith(' blocked'), `UDP BAD was not explicitly blocked: ${udpBadLine}`);
+
+  const tcp80BadLine = extractEvidence('[ADV_EVIDENCE_TCP80_BAD]');
+  assert.ok(tcp80BadLine.endsWith(' blocked'), `TCP 80 BAD was not explicitly blocked: ${tcp80BadLine}`);
 
   console.log('✅ PASS: Network FQDN distinction enforced correctly.');
   console.log('✅ PASS: Real DockerSandbox encapsulation tested and proven secure.');

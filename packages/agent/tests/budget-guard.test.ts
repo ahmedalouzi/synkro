@@ -1,100 +1,118 @@
-import { ServerUsageStore } from '../src/models/usage-store';
+import assert from 'node:assert';
 import { ServerBudgetGuard } from '../src/models/budget-guard';
 import { BackendAIGateway } from '../src/models/backend-gateway';
-import { db } from '../src/models/db';
+import { PLAN_POLICIES, nextWeekStart, weekStart } from '../src/models/usage-limits';
+
+/** A guard whose usage comes from the test instead of Postgres. */
+function guardWithUsage(usage: { weeklyCost: number; monthlyCompletions: number }) {
+  const guard = new ServerBudgetGuard();
+  (guard as any).readUsage = async () => usage;
+  return guard;
+}
 
 export default async function runTests() {
   console.log('  Running ServerBudgetGuard unit tests...');
+  const free = PLAN_POLICIES.free;
+  const pro = PLAN_POLICIES.pro;
 
-  const store = new ServerUsageStore();
-  const guard = new ServerBudgetGuard();
-  const testUserId = '00000000-0000-0000-0000-000000000001';
-
-  // Seed user to satisfy foreign key constraints
-  await db.query(
-    "INSERT INTO users (id, email, password_hash) VALUES ($1, $2, $3) ON CONFLICT (id) DO NOTHING",
-    [testUserId, 'budget-guard-user@example.com', 'scrypt:mock-hash']
+  // Within the weekly pool → allowed.
+  assert.deepStrictEqual(
+    await guardWithUsage({ weeklyCost: 0, monthlyCompletions: 0 }).checkUsage('u', 'free', 'chat', 0.001),
+    { action: 'allow' },
   );
 
-  // Test 1: Request within budget
-  await guard.acquireLock(testUserId);
-  try {
-    await guard.checkBudget(testUserId, 'pro', 0.001); // Within maxRequestCost ($0.05) and daily ($0.50)
-  } finally {
-    guard.releaseLock(testUserId);
+  // A single oversized request is refused on any plan.
+  const tooBig = await guardWithUsage({ weeklyCost: 0, monthlyCompletions: 0 }).checkUsage('u', 'pro', 'chat', pro.maxRequestCostUsd + 0.01);
+  assert.strictEqual(tooBig.action, 'block');
+
+  // Free plan with the pool spent → blocked until next week, with the reset date.
+  const freeSpent = await guardWithUsage({ weeklyCost: free.weeklyPoolUsd, monthlyCompletions: 0 }).checkUsage('u', 'free', 'chat', 0.001);
+  assert.strictEqual(freeSpent.action, 'block');
+  if (freeSpent.action === 'block') {
+    assert.strictEqual(freeSpent.error.code, 'BUDGET_EXCEEDED');
+    assert.strictEqual(freeSpent.error.resetsAt, nextWeekStart().toISOString());
   }
 
-  // Test 2: Request exceeding per-request limit
-  await guard.acquireLock(testUserId);
-  try {
-    await guard.checkBudget(testUserId, 'pro', 0.10); // Exceeds pro maxRequestCost ($0.05)
-    throw new Error('Allowed request exceeding per-request cost limit');
-  } catch (err: any) {
-    if (err.code !== 'BUDGET_EXCEEDED') throw err;
-  } finally {
-    guard.releaseLock(testUserId);
-  }
+  // Pro plan with the pool spent → falls back to the cheap model instead of blocking.
+  assert.deepStrictEqual(
+    await guardWithUsage({ weeklyCost: pro.weeklyPoolUsd, monthlyCompletions: 0 }).checkUsage('u', 'pro', 'chat', 0.001),
+    { action: 'fallback' },
+  );
 
-  // Test 3: Daily budget exceeded
-  await store.recordUsage({
-    userId: testUserId,
-    requestId: `req-large-${Math.random().toString(36).substring(7)}`,
-    modelTier: 'premium',
-    resolvedModel: 'claude-3-5-sonnet',
-    inputTokens: 100,
-    outputTokens: 200,
-    totalTokens: 300,
-    estimatedCost: 0.495, // spent almost daily budget
-    status: 'success'
-  });
+  // Tab completions: unlimited on Pro even with the pool spent; monthly allowance on Free.
+  assert.deepStrictEqual(
+    await guardWithUsage({ weeklyCost: 999, monthlyCompletions: 1_000_000 }).checkUsage('u', 'pro', 'completion', 0.0001),
+    { action: 'allow' },
+  );
+  assert.deepStrictEqual(
+    await guardWithUsage({ weeklyCost: 999, monthlyCompletions: 0 }).checkUsage('u', 'free', 'completion', 0.0001),
+    { action: 'allow' },
+  );
+  const freeCompletionsSpent = await guardWithUsage({ weeklyCost: 0, monthlyCompletions: free.monthlyCompletions! })
+    .checkUsage('u', 'free', 'completion', 0.0001);
+  assert.strictEqual(freeCompletionsSpent.action, 'block');
 
-  await guard.acquireLock(testUserId);
-  try {
-    await guard.checkBudget(testUserId, 'pro', 0.01); // daily spent 0.495 + 0.01 = 0.505 > daily limit of 0.50
-    throw new Error('Allowed request exceeding daily budget limit');
-  } catch (err: any) {
-    if (err.code !== 'BUDGET_EXCEEDED') throw err;
-  } finally {
-    guard.releaseLock(testUserId);
-  }
+  // Unknown plans get the free policy.
+  assert.strictEqual(
+    (await guardWithUsage({ weeklyCost: free.weeklyPoolUsd, monthlyCompletions: 0 }).checkUsage('u', 'mystery', 'chat', 0.001)).action,
+    'block',
+  );
 
-  // Test 4: Gateway Authorization Rejection integration
+  // The week starts Monday 00:00 UTC.
+  assert.strictEqual(weekStart(new Date('2026-10-25T12:00:00Z')).toISOString(), '2026-10-19T00:00:00.000Z'); // Sunday
+  assert.strictEqual(weekStart(new Date('2026-10-26T00:00:00Z')).toISOString(), '2026-10-26T00:00:00.000Z'); // Monday
+
+  // Gateway: an exhausted Pro pool serves the request on the fast tier and says so.
   const gateway = new BackendAIGateway();
-  const { MockOpenAIAdapter } = await import('../src/models/backend-gateway');
-  (gateway as any).adapters.set('google', new MockOpenAIAdapter());
-  
-  // Create user first
-  const email = `budget_test_${Math.random().toString(36).substring(7)}@example.com`;
-  await gateway.authService.signup(email, 'hash-password-123');
-  const session = await gateway.authService.login(email, 'hash-password-123');
-
-  const headers = {
-    'authorization': `Bearer ${session.sessionToken}`,
-    'x-request-id': 'budget-exceed-req'
-  };
-
-  // Force daily budget usage onto gateway store
-  const gatewaySpentReqId = `gateway-spent-${Math.random().toString(36).substring(7)}`;
-  await gateway.usageStore.recordUsage({
-    userId: session.userId,
-    requestId: gatewaySpentReqId,
-    modelTier: 'premium',
-    resolvedModel: 'claude-3-5-sonnet',
-    inputTokens: 100,
-    outputTokens: 200,
-    totalTokens: 300,
-    estimatedCost: 0.50,
-    status: 'success'
+  gateway.usageStore.recordUsage = async () => {};
+  gateway.authService.validateSession = async (token: string) => ({ userId: token, email: 'pro@example.com', plan: 'pro' }) as any;
+  (gateway as any).budgetGuard = guardWithUsage({ weeklyCost: pro.weeklyPoolUsd, monthlyCompletions: 0 });
+  let servedTier = '';
+  (gateway as any).router.route = (tier: string) => ({ providerId: 'test', modelId: `model-${tier}`, costInputPerMillion: 1, costOutputPerMillion: 1 });
+  (gateway as any).adapters.set('test', {
+    generate: async (req: any) => { servedTier = req.tier; return { content: 'ok', usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 } }; },
   });
+  const fallbackRes = await gateway.handleRequest('POST', '/v1/ai/generate', { authorization: 'Bearer pro-user' }, {
+    tier: 'premium',
+    messages: [{ role: 'user', content: 'hello' }],
+  });
+  assert.strictEqual(fallbackRes.status, 200);
+  assert.strictEqual(servedTier, 'fast');
+  assert.strictEqual(fallbackRes.headers['x-synkro-usage-fallback'], 'fast');
 
-  const res = await gateway.handleRequest('POST', '/v1/ai/generate', headers, {
+  // Gateway: an exhausted Free pool is refused with BUDGET_EXCEEDED.
+  gateway.authService.validateSession = async (token: string) => ({ userId: token, email: 'free@example.com', plan: 'free' }) as any;
+  (gateway as any).budgetGuard = guardWithUsage({ weeklyCost: free.weeklyPoolUsd, monthlyCompletions: 0 });
+  const blockedRes = await gateway.handleRequest('POST', '/v1/ai/generate', { authorization: 'Bearer free-user' }, {
     tier: 'fast',
-    messages: [{ role: 'user', content: 'triggers budget error' }]
+    messages: [{ role: 'user', content: 'hello' }],
   });
-  
-  if (res.status !== 403 || res.body.code !== 'BUDGET_EXCEEDED') {
-    throw new Error(`Gateway failed to reject request exceeding daily budget. Status: ${res.status}`);
-  }
+  assert.strictEqual(blockedRes.status, 429);
+  assert.strictEqual(blockedRes.body.code, 'BUDGET_EXCEEDED');
+
+  // Model selection is a paid feature: Free requests for a specific model run on Auto routing.
+  let servedManualModel: string | undefined = 'unset';
+  (gateway as any).adapters.set('test', {
+    generate: async (req: any) => { servedManualModel = req.manualModel; return { content: 'ok', usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 } }; },
+  });
+  (gateway as any).budgetGuard = guardWithUsage({ weeklyCost: 0, monthlyCompletions: 0 });
+  const lockedRes = await gateway.handleRequest('POST', '/v1/ai/generate', { authorization: 'Bearer free-user' }, {
+    tier: 'fast',
+    manualModel: 'gemini-3.1-pro',
+    messages: [{ role: 'user', content: 'hello' }],
+  });
+  assert.strictEqual(lockedRes.status, 200);
+  assert.strictEqual(servedManualModel, undefined, 'free plan must not get a manually picked model');
+  assert.strictEqual(lockedRes.headers['x-synkro-model-locked'], 'auto');
+
+  gateway.authService.validateSession = async (token: string) => ({ userId: token, email: 'pro@example.com', plan: 'pro' }) as any;
+  const proRes = await gateway.handleRequest('POST', '/v1/ai/generate', { authorization: 'Bearer pro-user-2' }, {
+    tier: 'fast',
+    manualModel: 'gemini-3.1-pro',
+    messages: [{ role: 'user', content: 'hello' }],
+  });
+  assert.strictEqual(proRes.status, 200);
+  assert.strictEqual(servedManualModel, 'gemini-3.1-pro', 'pro plan keeps the picked model');
 
   console.log('  🟢 All ServerBudgetGuard unit tests passed.');
 }

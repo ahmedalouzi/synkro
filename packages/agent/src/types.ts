@@ -1,6 +1,8 @@
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
   content: string;
+  /** Images on a user message; each provider adapter maps them to its own format. */
+  images?: import('@peep/shared').ChatImage[];
   tool_call_id?: string;
   name?: string;
   tool_calls?: ToolCall[];

@@ -79,6 +79,8 @@ export interface AgentMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
   createdAt: string;
+  /** Agent run that produced this assistant message; links it to its timeline steps. */
+  runId?: string;
 }
 
 export interface ProposedEdit {
@@ -353,6 +355,47 @@ export interface SdkInfo {
   version: string;
 }
 
+/** An image attached to a user message (screenshot, design mockup…). */
+export interface ChatImage {
+  /** e.g. image/png */
+  mimeType: string;
+  /** Base64 data without the `data:` prefix. */
+  data: string;
+}
+
+/** Code around the cursor for Tab autocomplete (ghost text). */
+export interface InlineCompletionRequest {
+  filePath: string;
+  language: string;
+  /** Text before the cursor. */
+  prefix: string;
+  /** Text after the cursor. */
+  suffix: string;
+}
+
+/** Ctrl+K inline edit: rewrite `selection` (may be empty = insert) following `instruction`. */
+export interface InlineEditRequest {
+  /** Used to load project rules. */
+  projectPath?: string;
+  filePath: string;
+  language: string;
+  instruction: string;
+  before: string;
+  selection: string;
+  after: string;
+}
+
+export type InlineEditResult = { text: string } | { error: string };
+
+/** Context attached to a chat message with `@` (Cursor-style mentions). */
+export type AgentMention =
+  | { kind: 'file'; path: string }
+  | { kind: 'folder'; path: string }
+  | { kind: 'code'; filePath: string; startLine: number; endLine: number; text: string }
+  | { kind: 'problems' }
+  | { kind: 'terminal'; text: string }
+  | { kind: 'gitDiff' };
+
 export interface AgentSendOptions {
   threadId?: string;
   message: string;
@@ -368,6 +411,12 @@ export interface AgentSendOptions {
     filePath: string;
   };
   diagnostics?: Diagnostic[];
+  /** Images pasted or dropped into the chat. */
+  images?: ChatImage[];
+  /** Id of the user message; the agent's file changes for it can be restored later. */
+  checkpointId?: string;
+  /** Context the user attached with `@`; resolved and appended to the user message. */
+  mentions?: AgentMention[];
   autoApplyEdits?: boolean;
   scaffoldMode?: boolean;
   previewError?: string;
@@ -434,6 +483,8 @@ export interface GitDiffResult {
 export interface TerminalCreateOptions {
   id: string;
   cwd: string;
+  cols?: number;
+  rows?: number;
 }
 
 export interface RunCommandOptions {
@@ -467,6 +518,20 @@ export interface ExtensionSearchResult {
   offset: number;
 }
 
+/** Editor settings read from VS Code's settings.json (only those Synkro supports). */
+export interface VsCodeSettingsImport {
+  found: boolean;
+  path: string;
+  settings: { autoSave?: boolean; wordWrap?: boolean; minimap?: boolean };
+}
+
+export interface SshTarget {
+  host: string;
+  user?: string;
+  port?: number;
+  identityFile?: string;
+}
+
 export const IPC_CHANNELS = {
   WORKSPACE_OPEN_FOLDER: 'workspace:openFolder',
   WORKSPACE_GET_RECENT: 'workspace:getRecent',
@@ -495,6 +560,13 @@ export const IPC_CHANNELS = {
   APP_EXIT: 'app:exit',
   APP_MINIMIZE: 'app:minimize',
   APP_MAXIMIZE: 'app:maximize',
+  APP_CLOSE_WINDOW: 'app:closeWindow',
+  APP_RELOAD_WINDOW: 'app:reloadWindow',
+  APP_TOGGLE_FULLSCREEN: 'app:toggleFullScreen',
+  APP_TOGGLE_DEVTOOLS: 'app:toggleDevTools',
+  APP_ZOOM: 'app:zoom',
+  APP_EDIT_ACTION: 'app:editAction',
+  APP_SHOW_ABOUT: 'app:showAbout',
   DIALOG_OPEN_FOLDER: 'dialog:openFolder',
   DIALOG_OPEN_FILE: 'dialog:openFile',
   DIALOG_SAVE_FILE: 'dialog:saveFile',
@@ -521,9 +593,18 @@ export const IPC_CHANNELS = {
   GIT_PUSH: 'git:push',
   GIT_CHECKOUT: 'git:checkout',
   GIT_BRANCH: 'git:branch',
+  GIT_CLONE: 'git:clone',
+  SSH_OPEN_TERMINAL: 'ssh:openTerminal',
+  VSCODE_READ_SETTINGS: 'vscode:readSettings',
   TERMINAL_CREATE: 'terminal:create',
   TERMINAL_WRITE: 'terminal:write',
   TERMINAL_DESTROY: 'terminal:destroy',
+  TERMINAL_RESIZE: 'terminal:resize',
+  AI_INLINE_COMPLETE: 'ai:inlineComplete',
+  AI_INLINE_CANCEL: 'ai:inlineCancel',
+  AI_INLINE_EDIT: 'ai:inlineEdit',
+  AI_INLINE_EDIT_CANCEL: 'ai:inlineEditCancel',
+  AGENT_RESTORE_CHECKPOINT: 'agent:restoreCheckpoint',
   RUN_COMMAND: 'terminal:runCommand',
   PROJECT_LIST_TEMPLATES: 'project:listTemplates',
   PROJECT_CREATE: 'project:create',
@@ -682,6 +763,8 @@ export interface DependencyCheckResult {
   allReady: boolean;
 }
 export const IPC_EVENTS = {
+  /** { id, fileCount } — how many files a checkpoint can restore. */
+  AGENT_CHECKPOINT: 'agent:checkpoint',
   PREVIEW_STATUS: 'preview:status',
   DIAGNOSTICS_UPDATED: 'diagnostics:updated',
   PREVIEW_LOG: 'preview:log',
@@ -718,6 +801,14 @@ export interface IpcApi {
   onFileChanged: (callback: (path: string) => void) => () => void;
   minimizeWindow: () => Promise<void>;
   maximizeWindow: () => Promise<void>;
+  closeWindow: () => Promise<void>;
+  reloadWindow: () => Promise<void>;
+  toggleFullScreen: () => Promise<void>;
+  toggleDevTools: () => Promise<void>;
+  zoom: (direction: 'in' | 'out' | 'reset') => Promise<void>;
+  /** Runs a native edit role (clipboard, undo, …) on the focused element of the calling window. */
+  editAction: (action: 'undo' | 'redo' | 'cut' | 'copy' | 'paste' | 'selectAll') => Promise<void>;
+  showAbout: () => Promise<void>;
   openProjectByPath: (path: string) => Promise<ProjectInfo>;
   getRecentProjects: () => Promise<ProjectInfo[]>;
   listDir: (dirPath: string, maxDepth?: number) => Promise<FileEntry[]>;
@@ -729,7 +820,7 @@ export interface IpcApi {
   deleteItem: (path: string) => Promise<void>;
   revealItem: (path: string) => Promise<void>;
   getProject: () => Promise<ProjectInfo | null>;
-  searchFiles: (rootPath: string, query: string) => Promise<FileEntry[]>;
+  searchFiles: (rootPath: string, query: string, includeDirectories?: boolean) => Promise<FileEntry[]>;
   searchContent: (opts: { projectPath: string; query: string; caseSensitive?: boolean; isRegex?: boolean; maxResults?: number }) => Promise<any[]>;
   loadChatHistory: (projectPath: string) => Promise<any>;
   saveChatHistory: (projectPath: string, state: any) => Promise<void>;
@@ -750,7 +841,8 @@ export interface IpcApi {
   reloadPreview: () => Promise<void>;
   rnReloadPreview: (processId: number) => Promise<void>;
   getPreviewSession: () => Promise<PreviewSession | null>;
-  detachPreview: (deviceId?: string) => Promise<void>;
+  /** `frame` is the device frame size in CSS px, used to size the window to the device. */
+  detachPreview: (deviceId?: string, frame?: { width: number; height: number }) => Promise<void>;
   attachPreview: () => Promise<void>;
   isPreviewDetached: () => Promise<boolean>;
   sendAgentMessage: (options: AgentSendOptions) => Promise<void>;
@@ -771,9 +863,25 @@ export interface IpcApi {
   gitPush: (projectPath: string) => Promise<void>;
   gitCheckout: (projectPath: string, branch: string) => Promise<void>;
   gitBranch: (projectPath: string, branch: string) => Promise<void>;
+  /** Clones `url` into a new folder under `parentDir`; resolves to the cloned folder's path. */
+  gitClone: (url: string, parentDir: string) => Promise<string>;
+  /** Opens an SSH session to the target in the system terminal. */
+  openSshTerminal: (target: SshTarget) => Promise<void>;
+  /** Reads importable editor settings from VS Code. */
+  readVsCodeSettings: () => Promise<VsCodeSettingsImport>;
   createTerminal: (options: TerminalCreateOptions) => Promise<void>;
   writeTerminal: (id: string, data: string) => Promise<void>;
   destroyTerminal: (id: string) => Promise<void>;
+  resizeTerminal: (id: string, cols: number, rows: number) => Promise<void>;
+  /** Tab autocomplete: text to insert at the cursor ('' when there is no suggestion). */
+  inlineComplete: (request: InlineCompletionRequest) => Promise<string>;
+  cancelInlineCompletion: () => Promise<void>;
+  /** Ctrl+K: returns the replacement for the selected code. */
+  inlineEdit: (request: InlineEditRequest) => Promise<InlineEditResult>;
+  cancelInlineEdit: () => Promise<void>;
+  /** Restores files to before the agent message `id`; returns restored paths. */
+  restoreCheckpoint: (id: string) => Promise<string[]>;
+  onAgentCheckpoint: (callback: (payload: { id: string; fileCount: number }) => void) => () => void;
   runCommand: (options: RunCommandOptions) => Promise<RunCommandResult>;
   listProjectTemplates: () => Promise<ProjectTemplateInfo[]>;
   createProject: (options: CreateProjectOptions) => Promise<ProjectInfo>;
@@ -824,6 +932,14 @@ export interface IpcApi {
     usage?: number;
     limit?: number;
     gatewayConnected?: boolean;
+    /** Weekly usage pool (see packages/agent usage-limits.ts). */
+    weeklyPoolUsd?: number;
+    weeklyUsedUsd?: number;
+    weekResetsAt?: string;
+    /** Tab completions this month; `monthlyCompletions` null = unlimited. */
+    monthlyCompletions?: number | null;
+    completionsUsed?: number;
+    completionsResetAt?: string;
   } | null>;
   onPublishStatus: (callback: (status: any) => void) => () => void;
   onPublishLog: (callback: (line: string) => void) => () => void;
@@ -880,6 +996,8 @@ export interface AIRequest {
   manualModel?: string;
   messages: any[];
   tools?: any[];
+  /** What the request is for; Tab completions have their own limits and don't draw from the usage pool on paid plans. */
+  purpose?: 'chat' | 'completion';
 }
 
 export interface AIResponse {

@@ -1,40 +1,22 @@
 import { TerminalService } from '../../../apps/desktop/src/main/services/terminal-service';
 
 export default async function run() {
-  console.log('  Testing TerminalService prompt auto-responder...');
+  console.log('  Testing TerminalService safety guarantees...');
 
   const service = new TerminalService();
 
-  let stdinData = '';
-  const mockChild: any = {
-    stdin: {
-      writable: true,
-      write: (data: string) => {
-        stdinData = data;
-      },
-    },
-  };
-
-  // Test case 1: normal log line - should not respond
-  stdinData = '';
-  (service as any).checkAndAutoRespond('session-1', 'Finished task: build successful', mockChild);
-  if (stdinData !== '') {
-    throw new Error('Expected no auto-response to a standard compilation output log');
+  // Regression guard: the user's terminal must never answer prompts on its own.
+  // An earlier auto-responder typed "y" into any "(y/n)" prompt — including destructive
+  // confirmations — so it was removed and must not come back.
+  if (typeof (service as any).checkAndAutoRespond === 'function') {
+    throw new Error('TerminalService must not auto-respond to interactive prompts in user terminals');
   }
 
-  // Test case 2: y/n prompt - should respond 'y\r\n'
-  stdinData = '';
-  (service as any).checkAndAutoRespond('session-1', 'Do you want to proceed? (y/n)', mockChild);
-  if (stdinData !== 'y\r\n') {
-    throw new Error('Expected auto-response "y\\r\\n" for (y/n) prompts');
-  }
-
-  // Test case 3: Y/N question mark prompt - should respond 'y\r\n'
-  stdinData = '';
-  (service as any).checkAndAutoRespond('session-1', 'Terminate batch job (Y/N)?', mockChild);
-  if (stdinData !== 'y\r\n') {
-    throw new Error('Expected auto-response "y\\r\\n" for (Y/N)? prompts');
-  }
+  // Operations on unknown sessions are safe no-ops (e.g. a tab closed while output was in flight).
+  service.write('missing-session', 'echo hi\r');
+  service.resize('missing-session', 80, 24);
+  service.destroy('missing-session');
+  service.resize('missing-session', 0, 0);
 
   console.log('  Testing TerminalService successfully passed!');
 }

@@ -10,11 +10,8 @@ export default async function runTests() {
   // Create Gateway
   const gateway = new BackendAIGateway();
   
-  // Mock budget guard and auth
-  gateway.budgetGuard.checkBudget = async () => {};
-  gateway.budgetGuard.acquireLock = async () => {};
-  let lockReleased = false;
-  gateway.budgetGuard.releaseLock = () => { lockReleased = true; };
+  // Mock the usage policy and auth
+  gateway.budgetGuard.checkUsage = async () => ({ action: 'allow' });
   const testUserId = randomUUID();
   gateway.authService.validateSession = async () => ({ userId: testUserId, email: 'test@example.com' });
 
@@ -27,7 +24,7 @@ export default async function runTests() {
   const reqId4 = 'req-' + randomUUID();
   const reqId5 = 'req-' + randomUUID();
 
-  console.log('  [Test 1] Stream usage accumulation and lock release via wrapped iterator');
+  console.log('  [Test 1] Stream usage accumulation via wrapped iterator');
   {
     // Mock the adapter stream
     const dummyAdapter = {
@@ -40,7 +37,7 @@ export default async function runTests() {
       generate: async () => ({ content: 'test', usage: {} })
     };
     (gateway as any).adapters.set('openai', dummyAdapter);
-    (gateway as any).router.route = () => ({ providerId: 'openai', modelId: 'test-model' });
+    (gateway as any).router.route = () => ({ providerId: 'openai', modelId: 'test-model', costInputPerMillion: 1, costOutputPerMillion: 2 });
 
     const res = await gateway.handleRequest('POST', '/v1/ai/stream', {
       'authorization': 'Bearer token',
@@ -55,8 +52,6 @@ export default async function runTests() {
     // Wait briefly for the finally block to execute its async DB insert
     await new Promise(r => setTimeout(r, 50));
 
-    assert.strictEqual(lockReleased, true, 'Lock should be released after stream completes');
-
     const dbRes = await db.query('SELECT * FROM usage_records WHERE request_id = $1', [reqId]);
     assert.strictEqual(dbRes.rows.length, 1);
     const record = dbRes.rows[0];
@@ -64,6 +59,8 @@ export default async function runTests() {
     assert.strictEqual(record.output_tokens, 10);
     assert.strictEqual(record.total_tokens, 65);
     assert.strictEqual(record.status, 'success');
+    // Cost comes from the real token counts: (55 × $1 + 10 × $2) per million.
+    assert.strictEqual(Number(record.estimated_cost), 0.000075);
   }
 
   console.log('  [Test 2] ON CONFLICT DO NOTHING dedup verified');
@@ -88,7 +85,6 @@ export default async function runTests() {
 
   console.log('  [Test 3] Estimated-fallback path when done.usage is absent');
   {
-    lockReleased = false;
     const dummyAdapter = {
       stream: () => ({
         async *[Symbol.asyncIterator]() {

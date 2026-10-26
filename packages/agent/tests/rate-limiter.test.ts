@@ -3,107 +3,76 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 (globalThis as any).require = require;
 import { BackendAIGateway } from '../src/models/backend-gateway';
-import { db } from '../src/models/db';
+import { PLAN_POLICIES } from '../src/models/usage-limits';
 
 export default async function runTests() {
   console.log('  Running Rate Limiter unit tests...');
-  
-  const gateway = new BackendAIGateway();
-  
-  // Mock usage store to prevent DB connection
-  gateway.usageStore.recordUsage = async () => {};
-  
-  // Mock the auth service to bypass DB and return a deterministic user ID
-  gateway.authService.validateSession = async (token: string) => {
-    return { userId: token, email: `${token}@example.com` };
-  };
-  
-  // Mock budget guard to prevent budget failures during rate limit testing
-  gateway.budgetGuard.checkBudget = async () => {};
-  gateway.budgetGuard.acquireLock = async () => {};
-  gateway.budgetGuard.releaseLock = () => {};
 
-  // Mock router and adapter to return dummy stream
-  (gateway as any).router.route = () => ({ providerId: 'test', modelId: 'test' });
-  const dummyAdapter = {
+  const gateway = new BackendAIGateway();
+
+  // No DB: usage recording and the usage pool are out of scope here.
+  gateway.usageStore.recordUsage = async () => {};
+  gateway.authService.validateSession = async (token: string) => {
+    return { userId: token, email: `${token}@example.com`, plan: token.startsWith('pro') ? 'pro' : 'free' } as any;
+  };
+  (gateway as any).budgetGuard.checkUsage = async () => ({ action: 'allow' });
+
+  (gateway as any).router.route = () => ({ providerId: 'test', modelId: 'test', costInputPerMillion: 0, costOutputPerMillion: 0 });
+  (gateway as any).adapters.set('test', {
     stream: () => ({
       [Symbol.asyncIterator]: async function* () { yield { type: 'done' }; }
     }),
     generate: async () => ({ content: 'test', usage: {} })
-  };
-  (gateway as any).adapters.set('test', dummyAdapter);
+  });
 
-  console.log('  [Test 1] enforces 30 requests per minute per user on AI endpoints');
-  {
-    const userId = 'user_1';
-    for (let i = 0; i < 30; i++) {
-      const res = await gateway.handleRequest('POST', '/v1/ai/stream', {
-        'authorization': `Bearer ${userId}`,
-        'x-request-id': `req-${i}`
-      }, { tier: 'fast', messages: [{ role: 'user', content: 'test' }] });
-      assert.strictEqual(res.status, 200);
-    }
-    const resRateLimited = await gateway.handleRequest('POST', '/v1/ai/stream', {
+  const send = (userId: string, id: string, purpose?: 'completion') =>
+    gateway.handleRequest('POST', '/v1/ai/stream', {
       'authorization': `Bearer ${userId}`,
-      'x-request-id': 'req-31'
-    }, { tier: 'fast', messages: [{ role: 'user', content: 'test' }] });
-    assert.strictEqual(resRateLimited.status, 429);
-    assert.strictEqual(resRateLimited.body.code, 'RATE_LIMIT_EXCEEDED');
-  }
+      'x-request-id': id,
+    }, { tier: 'fast', purpose, messages: [{ role: 'user', content: 'test' }] });
 
-  console.log('  [Test 2] does not share rate limit quota between different users');
+  const freeChat = PLAN_POLICIES.free.chatPerMinute;
+  const freeCompletions = PLAN_POLICIES.free.completionsPerMinute;
+
+  console.log(`  [Test 1] enforces ${freeChat} chat requests per minute on the free plan`);
   {
-    const userA = 'user_A';
-    const userB = 'user_B';
-
-    for (let i = 0; i < 30; i++) {
-      await gateway.handleRequest('POST', '/v1/ai/stream', {
-        'authorization': `Bearer ${userA}`,
-        'x-request-id': `req-A-${i}`
-      }, { tier: 'fast', messages: [{ role: 'user', content: 'test' }] });
+    for (let i = 0; i < freeChat; i++) {
+      assert.strictEqual((await send('user_1', `req-${i}`)).status, 200);
     }
-
-    const resA = await gateway.handleRequest('POST', '/v1/ai/stream', {
-      'authorization': `Bearer ${userA}`,
-      'x-request-id': `req-A-31`
-    }, { tier: 'fast', messages: [{ role: 'user', content: 'test' }] });
-    assert.strictEqual(resA.status, 429);
-
-    const resB = await gateway.handleRequest('POST', '/v1/ai/stream', {
-      'authorization': `Bearer ${userB}`,
-      'x-request-id': `req-B-1`
-    }, { tier: 'fast', messages: [{ role: 'user', content: 'test' }] });
-    assert.strictEqual(resB.status, 200);
+    const limited = await send('user_1', 'req-over');
+    assert.strictEqual(limited.status, 429);
+    assert.strictEqual(limited.body.code, 'RATE_LIMIT_EXCEEDED');
+    assert.ok(Number(limited.headers['Retry-After']) > 0, 'Retry-After header must be set');
   }
 
-  console.log('  [Test 3] resets the rate limit window after 60 seconds');
+  console.log('  [Test 2] Tab completions have their own, larger bucket');
   {
-    const userId = 'user_window_test';
+    // user_1's chat bucket is full, but completions are counted separately.
+    for (let i = 0; i < freeCompletions; i++) {
+      assert.strictEqual((await send('user_1', `cmp-${i}`, 'completion')).status, 200);
+    }
+    assert.strictEqual((await send('user_1', 'cmp-over', 'completion')).status, 429);
+  }
+
+  console.log('  [Test 3] does not share quota between users, and Pro gets more');
+  {
+    assert.strictEqual((await send('user_B', 'req-B-1')).status, 200);
+    for (let i = 0; i < freeChat + 1; i++) {
+      assert.strictEqual((await send('pro_user', `pro-${i}`)).status, 200);
+    }
+  }
+
+  console.log('  [Test 4] frees slots once the 60-second window passes');
+  {
     const originalDateNow = Date.now;
-    let currentTime = 1000000;
+    let currentTime = 1_000_000;
     global.Date.now = () => currentTime;
-
     try {
-      for (let i = 0; i < 30; i++) {
-        await gateway.handleRequest('POST', '/v1/ai/stream', {
-          'authorization': `Bearer ${userId}`,
-          'x-request-id': `req-W-${i}`
-        }, { tier: 'fast', messages: [{ role: 'user', content: 'test' }] });
-      }
-
-      currentTime += 30000;
-      const resMiddle = await gateway.handleRequest('POST', '/v1/ai/stream', {
-        'authorization': `Bearer ${userId}`,
-        'x-request-id': 'req-W-31'
-      }, { tier: 'fast', messages: [{ role: 'user', content: 'test' }] });
-      assert.strictEqual(resMiddle.status, 429);
-
-      currentTime += 61000;
-      const resAfterReset = await gateway.handleRequest('POST', '/v1/ai/stream', {
-        'authorization': `Bearer ${userId}`,
-        'x-request-id': 'req-W-32'
-      }, { tier: 'fast', messages: [{ role: 'user', content: 'test' }] });
-      assert.strictEqual(resAfterReset.status, 200);
+      for (let i = 0; i < freeChat; i++) await send('user_window', `w-${i}`);
+      currentTime += 30_000;
+      assert.strictEqual((await send('user_window', 'w-mid')).status, 429);
+      currentTime += 31_000;
+      assert.strictEqual((await send('user_window', 'w-after')).status, 200);
     } finally {
       global.Date.now = originalDateNow;
     }

@@ -56,6 +56,15 @@ export class OpenAIAdapter implements ProviderAdapter {
       model: modelId,
       messages: request.messages.map(m => {
         const mapped: any = { role: m.role, content: m.content || '' };
+        if (m.role === 'user' && m.images?.length) {
+          mapped.content = [
+            { type: 'text', text: m.content || '' },
+            ...m.images.map((img: { mimeType: string; data: string }) => ({
+              type: 'image_url',
+              image_url: { url: `data:${img.mimeType};base64,${img.data}` },
+            })),
+          ];
+        }
         if (m.tool_calls) mapped.tool_calls = m.tool_calls;
         if (m.tool_call_id) mapped.tool_call_id = m.tool_call_id;
         if (m.name) mapped.name = m.name;
@@ -96,6 +105,15 @@ export class OpenAIAdapter implements ProviderAdapter {
       model: modelId,
       messages: request.messages.map(m => {
         const mapped: any = { role: m.role, content: m.content || '' };
+        if (m.role === 'user' && m.images?.length) {
+          mapped.content = [
+            { type: 'text', text: m.content || '' },
+            ...m.images.map((img: { mimeType: string; data: string }) => ({
+              type: 'image_url',
+              image_url: { url: `data:${img.mimeType};base64,${img.data}` },
+            })),
+          ];
+        }
         if (m.tool_calls) mapped.tool_calls = m.tool_calls;
         if (m.tool_call_id) mapped.tool_call_id = m.tool_call_id;
         if (m.name) mapped.name = m.name;
@@ -177,7 +195,15 @@ export class AnthropicAdapter implements ProviderAdapter {
       } else {
         mapped.push({
           role: m.role === 'assistant' ? 'assistant' : 'user',
-          content: m.content
+          content: m.role === 'user' && m.images?.length
+            ? [
+                ...m.images.map((img: { mimeType: string; data: string }) => ({
+                  type: 'image',
+                  source: { type: 'base64', media_type: img.mimeType, data: img.data },
+                })),
+                { type: 'text', text: m.content || '' },
+              ]
+            : m.content
         });
       }
     }
@@ -269,6 +295,7 @@ import { AuthenticationRouter } from './auth-router';
 import { ServerModelRouter } from './server-router';
 import { ServerUsageStore } from './usage-store';
 import { ServerBudgetGuard } from './budget-guard';
+import { BurstLimiter, estimateRequestCost, getPlanPolicy, tokenCost, type RequestPurpose } from './usage-limits';
 import { GoogleGeminiAdapter } from './google-adapter';
 import type { AgentLogger } from '../orchestrator';
 
@@ -294,6 +321,7 @@ export class BackendAIGateway {
   private router = new ServerModelRouter();
   readonly usageStore = new ServerUsageStore();
   readonly budgetGuard = new ServerBudgetGuard();
+  readonly burstLimiter = new BurstLimiter();
   private readonly logger: AgentLogger;
 
   getContextLimit(tier: CapabilityTier): number {
@@ -303,6 +331,7 @@ export class BackendAIGateway {
   }
 
   constructor(logger?: AgentLogger) {
+    setInterval(() => this.burstLimiter.prune(), 5 * 60_000).unref();
     this.logger = logger ?? {
       info: (msg, meta) => console.log(`[Gateway] ${msg}`, meta ?? ''),
       warn: (msg, meta) => console.warn(`[Gateway] ${msg}`, meta ?? ''),
@@ -426,40 +455,37 @@ export class BackendAIGateway {
     }
 
     if (path === '/v1/account/status') {
-      const usage = await this.usageStore.getAccumulatedCost(session.userId);
+      const summary = await this.budgetGuard.getUsageSummary(session.userId, session.plan || 'free');
       return {
         status: 200,
         headers: responseHeaders,
         body: {
           email: session.email,
-          tier: session.plan || 'free',
-          usage,
-          limit: 20.00
+          tier: summary.plan,
+          // `usage`/`limit` are this week's pool, kept for older clients.
+          usage: summary.weeklyUsedUsd,
+          limit: summary.weeklyPoolUsd,
+          ...summary,
         }
       };
     }
 
     // 2. Path routing
     if (path === '/v1/ai/generate') {
-      const requestData = body as AIRequest;
+      let requestData = body as AIRequest;
       const valErr = this.validateAIRequest(requestData);
       if (valErr) {
         return { status: 400, headers: responseHeaders, body: valErr };
       }
 
-      const estimatedCost = requestData.tier === 'premium' ? 0.01 : (requestData.tier === 'reasoning' ? 0.005 : 0.001);
-      
       const isDevBypass = process.env.NODE_ENV !== 'production' && process.env.SYNKRO_DEV_AUTH_BYPASS === 'true';
 
+      let purpose: RequestPurpose = requestData.purpose === 'completion' ? 'completion' : 'chat';
       if (!isDevBypass) {
-        await this.budgetGuard.acquireLock(session.userId);
-        try {
-          // Enforce server-side budget limits before calling provider adapter
-          await this.budgetGuard.checkBudget(session.userId, session.plan || 'free', estimatedCost);
-        } catch (err: any) {
-          this.budgetGuard.releaseLock(session.userId);
-          return { status: 403, headers: responseHeaders, body: err };
-        }
+        const policyResult = await this.applyUsagePolicy(session, requestData, responseHeaders);
+        if ('response' in policyResult) return policyResult.response;
+        requestData = policyResult.request;
+        purpose = policyResult.purpose;
       }
 
       let config: any;
@@ -493,16 +519,19 @@ export class BackendAIGateway {
         responseHeaders['x-synkro-latency'] = `Transit: ${transitTime}ms | Auth: ${authDuration}ms | Route: ${routingDuration}ms | Resolve: ${latencyOut.listModelsDuration}ms | GeminiAPI: ${latencyOut.geminiCallDuration}ms | AdapterTotal: ${adapterDuration}ms | BackendTotal: ${serverDuration}ms`;
 
         if (!isDevBypass) {
+          const inputTokens = result.usage?.inputTokens || Math.ceil(JSON.stringify(requestData.messages).length / 4);
+          const outputTokens = result.usage?.outputTokens || Math.ceil((result.content?.length ?? 0) / 4);
           await this.usageStore.recordUsage({
             userId: session.userId,
             requestId,
             modelTier: requestData.tier,
             resolvedModel: config.modelId,
-            inputTokens: result.usage?.inputTokens || 0,
-            outputTokens: result.usage?.outputTokens || 0,
-            totalTokens: result.usage?.totalTokens || 0,
-            estimatedCost: result.cost?.cost || 0,
-            status: 'success'
+            inputTokens,
+            outputTokens,
+            totalTokens: result.usage?.totalTokens || inputTokens + outputTokens,
+            estimatedCost: result.cost?.cost || tokenCost(config, inputTokens, outputTokens),
+            status: 'success',
+            purpose,
           });
         }
 
@@ -518,34 +547,29 @@ export class BackendAIGateway {
             outputTokens: 0,
             totalTokens: 0,
             estimatedCost: 0,
-            status: options?.signal?.aborted ? 'cancelled' : 'failed'
+            status: options?.signal?.aborted ? 'cancelled' : 'failed',
+            purpose,
           });
         }
         return { status: 502, headers: responseHeaders, body: this.mapError(e) };
-      } finally {
-        if (!isDevBypass) this.budgetGuard.releaseLock(session.userId);
       }
     }
 
     if (path === '/v1/ai/stream') {
-      const requestData = body as AIRequest;
+      let requestData = body as AIRequest;
       const valErr = this.validateAIRequest(requestData);
       if (valErr) {
         return { status: 400, headers: responseHeaders, body: valErr };
       }
 
-      const estimatedCost = requestData.tier === 'premium' ? 0.01 : (requestData.tier === 'reasoning' ? 0.005 : 0.001);
-      
       const isDevBypass = process.env.NODE_ENV !== 'production' && process.env.SYNKRO_DEV_AUTH_BYPASS === 'true';
 
+      let purpose: RequestPurpose = requestData.purpose === 'completion' ? 'completion' : 'chat';
       if (!isDevBypass) {
-        await this.budgetGuard.acquireLock(session.userId);
-        try {
-          await this.budgetGuard.checkBudget(session.userId, session.plan || 'free', estimatedCost);
-        } catch (err: any) {
-          this.budgetGuard.releaseLock(session.userId);
-          return { status: 403, headers: responseHeaders, body: err };
-        }
+        const policyResult = await this.applyUsagePolicy(session, requestData, responseHeaders);
+        if ('response' in policyResult) return policyResult.response;
+        requestData = policyResult.request;
+        purpose = policyResult.purpose;
       }
 
       let config: any;
@@ -615,7 +639,6 @@ export class BackendAIGateway {
               throw err;
             } finally {
               if (!isDevBypass) {
-                const estCost = requestData.tier === 'premium' ? 0.01 : (requestData.tier === 'reasoning' ? 0.005 : 0.001);
                 const msgStr = JSON.stringify(requestData.messages || (requestData as any).prompt || '');
                 const fallbackInputTokens = Math.ceil(msgStr.length / 4);
                 const fallbackOutputTokens = accumulatedOutputChars > 0 ? Math.ceil(accumulatedOutputChars / 4) : 1;
@@ -630,15 +653,14 @@ export class BackendAIGateway {
                   inputTokens: iTokens,
                   outputTokens: oTokens,
                   totalTokens: finalUsage?.totalTokens || finalUsage?.total_tokens || (iTokens + oTokens),
-                  estimatedCost: estCost,
-                  status: options?.signal?.aborted ? 'cancelled' : finalStatus
+                  estimatedCost: tokenCost(config, iTokens, oTokens),
+                  status: options?.signal?.aborted ? 'cancelled' : finalStatus,
+                  purpose,
                 }).catch(async (usageErr: any) => {
                   self.logger.error('Failed to record streaming usage — financial data loss risk', { requestId, error: usageErr?.message });
                   await ensureSentryLoaded();
                   if (Sentry?.captureException) Sentry.captureException(usageErr, { tags: { requestId, path: '/v1/ai/stream' } });
                 });
-
-                self.budgetGuard.releaseLock(session.userId);
               }
             }
           }
@@ -657,13 +679,13 @@ export class BackendAIGateway {
             outputTokens: 0,
             totalTokens: 0,
             estimatedCost: 0,
-            status: options?.signal?.aborted ? 'cancelled' : 'failed'
+            status: options?.signal?.aborted ? 'cancelled' : 'failed',
+            purpose,
           }).catch(async (usageErr: any) => {
             this.logger.error('Failed to record stream error usage — financial data loss risk', { requestId, error: usageErr?.message });
             await ensureSentryLoaded();
             if (Sentry?.captureException) Sentry.captureException(usageErr, { tags: { requestId, path: '/v1/ai/stream' } });
           });
-          this.budgetGuard.releaseLock(session.userId);
         }
         return { status: 502, headers: responseHeaders, body: this.mapError(e) };
       }
@@ -688,6 +710,60 @@ export class BackendAIGateway {
       headers: responseHeaders,
       body: { code: 'NOT_FOUND', message: `Route not found: ${path}` }
     };
+  }
+
+  /**
+   * Burst limit + plan usage pool (see usage-limits.ts). Returns the response to send when the
+   * request is refused, otherwise the request to run — moved to the fast tier when a paid plan's
+   * weekly pool is spent.
+   */
+  private async applyUsagePolicy(
+    session: { userId: string; plan?: string },
+    requestData: AIRequest,
+    responseHeaders: Record<string, string>,
+  ): Promise<
+    | { response: { status: number; headers: Record<string, string>; body: any } }
+    | { request: AIRequest; purpose: RequestPurpose }
+  > {
+    const purpose: RequestPurpose = requestData.purpose === 'completion' ? 'completion' : 'chat';
+    const plan = session.plan || 'free';
+    const policy = getPlanPolicy(plan);
+
+    // Picking a specific model is a paid feature (like Cursor); free plans always use Auto routing.
+    if (requestData.manualModel && !policy.allowModelSelection) {
+      requestData = { ...requestData, manualModel: undefined };
+      responseHeaders['x-synkro-model-locked'] = 'auto';
+    }
+
+    const perMinute = purpose === 'completion' ? policy.completionsPerMinute : policy.chatPerMinute;
+    const retryAfterSec = this.burstLimiter.hit(`${session.userId}:${purpose}`, perMinute);
+    if (retryAfterSec > 0) {
+      return {
+        response: {
+          status: 429,
+          headers: { ...responseHeaders, 'Retry-After': String(retryAfterSec) },
+          body: { code: 'RATE_LIMIT_EXCEEDED', message: `Too many requests. Try again in ${retryAfterSec}s.`, retryAfterSec },
+        },
+      };
+    }
+
+    let prices;
+    try {
+      prices = this.router.route(requestData.tier, plan, requestData.manualModel);
+    } catch {
+      // e.g. premium on the free plan: routing rejects it later with a clear error.
+      prices = this.router.route('fast', plan);
+    }
+    const estimatedCost = estimateRequestCost(prices, requestData.messages, purpose === 'completion' ? 100 : 1000);
+    const decision = await this.budgetGuard.checkUsage(session.userId, plan, purpose, estimatedCost);
+    if (decision.action === 'block') {
+      return { response: { status: 429, headers: responseHeaders, body: decision.error } };
+    }
+    if (decision.action === 'fallback') {
+      responseHeaders['x-synkro-usage-fallback'] = 'fast';
+      return { request: { ...requestData, tier: 'fast', manualModel: undefined }, purpose };
+    }
+    return { request: requestData, purpose };
   }
 
   private validateAIRequest(req: AIRequest): AIError | null {

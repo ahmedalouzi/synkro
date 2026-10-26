@@ -7,9 +7,7 @@ export default async function runTests() {
 
   const gateway = new BackendAIGateway();
   gateway.authService.validateSession = async () => ({ userId: '00000000-0000-0000-0000-000000000001', email: 't@t.com' });
-  gateway.budgetGuard.checkBudget = async () => {};
-  gateway.budgetGuard.acquireLock  = async () => {};
-  gateway.budgetGuard.releaseLock  = () => {};
+  gateway.budgetGuard.checkUsage   = async () => ({ action: 'allow' });
   gateway.usageStore.recordUsage   = async () => {};
 
   // Expose private method for direct unit tests
