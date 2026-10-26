@@ -73,18 +73,6 @@ export class DatabaseService {
       await this.persist();
     }
 
-    // --- Dev Auth Bypass Bootstrap ---
-    if (process.env.SYNKRO_DEV_AUTH_BYPASS === 'true' && !this.data.settings.sessionToken) {
-      this.data.settings.sessionToken = 'dev_test_session';
-      this.data.settings.developerMode = true;
-      console.log('\n[BOOTSTRAP]');
-      console.log('devAuthBypass=true');
-      console.log('\n[BOOTSTRAP]');
-      console.log('sessionToken=dev_test_session');
-      console.log('\n[BOOTSTRAP]');
-      console.log('developerMode=true\n');
-      await this.persist();
-    }
   }
 
   private async persist(): Promise<void> {
@@ -112,12 +100,14 @@ export class DatabaseService {
   getSettings(): Settings {
     // SECURITY: Strip all secrets before returning to renderer via IPC.
     const settings = { ...this.data.settings };
-    const isDevBypass = true; // FORCED FOR E2E
+    // Both variables are stripped at startup in packaged builds (see main/index.ts).
+    const isDevBypass = process.env.SYNKRO_DEV_AUTH_BYPASS === 'true' || process.env.E2E_TESTING === '1';
     return {
       ...settings,
       sessionToken: undefined,
       refreshToken: undefined,
-      sessionConfigured: Boolean(this.data.settings.sessionToken) || isDevBypass,
+      // Bypass mode no longer signs anyone in implicitly: the login screen shows and offers the bypass button.
+      sessionConfigured: Boolean(this.data.settings.sessionToken),
       aiProviderApiKey: undefined,
       aiProviderApiKeyConfigured: !!this.data.settings.aiProviderApiKey,
       isDevBypassActive: isDevBypass,

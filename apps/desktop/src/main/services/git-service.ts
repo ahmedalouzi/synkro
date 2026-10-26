@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { access } from 'node:fs/promises';
 import { join } from 'node:path';
 import simpleGit, { type SimpleGit, type StatusResult } from 'simple-git';
@@ -91,4 +92,27 @@ export class GitService {
     const git = this.getGit(projectPath);
     await git.checkoutLocalBranch(branch);
   }
+
+  /** Clones into `<parentDir>/<repo name>` and returns that path. */
+  async clone(url: string, parentDir: string): Promise<string> {
+    const repoUrl = url.trim();
+    // Only accept real remote URLs; a leading "-" would be parsed by git as an option.
+    if (!/^(https?:\/\/|ssh:\/\/|git@)[^\s]+$/i.test(repoUrl) || repoUrl.startsWith('-')) {
+      throw new Error('Enter an https:// or git@ repository URL.');
+    }
+    const name = repoNameFromUrl(repoUrl);
+    if (!name) throw new Error('Could not determine the repository name from the URL.');
+    if (!existsSync(parentDir)) throw new Error(`Folder not found: ${parentDir}`);
+
+    const target = join(parentDir, name);
+    if (existsSync(target)) throw new Error(`A folder named "${name}" already exists in ${parentDir}.`);
+
+    await simpleGit(parentDir).clone(repoUrl, target);
+    return target;
+  }
+}
+
+export function repoNameFromUrl(url: string): string {
+  const last = url.replace(/[/\\]+$/, '').split(/[/:]/).pop() ?? '';
+  return last.replace(/\.git$/i, '').replace(/[^\w.-]/g, '');
 }

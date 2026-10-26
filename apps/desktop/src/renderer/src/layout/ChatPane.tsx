@@ -1,36 +1,99 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { createTwoFilesPatch } from 'diff';
+import type { AgentMessage, AgentTimelineActivity, ProposedEdit } from '@peep/shared';
 import { useChatStore } from '../stores/chat-store';
 import { useWorkspaceStore } from '../stores/workspace-store';
 import { useDiagnosticsStore, usePreviewStore } from '../stores/preview-store';
-import { AgentTimeline } from './AgentTimeline';
-import { ThreadSidebar } from './ThreadSidebar';
 import { Virtuoso } from 'react-virtuoso';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { MentionIcon, MentionPicker, type MentionItem, type MentionPickerHandle } from '../features/chat/MentionPicker';
+import { SlashCommandPicker, type SlashCommandResult } from '../features/chat/SlashCommandPicker';
+import { imageFilesFrom, MAX_IMAGES, readChatImage, type PendingImage } from '../features/chat/chat-images';
+import { MODELS, useCanPickModel } from '../features/chat/models';
+import { openWebPage } from '../config/web';
 import './ChatPane.css';
 
 interface ChatPaneProps {
   onOpenSettings: () => void;
 }
 
-function getDiffStats(original: string, proposed: string) {
+const REVIEW_TAB_PATH = 'peep://proposed-changes';
+const WELCOME_ID = 'welcome';
+
+
+const fileName = (path: string) => path.split(/[\\/]/).pop() ?? path;
+
+/** Line counts and the first few changed lines, for edit cards. */
+function diffSummary(original: string, proposed: string) {
   let added = 0;
   let removed = 0;
+  const preview: { kind: '+' | '-'; text: string }[] = [];
   try {
-    const patch = createTwoFilesPatch('a', 'b', original, proposed);
-    const lines = patch.split('\n');
+    const lines = createTwoFilesPatch('a', 'b', original, proposed).split('\n').slice(4);
     for (const line of lines) {
       if (line.startsWith('+') && !line.startsWith('+++')) {
         added++;
+        if (preview.length < 4) preview.push({ kind: '+', text: line.slice(1) });
       } else if (line.startsWith('-') && !line.startsWith('---')) {
         removed++;
+        if (preview.length < 4) preview.push({ kind: '-', text: line.slice(1) });
       }
     }
   } catch (e) {
     console.error(e);
   }
-  return { added, removed };
+  return { added, removed, preview };
 }
+
+/** One line per agent step; the resolved event replaces its in-progress twin. */
+function stepsForRun(activities: AgentTimelineActivity[], runId: string | undefined) {
+  if (!runId) return [];
+  const byKey = new Map<string, AgentTimelineActivity>();
+  for (const a of activities) {
+    if (a.runId !== runId || a.type === 'understanding' || a.type === 'completed') continue;
+    byKey.set(a.id.replace(/:(in_progress|resolved)$/, ''), a);
+  }
+  return [...byKey.values()];
+}
+
+function stepLabel(a: AgentTimelineActivity): { verb: string; target: string } {
+  const done = a.status !== 'in_progress';
+  const target = a.file ? fileName(a.file) : a.command ?? '';
+  switch (a.type) {
+    case 'reading': return { verb: done ? 'Read' : 'Reading', target };
+    case 'editing': return { verb: done ? 'Edited' : 'Editing', target };
+    case 'creating': return { verb: done ? 'Created' : 'Creating', target };
+    case 'deleting': return { verb: done ? 'Deleted' : 'Deleting', target };
+    case 'running': return { verb: done ? 'Ran' : 'Running', target };
+    case 'exploring': return { verb: done ? 'Explored' : 'Exploring', target: target || '.' };
+    case 'searching': return { verb: done ? 'Searched' : 'Searching', target: a.message.replace(/^Searching (files|codebase): /, '') };
+    default: return { verb: a.message, target: '' };
+  }
+}
+
+function Icon({ d, size = 14 }: { d: string; size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d={d} />
+    </svg>
+  );
+}
+
+const ICON = {
+  plus: 'M12 5v14M5 12h14',
+  history: 'M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2',
+  close: 'M18 6 6 18M6 6l12 12',
+  panel: 'M3 4h18v16H3zM15 4v16',
+  image: 'M21 15l-5-5L5 21M3 3h18v18H3zM8.5 10a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3',
+  send: 'M12 19V5M5 12l7-7 7 7',
+  chevron: 'M9 6l6 6-6 6',
+  down: 'M6 9l6 6 6-6',
+  trash: 'M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6',
+  file: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6',
+  lock: 'M5 11h14v10H5zM8 11V7a4 4 0 0 1 8 0v4',
+};
 
 export function ChatPane({ onOpenSettings: _onOpenSettings }: ChatPaneProps) {
   const {
@@ -38,12 +101,19 @@ export function ChatPane({ onOpenSettings: _onOpenSettings }: ChatPaneProps) {
     input,
     isStreaming,
     streamStatus,
+    streamingMessageId,
     proposedEdits,
+    timelineActivities,
     ipcError,
+    threads,
+    activeThreadId,
     setInput,
     addMessage,
     startStreaming,
     setProposedEdits,
+    switchThread,
+    newThread,
+    deleteThread,
   } = useChatStore();
 
   const project = useWorkspaceStore((s) => s.project);
@@ -53,67 +123,220 @@ export function ChatPane({ onOpenSettings: _onOpenSettings }: ChatPaneProps) {
   const activeFile = openFiles.find((f) => f.path === activeFilePath) ?? null;
   const activeSelection = useWorkspaceStore((s) => s.activeSelection);
   const diagnostics = useDiagnosticsStore((s) => s.items);
-  const dropdownRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
 
+  /* ── Chat tabs (like Cursor's open agents) + history ── */
+  const [openTabIds, setOpenTabIds] = useState<string[]>([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const historyRef = useRef<HTMLDivElement>(null);
 
-  const [selectedModel, setSelectedModel] = useState('gpt-4o-mini');
-  const [changesBarExpanded, setChangesBarExpanded] = useState(false);
-  const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false);
+  useEffect(() => {
+    if (activeThreadId && !openTabIds.includes(activeThreadId)) setOpenTabIds((prev) => [...prev, activeThreadId]);
+  }, [activeThreadId, openTabIds]);
 
-  const MODELS = [
-    { name: 'gemini-3.5-flash', label: 'gemini-3.5-flash', provider: 'google', badge: 'Fast' },
-    { name: 'gemini-3.1-pro', label: 'gemini-3.1-pro', provider: 'google' },
-    { name: 'gemini-3', label: 'gemini-3', provider: 'google' },
-    { name: 'gemini-3-flash', label: 'gemini-3-flash', provider: 'google', badge: 'Fast' },
-    { name: 'gemini-2.5-flash', label: 'gemini-2.5-flash', provider: 'google', badge: 'Fast' },
-    { name: 'gemini-1.5-flash', label: 'gemini-1.5-flash', provider: 'google', badge: 'Fast' },
-    { name: 'gemini-1.5-pro', label: 'gemini-1.5-pro', provider: 'google' },
-    { name: 'gpt-4o-mini', label: 'gpt-4o-mini', provider: 'openai', badge: 'Fast' },
-    { name: 'gpt-4o', label: 'gpt-4o', provider: 'openai' },
-    { name: 'gpt-3.5-turbo', label: 'gpt-3.5-turbo', provider: 'openai' },
-    { name: 'o1-mini', label: 'o1-mini', provider: 'openai', badge: 'Reasoning' },
-    { name: 'o3-mini', label: 'o3-mini', provider: 'openai', badge: 'Reasoning' },
-    { name: 'claude-3-5-sonnet', label: 'claude-3-5-sonnet', provider: 'openai', badge: 'Coding' },
-    { name: 'claude-3-5-haiku', label: 'claude-3-5-haiku', provider: 'openai', badge: 'Fast' },
-    { name: 'claude-3-opus', label: 'claude-3-opus', provider: 'openai' },
-    { name: 'llama-3.3-70b', label: 'llama-3.3-70b', provider: 'openai' },
-    { name: 'codestral', label: 'codestral', provider: 'openai', badge: 'Coding' },
-  ];
+  // Drop tabs whose thread was deleted.
+  useEffect(() => {
+    setOpenTabIds((prev) => prev.filter((id) => id === activeThreadId || threads.some((t) => t.id === id)));
+  }, [threads, activeThreadId]);
 
-  const fetchSettings = () => {
-    void window.peep.getSettings().then((s) => {
-      setSelectedModel(s.apiModel ?? 'gpt-4o-mini');
-    });
+  const firstUserText = messages.find((m) => m.role === 'user')?.content;
+  const threadTitle = (id: string) => {
+    const t = threads.find((x) => x.id === id);
+    if (t?.title && t.title !== 'New Chat') return t.title;
+    if (id === activeThreadId && firstUserText) return firstUserText.split('\n')[0].slice(0, 40);
+    return 'New Chat';
+  };
+
+  const closeTab = (id: string) => {
+    if (isStreaming && id === activeThreadId) return;
+    const remaining = openTabIds.filter((t) => t !== id);
+    setOpenTabIds(remaining);
+    if (id !== activeThreadId) return;
+    if (remaining.length > 0) void switchThread(remaining[remaining.length - 1]);
+    else void newThread();
   };
 
   useEffect(() => {
+    if (!historyOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (historyRef.current && !historyRef.current.contains(e.target as Node)) setHistoryOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [historyOpen]);
+
+  /* ── Model ── */
+  const [selectedModel, setSelectedModel] = useState<string | undefined>(undefined);
+  const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  const modelRef = useRef<HTMLDivElement>(null);
+  const canPickModel = useCanPickModel();
+  // Free plans always run on Auto (the server ignores a picked model), so show that.
+  const effectiveModel = canPickModel ? selectedModel : undefined;
+  const modelLabel = MODELS.find((m) => m.id === effectiveModel)?.label ?? effectiveModel ?? 'Auto';
+  const [upsellOpen, setUpsellOpen] = useState(false);
+
+  useEffect(() => {
+    const fetchSettings = () => void window.peep.getSettings().then((s) => setSelectedModel(s.apiModel || undefined));
     fetchSettings();
     window.addEventListener('peep:settings-closed', fetchSettings);
     return () => window.removeEventListener('peep:settings-closed', fetchSettings);
   }, []);
 
   useEffect(() => {
-    // Scroll into view logic removed, Virtuoso handles this automatically with followOutput
-  }, [messages, streamStatus, proposedEdits]);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsModelDropdownOpen(false);
-      }
+    if (!modelMenuOpen) {
+      setUpsellOpen(false);
+      return;
+    }
+    const onDown = (e: MouseEvent) => {
+      if (modelRef.current && !modelRef.current.contains(e.target as Node)) setModelMenuOpen(false);
     };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [modelMenuOpen]);
 
+  const chooseModel = async (id: string | undefined) => {
+    setSelectedModel(id);
+    setModelMenuOpen(false);
+    await window.peep.setSettings({ apiModel: id });
+  };
+
+  /* ── Checkpoints: restore files to before an agent message ── */
+  const [checkpointFiles, setCheckpointFiles] = useState<Record<string, number>>({});
+  useEffect(() => window.peep.onAgentCheckpoint(({ id, fileCount }) => {
+    setCheckpointFiles((prev) => ({ ...prev, [id]: fileCount }));
+  }), []);
+
+  const restoreCheckpoint = async (id: string) => {
+    const count = checkpointFiles[id] ?? 0;
+    if (!window.confirm(`Restore ${count} file(s) to how they were before this message?\n\nThis also undoes the agent's changes from every later message.`)) return;
+    try {
+      const restored = await window.peep.restoreCheckpoint(id);
+      await syncEditorsFromDisk(restored);
+      addMessage({
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: `↺ Restored ${restored.length} file(s) to the checkpoint before this message.`,
+        createdAt: new Date().toISOString(),
+      });
+    } catch (err) {
+      window.alert(`Could not restore checkpoint: ${(err as Error).message}`);
+    }
+  };
+
+  /** Reloads open editors from disk; closes ones whose file no longer exists. */
+  const syncEditorsFromDisk = async (paths: string[]) => {
+    const ws = useWorkspaceStore.getState();
+    for (const path of paths) {
+      if (!ws.openFiles.some((f) => f.path === path)) continue;
+      try {
+        ws.syncFileContent(path, await window.peep.readFile(path));
+      } catch {
+        ws.closeFile(path);
+      }
+    }
+  };
+
+  /* ── Images: paste, drop or pick screenshots ── */
+  const [images, setImages] = useState<PendingImage[]>([]);
+  const [isDraggingImage, setIsDraggingImage] = useState(false);
+  const addImages = async (files: File[]) => {
+    const room = MAX_IMAGES - images.length;
+    if (room <= 0) {
+      window.alert(`You can attach up to ${MAX_IMAGES} images per message.`);
+      return;
+    }
+    for (const file of files.slice(0, room)) {
+      try {
+        const image = await readChatImage(file);
+        setImages((prev) => (prev.length < MAX_IMAGES ? [...prev, image] : prev));
+      } catch (err) {
+        window.alert((err as Error).message);
+      }
+    }
+  };
+
+  /* ── @ mentions (attached context) and / commands ── */
+  const [attachments, setAttachments] = useState<MentionItem[]>([]);
+  const [mentionQuery, setMentionQuery] = useState<{ start: number; query: string } | null>(null);
+  const pickerRef = useRef<MentionPickerHandle>(null);
+  const slashRef = useRef<MentionPickerHandle>(null);
+  /** `/command` typed as the whole input so far. */
+  const slashQuery = /^\/(\w*)$/.exec(input)?.[1] ?? null;
+  const [slashDismissed, setSlashDismissed] = useState(false);
+
+  const resizeTextarea = () => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    textarea.style.height = 'auto';
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 250)}px`;
+    textarea.style.overflowY = textarea.scrollHeight > 250 ? 'auto' : 'hidden';
+  };
+
+  const runSlashCommand = (result: SlashCommandResult | null) => {
+    if (!result) {
+      setInput('');
+      return;
+    }
+    setInput(result.prompt);
+    setAttachments((prev) => [...prev, ...result.attachments.filter((a) => !prev.some((p) => p.id === a.id))]);
+    requestAnimationFrame(() => {
+      const textarea = textareaRef.current;
+      if (!textarea) return;
+      textarea.focus();
+      textarea.setSelectionRange(result.prompt.length, result.prompt.length);
+      resizeTextarea();
+    });
+  };
+
+  /** Finds an `@query` token ending at the caret (the `@` must start a word). */
+  const updateMentionQuery = (value: string, caret: number) => {
+    const before = value.slice(0, caret);
+    const match = /(^|\s)@([^\s@]*)$/.exec(before);
+    setMentionQuery(match ? { start: caret - match[2].length - 1, query: match[2] } : null);
+  };
+
+  const selectMention = (item: MentionItem) => {
+    const textarea = textareaRef.current;
+    if (!mentionQuery || !textarea) return;
+    const caret = textarea.selectionStart;
+    const token = `@${item.label} `;
+    const next = input.slice(0, mentionQuery.start) + token + input.slice(caret);
+    setInput(next);
+    setAttachments((prev) => (prev.some((a) => a.id === item.id) ? prev : [...prev, item]));
+    setMentionQuery(null);
+    const nextCaret = mentionQuery.start + token.length;
+    requestAnimationFrame(() => {
+      textarea.focus();
+      textarea.setSelectionRange(nextCaret, nextCaret);
+    });
+  };
+
+  /** The "@" button: starts a mention at the caret, like typing `@`. */
+  const startMention = () => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    const caret = textarea.selectionStart ?? input.length;
+    const needsSpace = caret > 0 && !/\s/.test(input[caret - 1]);
+    const insert = needsSpace ? ' @' : '@';
+    setInput(input.slice(0, caret) + insert + input.slice(caret));
+    const nextCaret = caret + insert.length;
+    setMentionQuery({ start: nextCaret - 1, query: '' });
+    requestAnimationFrame(() => {
+      textarea.focus();
+      textarea.setSelectionRange(nextCaret, nextCaret);
+    });
+  };
+
+  /* ── Sending ── */
   useEffect(() => {
     const handleTriggerAgent = (e: Event) => {
       const customEvent = e as CustomEvent<{ message: string; previewError?: string }>;
       const { message, previewError } = customEvent.detail;
 
+      const userMessageId = crypto.randomUUID();
       addMessage({
-        id: crypto.randomUUID(),
+        id: userMessageId,
         role: 'user',
         content: message,
         createdAt: new Date().toISOString(),
@@ -133,6 +356,7 @@ export function ChatPane({ onOpenSettings: _onOpenSettings }: ChatPaneProps) {
         selectedCode: activeSelection ?? undefined,
         diagnostics,
         previewError,
+        checkpointId: userMessageId,
       });
     };
 
@@ -142,13 +366,15 @@ export function ChatPane({ onOpenSettings: _onOpenSettings }: ChatPaneProps) {
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
-    const trimmed = input.trim();
-    if (!trimmed || isStreaming) return;
+    const typed = input.trim();
+    if ((!typed && images.length === 0) || isStreaming) return;
+    const trimmed = typed || 'See the attached image.';
 
+    const userMessageId = crypto.randomUUID();
     addMessage({
-      id: crypto.randomUUID(),
+      id: userMessageId,
       role: 'user',
-      content: trimmed,
+      content: images.length > 0 ? `${trimmed}\n\n🖼 ${images.length} image${images.length === 1 ? '' : 's'} attached` : trimmed,
       createdAt: new Date().toISOString(),
     });
     setInput('');
@@ -168,15 +394,28 @@ export function ChatPane({ onOpenSettings: _onOpenSettings }: ChatPaneProps) {
       openFileContent: activeFile?.content,
       selectedCode: activeSelection ?? undefined,
       diagnostics,
+      mentions: attachments.map((a) => a.mention),
+      checkpointId: userMessageId,
+      images: images.map(({ mimeType, data }) => ({ mimeType, data })),
       autoApplyEdits: true,
     });
+    setAttachments([]);
+    setImages([]);
+    setMentionQuery(null);
   };
 
-  const handleApply = (editIds: string[]) => {
+  /* ── Pending edits: Keep / Undo / Review ── */
+  const [changesExpanded, setChangesExpanded] = useState(false);
+  const editSummaries = useMemo(
+    () => proposedEdits.map((edit) => ({ edit, ...diffSummary(edit.originalContent, edit.proposedContent) })),
+    [proposedEdits],
+  );
+
+  const handleKeep = (editIds: string[]) => {
     const applied = proposedEdits.filter((e) => editIds.includes(e.id));
     void window.peep.applyAgentEdits(editIds).then(async () => {
       for (const edit of applied) {
-        const existing = openFiles.find((f) => f.path === edit.path);
+        const existing = useWorkspaceStore.getState().openFiles.find((f) => f.path === edit.path);
         if (existing) {
           const content = await window.peep.readFile(edit.path);
           openFile({ ...existing, content, dirty: false });
@@ -187,300 +426,407 @@ export function ChatPane({ onOpenSettings: _onOpenSettings }: ChatPaneProps) {
     });
   };
 
-  const handleReject = (editIds: string[]) => {
-    void window.peep.rejectAgentEdits(editIds).then(() => {
+  const handleUndo = (editIds: string[]) => {
+    const rejected = proposedEdits.filter((e) => editIds.includes(e.id)).map((e) => e.path);
+    void window.peep.rejectAgentEdits(editIds).then(async () => {
+      // Editors were showing the proposed text; put them back to what is on disk.
+      await syncEditorsFromDisk(rejected);
       void window.peep.getPendingEdits().then(setProposedEdits);
     });
   };
 
-  return (
-    <div className="agent-panel" style={{ display: 'flex', height: '100%' }}>
-      <ThreadSidebar />
-      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-        {ipcError && (
-          <div style={{
-            background: 'rgba(248, 81, 73, 0.1)',
-            borderBottom: '1px solid rgba(248, 81, 73, 0.4)',
-            color: '#f85149',
-            padding: '8px 12px',
-            fontSize: '12px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            flexShrink: 0
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4m0 4h.01"/></svg>
-              <span><strong>Backend Unreachable:</strong> {ipcError} — History cannot be synced.</span>
-            </div>
-            <button 
-              onClick={() => useChatStore.getState().setIpcError(null)} 
-              style={{ background: 'none', border: 'none', color: '#f85149', cursor: 'pointer', padding: '4px' }}
-              title="Dismiss"
+  const openReview = () => {
+    openFile({ path: REVIEW_TAB_PATH, name: 'Review Changes', content: '', dirty: false });
+  };
+
+  const openEditPreview = (edit: ProposedEdit) => {
+    openFile({ path: edit.path, name: fileName(edit.path), content: edit.proposedContent, dirty: true });
+  };
+
+  /* ── Rendering ── */
+  const visibleMessages = messages.filter((m) => m.id !== WELCOME_ID);
+  const lastAssistantId = [...visibleMessages].reverse().find((m) => m.role === 'assistant')?.id;
+
+  const renderMessage = (message: AgentMessage) => {
+    if (message.role === 'user') {
+      const files = checkpointFiles[message.id] ?? 0;
+      return (
+        <div className="cx-turn cx-turn--user">
+          <div className="cx-user-msg">{message.content}</div>
+          {files > 0 && (
+            <button
+              type="button"
+              className="cx-restore"
+              disabled={isStreaming}
+              title={isStreaming ? 'Stop the agent first' : 'Undo every file change the agent made from this message onward'}
+              onClick={() => void restoreCheckpoint(message.id)}
             >
-              ✕
+              ↺ Restore checkpoint
             </button>
+          )}
+        </div>
+      );
+    }
+
+    const steps = stepsForRun(timelineActivities, message.runId);
+    const isLive = message.id === streamingMessageId;
+    const showEdits = message.id === lastAssistantId && editSummaries.length > 0;
+
+    return (
+      <div className="cx-turn cx-turn--assistant">
+        {steps.length > 0 && (
+          <div className="cx-steps">
+            {steps.map((a) => {
+              const { verb, target } = stepLabel(a);
+              return (
+                <div key={a.id} className={`cx-step cx-step--${a.status}`} title={a.message}>
+                  <span className="cx-step__verb">{verb}</span>
+                  {target && <span className="cx-step__target">{target}</span>}
+                  {a.status === 'failed' && <span className="cx-step__failed">failed</span>}
+                </div>
+              );
+            })}
           </div>
         )}
-        <div className="chat-agent-header">
-          <div className="chat-agent-header__title">
-            <div className="chat-agent-header__avatar">Ag</div>
-            <span>Agent</span>
+
+        {message.content ? (
+          // Rendered as markdown, never raw HTML: model output can contain injected markup.
+          <div className="cx-markdown">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
           </div>
-        <div style={{ position: 'relative' }} ref={dropdownRef}>
-          <div
-            className={`model-select-btn ${isModelDropdownOpen ? 'active' : ''}`}
-            onClick={() => setIsModelDropdownOpen(!isModelDropdownOpen)}
-          >
-            <div className="agent-ai-dot"></div>
-            {selectedModel}
-            <svg viewBox="0 0 16 16"><path d="M4 6l4 4 4-4" /></svg>
-          </div>
-          {isModelDropdownOpen && (
-            <div style={{
-              position: 'absolute',
-              top: '100%',
-              left: '50%',
-              transform: 'translateX(-50%)',
-              marginTop: '4px',
-              background: '#0d1117',
-              border: '1px solid #30363d',
-              borderRadius: '6px',
-              padding: '4px 0',
-              zIndex: 100,
-              width: 'max-content',
-              minWidth: '180px',
-              boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
-            }}>
-              <div style={{ padding: '2px 10px', fontSize: '10px', color: '#8b949e', marginBottom: '2px' }}>Model</div>
-              {MODELS.map(model => (
-                <div
-                  key={model.name}
-                  onClick={async () => {
-                    setSelectedModel(model.name);
-                    setIsModelDropdownOpen(false);
-                    await window.peep.setSettings({
-                      apiModel: model.name,
-                      apiProvider: model.provider as any,
-                    });
-                  }}
-                  style={{
-                    padding: '6px 10px',
-                    fontSize: '11px',
-                    color: selectedModel === model.name ? 'var(--gold)' : '#c9d1d9',
-                    background: selectedModel === model.name ? 'var(--gold-dim)' : 'transparent',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: '12px',
-                    whiteSpace: 'nowrap',
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.background = selectedModel === model.name ? 'var(--gold-dim)' : 'rgba(255,255,255,0.04)'}
-                  onMouseLeave={(e) => e.currentTarget.style.background = selectedModel === model.name ? 'var(--gold-dim)' : 'transparent'}
-                >
-                  <span>{model.name}</span>
-                  {model.badge && (
-                    <span style={{
-                      fontSize: '9px',
-                      background: 'rgba(255,255,255,0.06)',
-                      padding: '2px 4px',
-                      borderRadius: '8px',
-                      color: selectedModel === model.name ? 'var(--gold)' : '#8b949e',
-                    }}>{model.badge}</span>
-                  )}
+        ) : isLive ? (
+          <div className="cx-thinking">{streamStatus || 'Thinking…'}</div>
+        ) : null}
+
+        {showEdits && (
+          <div className="cx-edits">
+            {editSummaries.map(({ edit, added, removed, preview }) => (
+              <button key={edit.id} type="button" className="cx-edit-card" onClick={() => openEditPreview(edit)} title={edit.path}>
+                <div className="cx-edit-card__head">
+                  <Icon d={ICON.file} size={13} />
+                  <span className="cx-edit-card__name">{fileName(edit.path)}</span>
+                  {added > 0 && <span className="cx-add">+{added}</span>}
+                  {removed > 0 && <span className="cx-del">-{removed}</span>}
                 </div>
-              ))}
+                {preview.length > 0 && (
+                  <div className="cx-edit-card__diff">
+                    {preview.map((line, i) => (
+                      <div key={i} className={`cx-diff-line cx-diff-line--${line.kind === '+' ? 'add' : 'del'}`}>
+                        <span className="cx-diff-line__sign">{line.kind}</span>
+                        <span>{line.text || ' '}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div className="agent-panel cx">
+      {/* ── Tabs ── */}
+      <div className="cx-tabs">
+        <div className="cx-tabs__list">
+          {openTabIds.map((id) => (
+            <div
+              key={id}
+              className={`cx-tab ${id === activeThreadId ? 'cx-tab--active' : ''}`}
+              onClick={() => { if (!isStreaming && id !== activeThreadId) void switchThread(id); }}
+              title={threadTitle(id)}
+            >
+              <span className="cx-tab__title">{threadTitle(id)}</span>
+              <button
+                type="button"
+                className="cx-tab__close"
+                title="Close"
+                disabled={isStreaming && id === activeThreadId}
+                onClick={(e) => { e.stopPropagation(); closeTab(id); }}
+              >
+                <Icon d={ICON.close} size={12} />
+              </button>
             </div>
-          )}
+          ))}
+        </div>
+        <div className="cx-tabs__actions">
+          <button type="button" className="cx-icon-btn" title="New Chat" disabled={isStreaming} onClick={() => void newThread()}>
+            <Icon d={ICON.plus} />
+          </button>
+          <div className="cx-popover-anchor" ref={historyRef}>
+            <button type="button" className={`cx-icon-btn ${historyOpen ? 'cx-icon-btn--on' : ''}`} title="Chat History" onClick={() => setHistoryOpen((v) => !v)}>
+              <Icon d={ICON.history} />
+            </button>
+            {historyOpen && (
+              <div className="cx-menu cx-menu--right">
+                <div className="cx-menu__label">Chat history</div>
+                {threads.length === 0 && <div className="cx-menu__empty">No chats yet</div>}
+                {threads.map((t) => (
+                  <div
+                    key={t.id}
+                    className={`cx-menu__item ${t.id === activeThreadId ? 'cx-menu__item--active' : ''}`}
+                    onClick={() => { setHistoryOpen(false); if (!isStreaming && t.id !== activeThreadId) void switchThread(t.id); }}
+                  >
+                    <span className="cx-menu__text">{threadTitle(t.id)}</span>
+                    <span className="cx-menu__meta">{new Date(t.updated_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
+                    <button
+                      type="button"
+                      className="cx-menu__delete"
+                      title="Delete chat"
+                      disabled={isStreaming}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (window.confirm(`Delete "${threadTitle(t.id)}"?`)) void deleteThread(t.id);
+                      }}
+                    >
+                      <Icon d={ICON.trash} size={12} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <button type="button" className="cx-icon-btn" title="Close Chat (Ctrl+Alt+B)" onClick={() => useWorkspaceStore.getState().toggleAgentPane()}>
+            <Icon d={ICON.panel} />
+          </button>
         </div>
       </div>
 
-      <div className="chat-pane__messages">
-        {messages.length === 0 ? (
-          <div className="chat-empty-state">
-            <div className="msg-avatar">Ag</div>
-            <div className="msg-body">
-              <div className="msg-sender">Antigravity AI</div>
-              <div className="msg-text">
-                Ask anything. Use <code style={{ color: 'var(--gold)', fontFamily: 'var(--font-code)', fontSize: '10px', background: 'var(--gold-dim)', padding: '1px 4px', borderRadius: '3px' }}>@</code> to mention context, <code style={{ color: 'var(--gold)', fontFamily: 'var(--font-code)', fontSize: '10px', background: 'var(--gold-dim)', padding: '1px 4px', borderRadius: '3px' }}>/</code> for actions.
-              </div>
-              <div className="msg-hint">Powered by Gemini 3.1 Pro - Context-aware - Multimodal</div>
+      {ipcError && (
+        <div className="cx-banner">
+          <span><strong>Backend unreachable:</strong> {ipcError}. History can't be synced.</span>
+          <button type="button" className="cx-icon-btn" title="Dismiss" onClick={() => useChatStore.getState().setIpcError(null)}>
+            <Icon d={ICON.close} size={12} />
+          </button>
+        </div>
+      )}
+
+      {/* ── Conversation ── */}
+      <div className="cx-messages">
+        {visibleMessages.length === 0 ? (
+          <div className="cx-empty">
+            <div className="cx-empty__title">Plan, build, fix anything</div>
+            <div className="cx-empty__hint">
+              <kbd>@</kbd> to add files and context · <kbd>/</kbd> for commands · paste images to show the agent your screen
             </div>
           </div>
         ) : (
           <Virtuoso
             style={{ height: '100%' }}
-            data={messages}
+            data={visibleMessages}
             followOutput="smooth"
-            itemContent={(idx, message) => {
-              const isLastAssistantMessage = message.role === 'assistant' && idx === messages.length - 1;
-              return (
-                <div key={message.id} className={`chat-message chat-message--${message.role}`}>
-                  <span className="chat-message__role">{message.role === 'user' ? 'You' : 'Agent'}</span>
-                  <p dangerouslySetInnerHTML={{ __html: (message.content || (isStreaming && message.role === 'assistant' ? '…' : '')).replace(/\n/g, '<br />') }} />
-
-                  {isLastAssistantMessage && proposedEdits.length > 0 && (
-                    <div className="proposed-changes-chat-card" onClick={(e) => e.stopPropagation()}>
-                      <div className="proposed-card-header">
-                        <span className="proposed-card-icon">📄</span>
-                        <span className="proposed-card-title">Proposed Code Edits</span>
-                      </div>
-                      <div className="proposed-card-files">
-                        {proposedEdits.map((edit) => {
-                          const stats = getDiffStats(edit.originalContent, edit.proposedContent);
-                          return (
-                            <div key={edit.id} className="proposed-card-file-row">
-                              <span className="file-name">{edit.path.split(/[\\/]/).pop()}</span>
-                              <span className="file-stats">
-                                <span className="additions">+{stats.added}</span>
-                                <span className="deletions">-{stats.removed}</span>
-                              </span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                      <div className="proposed-card-actions">
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-reject-proposed"
-                          onClick={() => handleReject(proposedEdits.map((e) => e.id))}
-                        >
-                          Reject
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-primary btn-apply-proposed"
-                          onClick={() => handleApply(proposedEdits.map((e) => e.id))}
-                        >
-                          Apply Changes
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            }}
+            computeItemKey={(_, m) => m.id}
+            itemContent={(_, message) => renderMessage(message)}
           />
         )}
       </div>
 
-      {proposedEdits.length > 0 && (
-        <div className="changes-summary-bar-container">
-          {changesBarExpanded && (
-            <div className="changes-summary-dropdown">
-              {proposedEdits.map((edit) => {
-                const stats = getDiffStats(edit.originalContent, edit.proposedContent);
-                return (
-                  <div
-                    key={edit.id}
-                    className="changes-summary-row"
-                    onClick={() => {
-                      openFile({
-                        path: edit.path,
-                        name: edit.path.split(/[\\/]/).pop() ?? edit.path,
-                        content: edit.proposedContent,
-                        dirty: true,
-                      });
-                    }}
-                  >
-                    <span className="changes-row-dot">●</span>
-                    <span className="changes-row-stats">
-                      <span className="additions">+{stats.added}</span>
-                      <span className="deletions">-{stats.removed}</span>
-                    </span>
-                    <span className="changes-row-filename">{edit.path.split(/[\\/]/).pop()}</span>
-                    <span className="changes-row-path">{edit.path}</span>
-                  </div>
-                );
-              })}
+      {/* ── Pending changes bar ── */}
+      {editSummaries.length > 0 && (
+        <div className="cx-changes">
+          {changesExpanded && (
+            <div className="cx-changes__list">
+              {editSummaries.map(({ edit, added, removed }) => (
+                <div key={edit.id} className="cx-changes__row" onClick={() => openEditPreview(edit)} title={edit.path}>
+                  <Icon d={ICON.file} size={12} />
+                  <span className="cx-changes__name">{fileName(edit.path)}</span>
+                  <span className="cx-add">+{added}</span>
+                  <span className="cx-del">-{removed}</span>
+                  <span className="cx-changes__row-actions">
+                    <button type="button" className="cx-text-btn" onClick={(e) => { e.stopPropagation(); handleUndo([edit.id]); }}>Undo</button>
+                    <button type="button" className="cx-text-btn" onClick={(e) => { e.stopPropagation(); handleKeep([edit.id]); }}>Keep</button>
+                  </span>
+                </div>
+              ))}
             </div>
           )}
-          <div className="changes-summary-bar">
-            <span className="summary-left" onClick={() => setChangesBarExpanded(!changesBarExpanded)}>
-              📄 {proposedEdits.length} Files With Changes
-            </span>
-            <div className="summary-right">
-              <button
-                type="button"
-                className="btn btn-ghost summary-btn-reject"
-                onClick={() => handleReject(proposedEdits.map((e) => e.id))}
-              >
-                Reject all
-              </button>
-              <button
-                type="button"
-                className="summary-btn-accept"
-                onClick={() => handleApply(proposedEdits.map((e) => e.id))}
-              >
-                Accept all
-              </button>
-              <button
-                type="button"
-                className="summary-chevron-btn"
-                onClick={() => setChangesBarExpanded(!changesBarExpanded)}
-              >
-                {changesBarExpanded ? '▼' : '▲'}
-              </button>
+          <div className="cx-changes__bar">
+            <button type="button" className="cx-changes__toggle" onClick={() => setChangesExpanded((v) => !v)}>
+              <span className={`cx-chevron ${changesExpanded ? 'cx-chevron--open' : ''}`}><Icon d={ICON.chevron} size={12} /></span>
+              {editSummaries.length} File{editSummaries.length === 1 ? '' : 's'}
+            </button>
+            <div className="cx-changes__actions">
+              <button type="button" className="cx-text-btn" onClick={() => handleUndo(proposedEdits.map((e) => e.id))}>Undo All</button>
+              <button type="button" className="cx-text-btn" onClick={() => handleKeep(proposedEdits.map((e) => e.id))}>Keep All</button>
+              <button type="button" className="cx-review-btn" onClick={openReview}>Review</button>
             </div>
           </div>
         </div>
       )}
 
-      {isStreaming && <AgentTimeline />}
+      {/* ── Composer ── */}
+      <div className="cx-composer-wrap">
+        {slashQuery !== null && !slashDismissed && (
+          <SlashCommandPicker
+            ref={slashRef}
+            query={slashQuery}
+            onRun={runSlashCommand}
+            onClose={() => setSlashDismissed(true)}
+          />
+        )}
+        {mentionQuery && (
+          <MentionPicker
+            ref={pickerRef}
+            query={mentionQuery.query}
+            onSelect={selectMention}
+            onClose={() => setMentionQuery(null)}
+          />
+        )}
+        <form
+          className={`cx-composer ${isDraggingImage ? 'cx-composer--drop' : ''}`}
+          onSubmit={handleSubmit}
+          onDragOver={(e) => {
+            if (![...e.dataTransfer.items].some((i) => i.type.startsWith('image/'))) return;
+            e.preventDefault();
+            setIsDraggingImage(true);
+          }}
+          onDragLeave={() => setIsDraggingImage(false)}
+          onDrop={(e) => {
+            setIsDraggingImage(false);
+            const files = imageFilesFrom(e.dataTransfer);
+            if (files.length === 0) return;
+            e.preventDefault();
+            void addImages(files);
+          }}
+        >
+          {(attachments.length > 0 || activeFile || images.length > 0) && (
+            <div className="cx-context">
+              {images.map((img) => (
+                <div key={img.id} className="cx-image-thumb">
+                  <img src={img.previewUrl} alt="Attached" />
+                  <button type="button" title="Remove image" onClick={() => setImages((prev) => prev.filter((i) => i.id !== img.id))}>
+                    <Icon d={ICON.close} size={10} />
+                  </button>
+                </div>
+              ))}
+              {attachments.map((a) => (
+                <span key={a.id} className="cx-pill" title={a.detail ?? a.label}>
+                  <MentionIcon icon={a.icon} name={a.label} />
+                  <span>{a.label}</span>
+                  <button type="button" title="Remove" onClick={() => setAttachments((prev) => prev.filter((x) => x.id !== a.id))}>
+                    <Icon d={ICON.close} size={10} />
+                  </button>
+                </span>
+              ))}
+              {activeFile && (
+                <span className="cx-pill cx-pill--auto" title={`${activeFile.path} (current file, sent automatically)`}>
+                  <Icon d={ICON.file} size={11} />
+                  <span>{activeFile.name}</span>
+                </span>
+              )}
+            </div>
+          )}
 
-      <div className="chat-pane__input-wrapper">
-        <form className="chat-pane__input-box" onSubmit={handleSubmit}>
           <textarea
             ref={textareaRef}
-            className="chat-pane__textarea"
-            placeholder="Ask the agent..."
+            className="cx-textarea"
+            placeholder={isStreaming ? 'Agent is working…' : 'Plan, build, @ for context'}
             value={input}
             rows={1}
             onChange={(e) => {
               setInput(e.target.value);
-              e.target.style.height = 'auto';
-              e.target.style.height = `${Math.min(e.target.scrollHeight, 250)}px`;
+              setSlashDismissed(false);
+              updateMentionQuery(e.target.value, e.target.selectionStart);
+              resizeTextarea();
             }}
+            onClick={(e) => updateMentionQuery(e.currentTarget.value, e.currentTarget.selectionStart)}
+            onPaste={(e) => {
+              const files = imageFilesFrom(e.clipboardData);
+              if (files.length === 0) return;
+              e.preventDefault();
+              void addImages(files);
+            }}
+            onBlur={() => setMentionQuery(null)}
             onKeyDown={(e) => {
+              if (mentionQuery && pickerRef.current?.handleKeyDown(e)) return;
+              if (slashQuery !== null && !slashDismissed && slashRef.current?.handleKeyDown(e)) return;
+              // Backspace in an empty input removes the last attached context.
+              if (e.key === 'Backspace' && !input && attachments.length > 0) {
+                setAttachments((prev) => prev.slice(0, -1));
+                return;
+              }
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 handleSubmit(e as unknown as FormEvent);
               }
             }}
-          ></textarea>
+          />
 
-          <div className="chat-pane__input-bottom">
-            <div className="chat-pane__input-toolbar">
-              <button type="button" className="icon-btn" title="Attach context">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-              </button>
-              <button type="button" className="icon-btn" title="Voice input">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" y1="19" x2="12" y2="22" /><line x1="8" y1="22" x2="16" y2="22" /></svg>
-              </button>
-              
-              <div className="context-pills">
-                {activeFile && (
-                  <span className="context-pill">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline></svg>
-                    {activeFile.name}
-                  </span>
+          <div className="cx-composer__bar">
+            <div className="cx-composer__left">
+              <div className="cx-popover-anchor" ref={modelRef}>
+                <button type="button" className="cx-chip" title="Model" onClick={() => setModelMenuOpen((v) => !v)}>
+                  {modelLabel}
+                  <Icon d={ICON.down} size={11} />
+                </button>
+                {modelMenuOpen && (
+                  <div className="cx-menu cx-menu--up">
+                    {upsellOpen ? (
+                      <div className="cx-upsell">
+                        <div className="cx-upsell__title">Upgrade to unlock premium models</div>
+                        <div className="cx-upsell__text">Choosing a model is available on paid plans. On the Free plan, Auto picks a fast model for each task.</div>
+                        <div className="cx-upsell__actions">
+                          <button type="button" className="cx-text-btn" onClick={() => setUpsellOpen(false)}>Back</button>
+                          <button type="button" className="cx-upsell__btn" onClick={() => { setModelMenuOpen(false); setUpsellOpen(false); openWebPage('pricing'); }}>Upgrade to Pro</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="cx-menu__label">Model</div>
+                        {MODELS.map((m) => {
+                          const locked = !canPickModel && m.id !== undefined;
+                          return (
+                            <div
+                              key={m.label}
+                              className={`cx-menu__item ${m.id === effectiveModel ? 'cx-menu__item--active' : ''} ${locked ? 'cx-menu__item--locked' : ''}`}
+                              title={locked ? 'Available on paid plans' : undefined}
+                              onClick={() => (locked ? setUpsellOpen(true) : void chooseModel(m.id))}
+                            >
+                              <span className="cx-menu__text">{m.label}</span>
+                              {locked ? <span className="cx-menu__lock" aria-label="Locked"><Icon d={ICON.lock} size={12} /></span> : <span className="cx-menu__meta">{m.hint}</span>}
+                            </div>
+                          );
+                        })}
+                      </>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
 
-            <button type="submit" className="chat-submit-btn" disabled={!input.trim() || isStreaming}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 2L11 13 M22 2l-7 20-4-9-9-4 20-7z" /></svg>
-            </button>
+            <div className="cx-composer__right">
+              <button type="button" className="cx-icon-btn" title="Add context (@)" onMouseDown={(e) => e.preventDefault()} onClick={startMention}>
+                <span className="cx-at">@</span>
+              </button>
+              <button type="button" className="cx-icon-btn" title="Attach image" onClick={() => imageInputRef.current?.click()}>
+                <Icon d={ICON.image} />
+              </button>
+              <input
+                ref={imageInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                hidden
+                onChange={(e) => {
+                  const files = [...(e.target.files ?? [])];
+                  e.target.value = '';
+                  if (files.length) void addImages(files);
+                }}
+              />
+              {isStreaming ? (
+                <button type="button" className="cx-send cx-send--stop" title="Stop" onClick={() => void window.peep.cancelAgent()}>
+                  <span className="cx-stop-square" />
+                </button>
+              ) : (
+                <button type="submit" className="cx-send" title="Send (Enter)" disabled={!input.trim() && images.length === 0}>
+                  <Icon d={ICON.send} size={14} />
+                </button>
+              )}
+            </div>
           </div>
         </form>
-        
-        <div className="chat-pane__footer-text">
-          <span className="footer-model">{selectedModel}</span>
-          <span className="footer-dot">•</span>
-          <span className="footer-context">Powered by Gemini AI</span>
-        </div>
-        </div>
       </div>
     </div>
   );

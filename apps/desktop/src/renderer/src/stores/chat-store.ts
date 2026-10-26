@@ -48,9 +48,27 @@ interface ChatState {
   switchThread: (threadId: string) => Promise<void>;
   newThread: () => Promise<void>;
   deleteActiveThread: () => Promise<void>;
+  deleteThread: (threadId: string) => Promise<void>;
 }
 
 let saveTimeout: ReturnType<typeof setTimeout> | null = null;
+/** Chats created locally that have no user message yet, so the backend doesn't know them. */
+const unsavedThreadIds = new Set<string>();
+/** Conversations already open this session, so switching chat tabs is instant and works offline. */
+const sessionThreads = new Map<string, Pick<ChatState, 'messages' | 'timelineActivities' | 'runs'>>();
+
+function rememberActiveThread(state: ChatState) {
+  if (state.activeThreadId) {
+    sessionThreads.set(state.activeThreadId, { messages: state.messages, timelineActivities: state.timelineActivities, runs: state.runs });
+  }
+}
+
+const welcomeMessage = (): AgentMessage => ({
+  id: 'welcome',
+  role: 'assistant',
+  content: 'Ask anything, @ to mention, / for actions.',
+  createdAt: new Date().toISOString(),
+});
 let currentProjectPath: string | null = null;
 let flushPendingSave: (() => void) | null = null;
 
@@ -73,6 +91,7 @@ function triggerSave(state: ChatState) {
     flushPendingSave = null;
     
     if (threadId) {
+      if (payload.messages.some((m) => m.role === 'user')) unsavedThreadIds.delete(threadId);
       const runsMap = new Map<string, any>();
       for (const act of state.timelineActivities) {
         if (!runsMap.has(act.runId)) {
@@ -92,7 +111,8 @@ function triggerSave(state: ChatState) {
         }
       }
       const runs = Array.from(runsMap.values());
-      (window as any).peep?.saveChatThread?.(threadId, payload.messages, undefined, runs).catch((err: any) => {
+      const title = state.threads.find((t) => t.id === threadId)?.title;
+      (window as any).peep?.saveChatThread?.(threadId, payload.messages, title, runs).catch((err: any) => {
         console.error('Save failed:', err);
         Sentry.captureException(err);
         useChatStore.getState().setIpcError('Failed to save to backend');
@@ -108,6 +128,9 @@ function triggerSave(state: ChatState) {
 
   saveTimeout = setTimeout(flushPendingSave, 750);
 }
+
+/** Unstripped text of the reply being streamed. */
+let streamingRaw = { id: '', text: '' };
 
 function stripCodeBlocks(text: string): string {
   // Strip introductory lines pointing to code files
@@ -155,14 +178,22 @@ export const useChatStore = create<ChatState>((set, get) => ({
   setAgentTask: (task) => set({ agentTask: task }),
   setIpcError: (ipcError) => set({ ipcError }),
   addMessage: (message) =>
-    set((state) => ({
-      messages: [
-        ...state.messages,
-        message.role === 'assistant'
-          ? { ...message, content: stripCodeBlocks(message.content) }
-          : message,
-      ],
-    })),
+    set((state) => {
+      // The first user message names the chat (shown in tabs and history, saved with the thread).
+      const isFirstUserMessage = message.role === 'user' && !state.messages.some((m) => m.role === 'user');
+      const title = isFirstUserMessage ? message.content.split('\n')[0].trim().slice(0, 60) : '';
+      return {
+        messages: [
+          ...state.messages,
+          message.role === 'assistant'
+            ? { ...message, content: stripCodeBlocks(message.content) }
+            : message,
+        ],
+        threads: title
+          ? state.threads.map((t) => (t.id === state.activeThreadId && (!t.title || t.title === 'New Chat') ? { ...t, title } : t))
+          : state.threads,
+      };
+    }),
 
   startStreaming: (messageId) =>
     set({
@@ -175,12 +206,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
   appendToStreamingMessage: (delta) => {
     const { streamingMessageId, messages } = get();
     if (!streamingMessageId) return;
+    // Strip from the full raw text each time: stripping already-stripped text trimmed the
+    // spaces between chunks and let code from a half-received block leak into the reply.
+    if (streamingRaw.id !== streamingMessageId) streamingRaw = { id: streamingMessageId, text: '' };
+    streamingRaw.text += delta;
+    const content = stripCodeBlocks(streamingRaw.text);
     set({
-      messages: messages.map((m) =>
-        m.id === streamingMessageId
-          ? { ...m, content: stripCodeBlocks(m.content + delta) }
-          : m
-      ),
+      messages: messages.map((m) => (m.id === streamingMessageId ? { ...m, content } : m)),
     });
   },
 
@@ -203,7 +235,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
         currentRunId: activity.runId,
         selectedRunId: activity.runId,
         timelineActivities: [...state.timelineActivities, activity],
-        runs: newRuns
+        runs: newRuns,
+        // Tie the run to the reply being streamed so its steps render inside that message.
+        messages: state.streamingMessageId
+          ? state.messages.map((m) => (m.id === state.streamingMessageId ? { ...m, runId: activity.runId } : m))
+          : state.messages,
       };
     }
 
@@ -232,6 +268,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
   loadHistory: async (projectPath: string) => {
     if (flushPendingSave && currentProjectPath && currentProjectPath !== projectPath) {
       flushPendingSave();
+    }
+    if (currentProjectPath !== projectPath) {
+      sessionThreads.clear();
+      unsavedThreadIds.clear();
     }
     currentProjectPath = projectPath;
     try {
@@ -290,6 +330,32 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return;
     }
     if (flushPendingSave) flushPendingSave();
+    rememberActiveThread(get());
+    // Re-selecting the current chat reloads it from the backend; other tabs come from memory.
+    const cached = threadId !== get().activeThreadId ? sessionThreads.get(threadId) : undefined;
+    if (cached) {
+      set({
+        activeThreadId: threadId,
+        ...cached,
+        selectedRunId: cached.runs.length > 0 ? cached.runs[cached.runs.length - 1].run_id : null,
+        currentRunId: null,
+        agentPhase: 'idle',
+      });
+      return;
+    }
+    if (unsavedThreadIds.has(threadId)) {
+      // Never sent a message, so there is nothing to load.
+      set({
+        activeThreadId: threadId,
+        messages: [welcomeMessage()],
+        runs: [],
+        selectedRunId: null,
+        timelineActivities: [],
+        currentRunId: null,
+        agentPhase: 'idle',
+      });
+      return;
+    }
     try {
       get().setIpcError(null);
       const data = await (window as any).peep?.loadChatThread?.(threadId);
@@ -325,10 +391,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
       console.warn('Cannot create thread while agent is active');
       return;
     }
+    // Already on an empty new chat: reuse it instead of piling up empty ones.
+    const current = get();
+    if (current.activeThreadId && unsavedThreadIds.has(current.activeThreadId) && !current.messages.some((m) => m.role === 'user')) return;
     if (flushPendingSave) flushPendingSave();
+    rememberActiveThread(current);
     
     // Create local thread placeholder, will be saved on first message
     const threadId = crypto.randomUUID();
+    unsavedThreadIds.add(threadId);
     const newThread = { id: threadId, title: 'New Chat', updated_at: new Date().toISOString() };
     set({
       activeThreadId: threadId,
@@ -347,6 +418,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
     });
   },
 
+  deleteThread: async (threadId: string) => {
+    sessionThreads.delete(threadId);
+    if (threadId === get().activeThreadId) return get().deleteActiveThread();
+    try {
+      await (window as any).peep?.deleteChatThread?.(threadId);
+      set({ threads: get().threads.filter((t) => t.id !== threadId) });
+    } catch (e) {
+      console.error('Failed to delete thread', e);
+      Sentry.captureException(e);
+    }
+  },
+
   deleteActiveThread: async () => {
     const { activeThreadId, agentPhase } = get();
     if (!activeThreadId) return;
@@ -357,7 +440,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
     try {
       await (window as any).peep?.deleteChatThread?.(activeThreadId);
       const remaining = get().threads.filter(t => t.id !== activeThreadId);
-      set({ threads: remaining });
+      sessionThreads.delete(activeThreadId);
+      unsavedThreadIds.delete(activeThreadId);
+      // Cleared so the switch below doesn't cache the deleted chat again.
+      set({ threads: remaining, activeThreadId: null });
       if (remaining.length > 0) {
         await get().switchThread(remaining[0].id);
       } else {

@@ -194,8 +194,10 @@
   flex: 1 !important;
   min-height: 0;
   overflow: hidden;
-  /* Xcode-style dark stage background */
-  background: #1a1a1e;
+  align-self: stretch;
+  width: 100%;
+  /* Transparent: inherits whatever is behind it, so no box shows around the phone */
+  background: transparent;
 }
 
 .preview-platform-badge { display: none; }
@@ -213,12 +215,7 @@
   padding: 14px 12px;
   gap: 8px;
   overflow: hidden;
-  /* Subtle radial glow behind the phone — like a desk surface */
-  background:
-    radial-gradient(ellipse 70% 55% at 50% 55%,
-      rgba(50, 50, 60, 0.6) 0%,
-      transparent 75%
-    );
+  background: transparent;
 }
 
 

@@ -170,8 +170,8 @@ export function FrameForeground({ device }: { device: DeviceConfig }) {
         <div className="pf-btn pf-btn--vol-up pf-btn--android-vol-up" />
 
         <div className="pf-bezel pf-bezel--fold">
+          {/* Inner-screen camera sits in the bezel on the real device, not over the content. */}
           <div className="pf-fold-hinge" />
-          <div className="pf-punchhole pf-punchhole--fold" />
           <div className="pf-android-bar" />
         </div>
 

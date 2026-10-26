@@ -4,6 +4,7 @@ import { UpdateBanner } from './features/shared/UpdateBanner';
 import { usePeepEvents } from './hooks/usePeepEvents';
 import { DetachedPreview } from './features/preview/DetachedPreview';
 import { useComposerStore } from './stores/composer-store';
+import { handleGlobalKeyDown } from './commands/keybindings';
 import { useAuthStore } from './stores/auth-store';
 import { useWorkspaceStore } from './stores/workspace-store';
 import { useChatStore } from './stores/chat-store';
@@ -16,6 +17,9 @@ const NewProjectModal = lazy(() => import('./features/project/NewProjectModal').
 const OnboardingWizard = lazy(() => import('./features/onboarding/OnboardingWizard').then(m => ({ default: m.OnboardingWizard })));
 const KeyboardHelp = lazy(() => import('./features/shared/KeyboardHelp').then(m => ({ default: m.KeyboardHelp })));
 const PublishModal = lazy(() => import('./features/publish/PublishModal').then(m => ({ default: m.PublishModal })));
+const CloneRepoModal = lazy(() => import('./features/project/CloneRepoModal').then(m => ({ default: m.CloneRepoModal })));
+const SshConnectModal = lazy(() => import('./features/project/SshConnectModal').then(m => ({ default: m.SshConnectModal })));
+const CommandPalette = lazy(() => import('./features/shared/CommandPalette').then(m => ({ default: m.CommandPalette })));
 
 export default function App() {
   usePeepEvents();
@@ -28,9 +32,13 @@ export default function App() {
   const project = useWorkspaceStore((s) => s.project);
   const [globalPickerOpen, setGlobalPickerOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<string | undefined>();
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [publishOpen, setPublishOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [cloneOpen, setCloneOpen] = useState(false);
+  const [sshOpen, setSshOpen] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState<boolean | null>(null);
 
   // Check session on mount
@@ -60,33 +68,19 @@ export default function App() {
     });
   }, []);
 
-  // Global keyboard shortcuts
+  // Global keybindings (see commands/commands.ts for the full list)
   useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      const ctrl = event.ctrlKey || event.metaKey;
-      const key  = event.key.toLowerCase();
-
-      if (ctrl && key === 'p') { event.preventDefault(); setGlobalPickerOpen(true); }
-      if (ctrl && key === ',') { event.preventDefault(); setSettingsOpen(true); }
-      if (ctrl && key === 'n') { event.preventDefault(); setNewProjectOpen(true); }
-      if (ctrl && key === 'i') {
-        event.preventDefault();
-        const { isOpen, setOpen } = useComposerStore.getState();
-        setOpen(!isOpen);
-      }
-      if (event.key === 'F1' || (event.shiftKey && key === '?')) {
-        event.preventDefault();
-        setHelpOpen((v) => !v);
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
   }, []);
 
   // Custom events from UI buttons
   useEffect(() => {
     const onOpenPicker = () => setGlobalPickerOpen(true);
-    const onOpenSettings = () => setSettingsOpen(true);
+    const onOpenSettings = (e: Event) => {
+      setSettingsSection((e as CustomEvent<{ section?: string } | undefined>).detail?.section);
+      setSettingsOpen(true);
+    };
     const onOpenPublish = () => setPublishOpen(true);
     const onOpenComposer = (e: Event) => {
       const customEvent = e as CustomEvent<{ filePath: string }>;
@@ -95,12 +89,20 @@ export default function App() {
       setOpen(true);
     };
     const onNewProject = () => setNewProjectOpen(true);
+    const onOpenPalette = () => setPaletteOpen(true);
+    const onOpenKeyboardHelp = () => setHelpOpen(true);
+    const onCloneRepo = () => setCloneOpen(true);
+    const onSshConnect = () => setSshOpen(true);
 
     window.addEventListener('peep:open-picker', onOpenPicker);
     window.addEventListener('peep:open-settings', onOpenSettings);
     window.addEventListener('peep:open-publish', onOpenPublish);
     window.addEventListener('peep:open-composer', onOpenComposer);
     window.addEventListener('peep:new-project', onNewProject);
+    window.addEventListener('peep:open-command-palette', onOpenPalette);
+    window.addEventListener('peep:open-keyboard-help', onOpenKeyboardHelp);
+    window.addEventListener('peep:clone-repo', onCloneRepo);
+    window.addEventListener('peep:ssh-connect', onSshConnect);
 
     return () => {
       window.removeEventListener('peep:open-picker', onOpenPicker);
@@ -108,6 +110,10 @@ export default function App() {
       window.removeEventListener('peep:open-publish', onOpenPublish);
       window.removeEventListener('peep:open-composer', onOpenComposer);
       window.removeEventListener('peep:new-project', onNewProject);
+      window.removeEventListener('peep:open-command-palette', onOpenPalette);
+      window.removeEventListener('peep:open-keyboard-help', onOpenKeyboardHelp);
+      window.removeEventListener('peep:clone-repo', onCloneRepo);
+      window.removeEventListener('peep:ssh-connect', onSshConnect);
     };
   }, []);
 
@@ -138,7 +144,7 @@ export default function App() {
         <UpdateBanner />
         <HomeScreen />
         <Suspense fallback={null}>
-          {settingsOpen && <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />}
+          {settingsOpen && <SettingsModal open={settingsOpen} initialSection={settingsSection} onClose={() => setSettingsOpen(false)} />}
           {newProjectOpen && (
             <NewProjectModal
               open={newProjectOpen}
@@ -147,6 +153,11 @@ export default function App() {
             />
           )}
           {helpOpen && <KeyboardHelp open={helpOpen} onClose={() => setHelpOpen(false)} />}
+          {paletteOpen && <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />}
+        {cloneOpen && <CloneRepoModal onClose={() => setCloneOpen(false)} />}
+        {sshOpen && <SshConnectModal onClose={() => setSshOpen(false)} />}
+          {cloneOpen && <CloneRepoModal onClose={() => setCloneOpen(false)} />}
+          {sshOpen && <SshConnectModal onClose={() => setSshOpen(false)} />}
         </Suspense>
       </>
     );
@@ -159,13 +170,13 @@ export default function App() {
       <UpdateBanner />
 
       <AppShell
-        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenSettings={() => { setSettingsSection(undefined); setSettingsOpen(true); }}
         onNewProject={() => setNewProjectOpen(true)}
       />
 
       <Suspense fallback={null}>
         {globalPickerOpen && <FilePicker open={globalPickerOpen} onClose={() => setGlobalPickerOpen(false)} />}
-        {settingsOpen && <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />}
+        {settingsOpen && <SettingsModal open={settingsOpen} initialSection={settingsSection} onClose={() => setSettingsOpen(false)} />}
         {newProjectOpen && (
           <NewProjectModal
             open={newProjectOpen}
@@ -175,6 +186,7 @@ export default function App() {
         )}
         {publishOpen && <PublishModal open={publishOpen} onClose={() => setPublishOpen(false)} />}
         {helpOpen && <KeyboardHelp open={helpOpen} onClose={() => setHelpOpen(false)} />}
+        {paletteOpen && <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />}
         {showOnboarding && <OnboardingWizard onComplete={() => setShowOnboarding(false)} />}
       </Suspense>
     </>

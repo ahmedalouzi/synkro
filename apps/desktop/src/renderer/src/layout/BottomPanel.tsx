@@ -5,7 +5,12 @@ import { useWorkspace } from '../hooks/useWorkspace';
 import { TerminalPanel } from '../features/terminal/TerminalPanel';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { BuildPanel } from '../features/build/BuildPanel';
+// Imported here rather than in BuildPanel.tsx, which the Node test harness also loads.
+import '../features/build/BuildPanel.css';
+import '@xterm/xterm/css/xterm.css';
 import { useBuildStore } from '../stores/build-store';
+import { askAgent } from '../features/chat/ask-agent';
+import { runCommand } from '../commands/commands';
 
 function LogsTabContent({ logs }: { logs: string[] }) {
   const parentRef = useRef<HTMLDivElement>(null);
@@ -131,6 +136,17 @@ function ProblemsTabContent({ diagnostics, loadFile, errorCount, warningCount }:
               <span style={{ color: 'var(--text-muted)', flexShrink: 0, fontSize: '10px', alignSelf: 'center' }}>
                 {shortFile}:{item.line}{(item as any).col ? `:${(item as any).col}` : ''}
               </span>
+              <button
+                type="button"
+                title="Ask the agent to fix this problem"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  askAgent(`Fix this ${item.severity} in ${item.file} at line ${item.line}: ${item.message}`);
+                }}
+                style={{ flexShrink: 0, alignSelf: 'center', fontSize: '10px', padding: '1px 6px', borderRadius: '4px', border: '1px solid var(--border-bright)', background: 'transparent', color: 'var(--accent)', cursor: 'pointer' }}
+              >
+                ✦ Fix
+              </button>
             </div>
           );
         })}
@@ -179,8 +195,8 @@ export function BottomPanel() {
         </div>
         
         <div className="terminal-controls">
-          <button className="terminal-btn">+</button>
-          <button className="terminal-btn">^</button>
+          <button className="terminal-btn" title="New Terminal (Ctrl+Shift+`)" onClick={() => runCommand('workbench.action.terminal.new')}>+</button>
+          <button className="terminal-btn" title="Maximize Panel Size" onClick={() => runCommand('workbench.action.toggleMaximizedPanel')}>^</button>
           <button className="terminal-btn" onClick={() => useWorkspaceStore.getState().toggleBottomPanel()}>✕</button>
         </div>
       </div>

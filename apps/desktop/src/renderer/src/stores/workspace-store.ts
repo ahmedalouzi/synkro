@@ -19,11 +19,17 @@ interface WorkspaceState {
 
   bottomPanelOpen: boolean;
   sidebarOpen: boolean;
+  /** Side bar on the start page (no project), hidden by default like Cursor's. */
+  homeSidebarOpen: boolean;
+  /** Status bar at the bottom of the window (View › Appearance › Status Bar). */
+  statusBarVisible: boolean;
   agentPaneOpen: boolean;
   previewPaneOpen: boolean;
   sidebarView: 'explorer' | 'extensions' | 'search' | 'git';
   bottomPanelTab: 'problems' | 'logs' | 'terminal' | 'git' | 'build';
   isLoading: boolean;
+  editorWordWrap: boolean;
+  editorMinimap: boolean;
   creatingItem: { type: 'file' | 'folder', baseDir: string } | null;
   renamingItem: FileEntry | null;
   selectedExplorerPath: { path: string, type: 'file' | 'directory' } | null;
@@ -37,9 +43,19 @@ interface WorkspaceState {
   setActiveSelection: (selection: { text: string; startLine: number; endLine: number; filePath: string } | null) => void;
   setFileExternallyModified: (path: string, modified: boolean) => void;
   syncFileContent: (path: string, content: string) => void;
+  /** Clears the dirty flag after a write, unless the buffer changed while saving. */
+  markFileSaved: (path: string, savedContent: string) => void;
   closeFile: (path: string) => void;
+  closeAllFiles: () => void;
+  /** Closes several editors at once, keeping the active one if it stays open. */
+  closeFiles: (paths: string[]) => void;
+  moveOpenFile: (path: string, toIndex: number) => void;
+  toggleEditorWordWrap: () => void;
+  toggleEditorMinimap: () => void;
   toggleBottomPanel: () => void;
   toggleSidebar: () => void;
+  toggleHomeSidebar: () => void;
+  toggleStatusBar: () => void;
   setSidebarView: (view: 'explorer' | 'extensions' | 'search' | 'git') => void;
   toggleAgentPane: () => void;
   setPreviewPaneOpen: (open: boolean) => void;
@@ -54,6 +70,8 @@ interface WorkspaceState {
   mergeRootChildren: (children: FileEntry[]) => void;
 }
 
+const STATUS_BAR_KEY = 'synkro.statusBarVisible';
+
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   project: null,
   recentProjects: [],
@@ -63,11 +81,21 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   activeSelection: null,
   bottomPanelOpen: true,
   sidebarOpen: true,
+  homeSidebarOpen: false,
+  statusBarVisible: (() => {
+    try {
+      return localStorage.getItem(STATUS_BAR_KEY) !== 'hidden';
+    } catch {
+      return true;
+    }
+  })(),
   sidebarView: 'explorer',
   agentPaneOpen: true,
   previewPaneOpen: true,
   bottomPanelTab: 'problems',
   isLoading: false,
+  editorWordWrap: true,
+  editorMinimap: true,
   creatingItem: null,
   renamingItem: null,
   selectedExplorerPath: null,
@@ -105,6 +133,14 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     });
   },
 
+  markFileSaved: (path, savedContent) => {
+    set({
+      openFiles: get().openFiles.map((f) =>
+        f.path === path && f.content === savedContent ? { ...f, dirty: false, externallyModified: false } : f,
+      ),
+    });
+  },
+
   setActiveFile: (activeFilePath) => set({ activeFilePath }),
 
   setFileExternallyModified: (path, modified) => {
@@ -125,10 +161,41 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     set({ openFiles: next, activeFilePath: nextActive });
   },
 
+  closeAllFiles: () => set({ openFiles: [], activeFilePath: null }),
+  closeFiles: (paths) => {
+    const closing = new Set(paths);
+    const { openFiles, activeFilePath } = get();
+    const next = openFiles.filter((f) => !closing.has(f.path));
+    const nextActive = activeFilePath && !closing.has(activeFilePath)
+      ? activeFilePath
+      : next[next.length - 1]?.path ?? null;
+    set({ openFiles: next, activeFilePath: nextActive });
+  },
+  moveOpenFile: (path, toIndex) => {
+    const files = [...get().openFiles];
+    const from = files.findIndex((f) => f.path === path);
+    if (from < 0) return;
+    const [moved] = files.splice(from, 1);
+    files.splice(Math.max(0, Math.min(toIndex, files.length)), 0, moved);
+    set({ openFiles: files });
+  },
+  toggleEditorWordWrap: () => set({ editorWordWrap: !get().editorWordWrap }),
+  toggleEditorMinimap: () => set({ editorMinimap: !get().editorMinimap }),
+
   setActiveSelection: (selection) => set({ activeSelection: selection }),
 
   toggleBottomPanel: () => set({ bottomPanelOpen: !get().bottomPanelOpen }),
   toggleSidebar: () => set({ sidebarOpen: !get().sidebarOpen }),
+  toggleHomeSidebar: () => set({ homeSidebarOpen: !get().homeSidebarOpen }),
+  toggleStatusBar: () => {
+    const statusBarVisible = !get().statusBarVisible;
+    try {
+      localStorage.setItem(STATUS_BAR_KEY, statusBarVisible ? 'visible' : 'hidden');
+    } catch {
+      // Not persisted; still applies to this session.
+    }
+    set({ statusBarVisible });
+  },
   setSidebarView: (view) => set({ sidebarView: view, sidebarOpen: true }),
   toggleAgentPane: () => set({ agentPaneOpen: !get().agentPaneOpen }),
   setPreviewPaneOpen: (previewPaneOpen) => set({ previewPaneOpen }),

@@ -2,8 +2,9 @@
   "name": "@peep/desktop",
   "version": "0.1.0",
   "private": true,
-  "description": "Peep desktop application",
-  "author": "Peep",
+  "productName": "Synkro",
+  "description": "Synkro desktop application",
+  "author": "Synkro",
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
@@ -17,6 +18,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json"
   },
   "dependencies": {
+    "@lydell/node-pty": "1.2.0-beta.15",
     "@monaco-editor/react": "^4.7.0",
     "@peep/agent": "workspace:*",
     "@peep/flutter-adapter": "workspace:*",
@@ -26,6 +28,8 @@
     "@sentry/react": "^10.73.0",
     "@tanstack/react-virtual": "^3.14.9",
     "@xterm/addon-fit": "^0.10.0",
+    "@xterm/addon-search": "0.15.0",
+    "@xterm/addon-web-links": "0.11.0",
     "@xterm/xterm": "^5.5.0",
     "chokidar": "^4.0.3",
     "diff": "^7.0.0",

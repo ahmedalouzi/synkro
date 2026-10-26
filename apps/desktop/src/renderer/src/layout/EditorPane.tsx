@@ -4,8 +4,12 @@ import { DiffViewer } from '../features/chat/DiffViewer';
 import { PlanViewer } from '../features/plan/PlanViewer';
 
 import { NoFileOpenEmptyState, NoProjectEmptyState } from '../features/shared/EmptyState';
-import { useWorkspaceStore } from '../stores/workspace-store';
+import { useWorkspaceStore, type OpenFile } from '../stores/workspace-store';
 import { useWorkspace } from '../hooks/useWorkspace';
+import { confirmDiscard } from '../commands/commands';
+import { ContextMenu, type ContextMenuItem } from '../features/shared/ContextMenu';
+
+const TAB_DRAG_TYPE = 'application/x-synkro-tab';
 import { ExtensionDetailsView } from '../features/extensions/ExtensionDetailsView';
 import { GitDiffView } from '../features/git/GitDiffView';
 import { getFileIcon } from '../features/explorer/FileIcons';
@@ -98,7 +102,6 @@ export function EditorPane() {
     openFiles,
     activeFilePath,
     setActiveFile,
-    closeFile,
     updateFileContent,
     saveActiveFile,
     openProjectFolder,
@@ -110,25 +113,92 @@ export function EditorPane() {
     window.dispatchEvent(new CustomEvent('peep:new-project'));
   };
 
+  const [tabMenu, setTabMenu] = useState<{ x: number; y: number; file: OpenFile } | null>(null);
+  const [dragOverPath, setDragOverPath] = useState<string | null>(null);
+
+  /** Closes editors, asking first if any have unsaved changes (VS Code's save prompt). */
+  const closeTabs = (files: OpenFile[]) => {
+    if (files.length === 0 || !confirmDiscard(files)) return;
+    useWorkspaceStore.getState().closeFiles(files.map((f) => f.path));
+  };
+  const closeTab = (file: OpenFile) => closeTabs([file]);
+
+  const tabMenuItems = (file: OpenFile): ContextMenuItem[] => {
+    const index = openFiles.findIndex((f) => f.path === file.path);
+    const onDisk = !isVirtualPath(file.path) && !file.path.startsWith('untitled-');
+    const relativePath = project && file.path.startsWith(project.path)
+      ? file.path.slice(project.path.length).replace(/^[\\/]/, '')
+      : file.path;
+    return [
+      { label: 'Close', keybinding: 'Ctrl+F4', run: () => closeTab(file) },
+      { label: 'Close Others', enabled: openFiles.length > 1, run: () => closeTabs(openFiles.filter((f) => f.path !== file.path)) },
+      { label: 'Close to the Right', enabled: index < openFiles.length - 1, run: () => closeTabs(openFiles.slice(index + 1)) },
+      { label: 'Close Saved', enabled: openFiles.some((f) => !f.dirty), run: () => closeTabs(openFiles.filter((f) => !f.dirty)) },
+      { label: 'Close All', keybinding: 'Ctrl+K Ctrl+W', run: () => closeTabs(openFiles) },
+      '-',
+      { label: 'Copy Path', enabled: onDisk, run: () => void navigator.clipboard.writeText(file.path) },
+      { label: 'Copy Relative Path', enabled: onDisk, run: () => void navigator.clipboard.writeText(relativePath) },
+      '-',
+      { label: 'Reveal in File Explorer', enabled: onDisk, run: () => void window.peep.revealItem(file.path) },
+    ];
+  };
+
 
 
   return (
     <div className="editor-area">
       <div className="editor-tabs">
-        {openFiles.map((file) => {
+        {openFiles.map((file, index) => {
           const isActive = file.path === activeFilePath;
           return (
-            <div key={file.path} className={`tab ${isActive ? 'active' : ''}`} onClick={() => setActiveFile(file.path)}>
+            <div
+              key={file.path}
+              className={`tab ${isActive ? 'active' : ''} ${dragOverPath === file.path ? 'drag-over' : ''}`}
+              title={isVirtualPath(file.path) || file.path.startsWith('untitled-') ? file.name : file.path}
+              draggable
+              onClick={() => setActiveFile(file.path)}
+              onAuxClick={(e) => { if (e.button === 1) { e.preventDefault(); closeTab(file); } }}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setTabMenu({ x: e.clientX, y: e.clientY, file });
+              }}
+              onDragStart={(e) => {
+                e.dataTransfer.setData(TAB_DRAG_TYPE, file.path);
+                e.dataTransfer.effectAllowed = 'move';
+              }}
+              onDragOver={(e) => {
+                if (!e.dataTransfer.types.includes(TAB_DRAG_TYPE)) return;
+                e.preventDefault();
+                setDragOverPath(file.path);
+              }}
+              onDragLeave={() => setDragOverPath((p) => (p === file.path ? null : p))}
+              onDrop={(e) => {
+                const dragged = e.dataTransfer.getData(TAB_DRAG_TYPE);
+                setDragOverPath(null);
+                if (dragged && dragged !== file.path) {
+                  e.preventDefault();
+                  useWorkspaceStore.getState().moveOpenFile(dragged, index);
+                }
+              }}
+            >
               <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: isActive ? 1 : 0.7, filter: isActive ? 'none' : 'grayscale(0.5)' }}>
                 {getFileIcon(file.name)}
               </span>
               {file.name}
               {file.dirty && <span className="tab-dot"></span>}
-              <span className="tab-close" onClick={(e) => { e.stopPropagation(); closeFile(file.path); }}>✕</span>
+              <span className="tab-close" onClick={(e) => { e.stopPropagation(); closeTab(file); }}>✕</span>
             </div>
           );
         })}
       </div>
+      {tabMenu && (
+        <ContextMenu
+          x={tabMenu.x}
+          y={tabMenu.y}
+          items={tabMenuItems(tabMenu.file)}
+          onClose={() => setTabMenu(null)}
+        />
+      )}
 
       {activeFile && (
         <div className="editor-toolbar">

@@ -35,6 +35,8 @@ export function LoginScreen() {
 
   return (
     <div className="login-container">
+      {/* The window is frameless: this strip lets the user drag it (window buttons sit on its right). */}
+      <div className="login-dragbar" />
       {/* Background glow effects */}
       <div className="login-bg-glow glow-1"></div>
       <div className="login-bg-glow glow-2"></div>

@@ -4,7 +4,7 @@ import type { FileEntry } from '@peep/shared';
 
 const IGNORED = new Set(['.git', 'node_modules', '.dart_tool', 'build', '.peep', '.idea', '.vscode']);
 
-export async function searchFiles(rootPath: string, query: string, maxResults = 50): Promise<FileEntry[]> {
+export async function searchFiles(rootPath: string, query: string, maxResults = 50, includeDirectories = false): Promise<FileEntry[]> {
   const normalized = query.trim().toLowerCase();
   if (!normalized) return [];
 
@@ -27,6 +27,9 @@ export async function searchFiles(rootPath: string, query: string, maxResults = 
       const fullPath = join(dirPath, entry.name);
 
       if (entry.isDirectory()) {
+        if (includeDirectories && entry.name.toLowerCase().includes(normalized)) {
+          results.push({ name: entry.name, path: fullPath, type: 'directory' });
+        }
         await walk(fullPath);
         continue;
       }

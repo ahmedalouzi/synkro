@@ -1,162 +1,232 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useCallback, useEffect, useReducer, useState, type ReactNode } from 'react';
 import type { Settings } from '@peep/shared';
+import { getCommand, isCommandEnabled, runCommand } from '../../commands/commands';
+import { useWorkspaceStore } from '../../stores/workspace-store';
+import { MODELS } from '../chat/models';
+import { openWebPage } from '../../config/web';
 import './SettingsModal.css';
 
-type SettingsTab = 'account' | 'local_ai' | 'sdk' | 'telemetry' | 'about';
+/**
+ * Full-page settings, laid out like Cursor's: account + search + section nav on the left,
+ * cards of "title / description / control" rows on the right. Every control is wired to a
+ * real command or IPC call; toggles read the same state as the menus (commands.ts `checked`).
+ */
 
-interface AccountInfo {
-  email: string;
-  plan: string;
-  usedCost: number;
-  budgetCost: number;
-  usedTokens: number;
-  budgetTokens: number;
-  gatewayConnected: boolean;
+type SectionId = 'general' | 'usage' | 'models' | 'editor' | 'tab' | 'rules' | 'sdk' | 'privacy' | 'beta' | 'about';
+
+type Account = NonNullable<Awaited<ReturnType<typeof window.peep.authGetAccount>>>;
+
+const NAV: { group: SectionId[] }[] = [
+  { group: ['general'] },
+  { group: ['usage'] },
+  { group: ['models', 'editor', 'tab', 'rules', 'sdk'] },
+  { group: ['privacy', 'beta', 'about'] },
+];
+
+const SECTION_LABELS: Record<SectionId, string> = {
+  general: 'General',
+  usage: 'Plan & Usage',
+  models: 'Models',
+  editor: 'Editor',
+  tab: 'Tab',
+  rules: 'Rules',
+  sdk: 'Mobile SDKs',
+  privacy: 'Privacy',
+  beta: 'Beta',
+  about: 'About',
+};
+
+const ICONS: Record<SectionId | 'settings', ReactNode> = {
+  settings: <path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0M16 4v4M10 10v4M18 16v4" />,
+  general: <><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></>,
+  usage: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 10h18M8 15h3" /></>,
+  models: <><path d="M12 2l9 5v10l-9 5-9-5V7z" /><path d="M3 7l9 5 9-5M12 12v10" /></>,
+  editor: <><path d="M16 18l6-6-6-6M8 6l-6 6 6 6" /></>,
+  tab: <><path d="M3 12h14M13 8l4 4-4 4M21 5v14" /></>,
+  rules: <><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z" /><path d="M8 7h8M8 11h6" /></>,
+  sdk: <><rect x="7" y="2" width="10" height="20" rx="2" /><path d="M11 18h2" /></>,
+  privacy: <><rect x="4" y="11" width="16" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></>,
+  beta: <><path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.7 3h10.6a2 2 0 0 0 1.7-3l-5-9V3" /></>,
+  about: <><circle cx="12" cy="12" r="9" /><path d="M12 11v5M12 8h0" /></>,
+};
+
+function Icon({ name }: { name: SectionId | 'settings' }) {
+  return (
+    <svg className="sx-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      {ICONS[name]}
+    </svg>
+  );
 }
+
+/* ── Building blocks ─────────────────────────────────────────────────── */
+
+function Row({ title, description, query, children }: { title: string; description?: ReactNode; query: string; children?: ReactNode }) {
+  if (query) {
+    const haystack = `${title} ${typeof description === 'string' ? description : ''}`.toLowerCase();
+    if (!haystack.includes(query)) return null;
+  }
+  return (
+    <div className="sx-row">
+      <div className="sx-row__text">
+        <div className="sx-row__title">{title}</div>
+        {description && <div className="sx-row__desc">{description}</div>}
+      </div>
+      {children && <div className="sx-row__control">{children}</div>}
+    </div>
+  );
+}
+
+function Card({ label, children }: { label?: string; children: ReactNode }) {
+  return (
+    <div className="sx-card-group">
+      {label && <div className="sx-card-label">{label}</div>}
+      <div className="sx-card">{children}</div>
+    </div>
+  );
+}
+
+function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (next: boolean) => void; disabled?: boolean }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      className={`sx-switch ${checked ? 'sx-switch--on' : ''}`}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+    >
+      <span className="sx-switch__thumb" />
+    </button>
+  );
+}
+
+/** A toggle backed by a command from the registry, so it always matches the menus. */
+function CommandToggle({ id, onToggled }: { id: string; onToggled: () => void }) {
+  const cmd = getCommand(id);
+  if (!cmd) return null;
+  return (
+    <Toggle
+      checked={!!cmd.checked?.()}
+      disabled={!isCommandEnabled(cmd)}
+      onChange={() => {
+        runCommand(id);
+        onToggled();
+      }}
+    />
+  );
+}
+
+const ipcErrorMessage = (err: unknown) =>
+  ((err as Error)?.message ?? String(err)).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
+
+const formatDate = (iso?: string) =>
+  iso ? new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+
+/* ── Page ────────────────────────────────────────────────────────────── */
 
 interface SettingsModalProps {
   open: boolean;
   onClose: () => void;
+  /** Section to show first, e.g. 'usage' from an Upgrade button. */
+  initialSection?: string;
 }
 
-export function SettingsModal({ open, onClose }: SettingsModalProps) {
-  const [tab, setTab] = useState<SettingsTab>('account');
-  const [flutterPath, setFlutterPath] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [sdkVersion, setSdkVersion] = useState<string | null>(null);
-  const [telemetryEnabled, setTelemetryEnabled] = useState<boolean | null>(null);
-  const [version, setVersion] = useState<string>('');
-  const [perfInfo, setPerfInfo] = useState<{ heapUsedMB: number; rssMemMB: number } | null>(null);
-  const [updateInfo, setUpdateInfo] = useState<any>({ status: 'idle' });
+export function SettingsModal({ open, onClose, initialSection }: SettingsModalProps) {
+  const project = useWorkspaceStore((s) => s.project);
+  // Re-render on any workspace change so command-backed toggles stay in sync.
+  useWorkspaceStore();
+  const [, refresh] = useReducer((n: number) => n + 1, 0);
 
-  // Account state — session auth only, never provider API keys
-  const [account, setAccount] = useState<AccountInfo | null>(null);
-  const [sessionActive, setSessionActive] = useState(false);
-  const [accountLoading, setAccountLoading] = useState(false);
+  const [section, setSection] = useState<SectionId>('general');
+  const [search, setSearch] = useState('');
+  const query = search.trim().toLowerCase();
 
+  // Account
+  const [account, setAccount] = useState<Account | null>(null);
+  const [accountLoading, setAccountLoading] = useState(true);
   const [authMode, setAuthMode] = useState<'signin' | 'signup' | null>(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [authError, setAuthError] = useState('');
   const [authBusy, setAuthBusy] = useState(false);
 
-  // Local AI State
-  const [aiProvider, setAiProvider] = useState('gemini');
-  const [aiProviderApiKey, setAiProviderApiKey] = useState('');
-  const [aiProviderApiKeyConfigured, setAiProviderApiKeyConfigured] = useState(false);
-  const [developerMode, setDeveloperMode] = useState(false);
+  // SDK
+  const [flutterPath, setFlutterPath] = useState('');
+  const [savedFlutterPath, setSavedFlutterPath] = useState('');
+  const [sdkVersion, setSdkVersion] = useState<string | null>(null);
+  const [sdkStatus, setSdkStatus] = useState('');
 
-  const loadAccount = useCallback(async (settings: Settings) => {
+  // Privacy / beta
+  const [telemetryEnabled, setTelemetryEnabled] = useState(false);
+  const [developerMode, setDeveloperMode] = useState(false);
+  const [aiProvider, setAiProvider] = useState('gemini');
+  const [aiKey, setAiKey] = useState('');
+  const [aiKeyConfigured, setAiKeyConfigured] = useState(false);
+  const [aiStatus, setAiStatus] = useState('');
+
+  // Models / import
+  const [model, setModel] = useState<string | undefined>(undefined);
+  const [importStatus, setImportStatus] = useState('');
+
+  // About
+  const [version, setVersion] = useState('');
+  const [perfInfo, setPerfInfo] = useState<{ heapUsedMB: number; rssMemMB: number } | null>(null);
+  const [updateInfo, setUpdateInfo] = useState<any>({ status: 'idle' });
+
+  const loadAccount = useCallback(async (settings?: Settings) => {
     setAccountLoading(true);
     try {
-      // SECURITY: sessionToken is NEVER sent to the renderer.
-      // Use the sessionConfigured boolean flag instead to determine auth state.
-      const hasSession = !!settings.sessionConfigured;
-      setSessionActive(hasSession);
-
-      if (hasSession) {
-        const info = await window.peep.authGetAccount();
-        if (info) {
-          setAccount({
-            email: info.email,
-            plan: info.tier || info.plan || 'free',
-            usedCost: info.usedCost ?? info.usage ?? 0,
-            budgetCost: info.budgetCost ?? info.limit ?? 0,
-            usedTokens: info.usedTokens || 0,
-            budgetTokens: info.budgetTokens || 0,
-            gatewayConnected: info.gatewayConnected ?? true,
-          });
-        } else {
-          setSessionActive(false);
-          setAccount(null);
-        }
-      } else {
-        setAccount(null);
-      }
+      const s = settings ?? (await window.peep.getSettings());
+      setAccount(s.sessionConfigured ? await window.peep.authGetAccount().catch(() => null) : null);
     } finally {
       setAccountLoading(false);
     }
   }, []);
 
   useEffect(() => {
+    if (open) setSection(initialSection && initialSection in SECTION_LABELS ? (initialSection as SectionId) : 'general');
+  }, [open, initialSection]);
+
+  useEffect(() => {
     if (!open) return;
     void window.peep.getSettings().then((s) => {
       setFlutterPath(s.flutterSdkPath ?? '');
+      setSavedFlutterPath(s.flutterSdkPath ?? '');
       setAiProvider(s.aiProvider || 'gemini');
-      setAiProviderApiKeyConfigured(!!s.aiProviderApiKeyConfigured);
+      setAiKeyConfigured(!!s.aiProviderApiKeyConfigured);
       setDeveloperMode(!!s.developerMode);
+      setModel(s.apiModel || undefined);
+      setImportStatus('');
       void loadAccount(s);
     });
     void window.peep.detectFlutterSdk().then((sdk) => setSdkVersion(sdk?.version ?? null));
     void window.peep.getTelemetryEnabled().then(setTelemetryEnabled);
     void window.peep.getVersion().then(setVersion);
+    void window.peep.getUpdateStatus?.().then((info) => setUpdateInfo(info || { status: 'idle' }));
+    void window.peep.getPerformanceInfo?.().then(setPerfInfo);
+    return window.peep.onUpdateStatus?.((info) => setUpdateInfo(info));
   }, [open, loadAccount]);
 
-  useEffect(() => {
-    if (tab === 'about') {
-      void (window.peep as any).getPerformanceInfo?.()?.then((info: any) => setPerfInfo(info));
-      void window.peep.getUpdateStatus?.().then((info) => setUpdateInfo(info || { status: 'idle' }));
-    }
-  }, [tab]);
+  const handleClose = useCallback(() => {
+    window.dispatchEvent(new CustomEvent('peep:settings-closed'));
+    onClose();
+  }, [onClose]);
 
   useEffect(() => {
     if (!open) return;
-    const unsubUpdate = window.peep.onUpdateStatus?.((info) => setUpdateInfo(info));
-    return () => {
-      unsubUpdate?.();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !e.defaultPrevented) handleClose();
     };
-  }, [open]);
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, handleClose]);
 
   if (!open) return null;
 
-  const handleClose = () => {
-    window.dispatchEvent(new CustomEvent('peep:settings-closed'));
-    onClose();
-  };
-
-  const handleSaveSdk = async () => {
-    setSaving(true);
-    try {
-      const partial: Partial<Settings> = {
-        flutterSdkPath: flutterPath || undefined,
-      };
-      await window.peep.setSettings(partial);
-      handleClose();
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleSaveLocalAi = async () => {
-    setSaving(true);
-    try {
-      const partial: Partial<Settings> = { aiProvider };
-      // Only update the key if the user typed a new one.
-      if (aiProviderApiKey) {
-        partial.aiProviderApiKey = aiProviderApiKey;
-      }
-      await window.peep.setSettings(partial);
-      // Update local state to show it's configured
-      if (aiProviderApiKey) {
-        setAiProviderApiKeyConfigured(true);
-        setAiProviderApiKey('');
-      }
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleTelemetryToggle = async (enabled: boolean) => {
-    setTelemetryEnabled(enabled);
-    await window.peep.setTelemetryEnabled(enabled);
-  };
-
-  const handleDeveloperModeToggle = async (enabled: boolean) => {
-    setDeveloperMode(enabled);
-    await window.peep.setSettings({ developerMode: enabled });
-    if (!enabled && tab === 'local_ai') {
-      setTab('account');
-    }
+  /** Closes settings, then runs something that opens its own UI. */
+  const closeThen = (fn: () => void) => {
+    handleClose();
+    setTimeout(fn, 0);
   };
 
   const handleAuthSubmit = async (e: React.FormEvent) => {
@@ -164,463 +234,481 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
     setAuthBusy(true);
     setAuthError('');
     try {
-      const res = authMode === 'signin' 
-        ? await window.peep.authSignIn(email, password)
-        : await window.peep.authSignUp(email, password);
-      
+      const res = authMode === 'signin' ? await window.peep.authSignIn(email, password) : await window.peep.authSignUp(email, password);
       if (!res.success) {
         setAuthError(res.error || 'Authentication failed');
       } else {
         setAuthMode(null);
         setEmail('');
         setPassword('');
-        const s = await window.peep.getSettings();
-        await loadAccount(s);
+        await loadAccount();
       }
-    } catch (err: any) {
-      setAuthError(err.message || 'Authentication failed');
+    } catch (err) {
+      setAuthError(ipcErrorMessage(err));
     } finally {
       setAuthBusy(false);
     }
   };
 
-  const handleLogout = async () => {
-    setAccountLoading(true);
+  const handleSignOut = async () => {
     await window.peep.authLogout();
-    const s = await window.peep.getSettings();
-    await loadAccount(s);
+    await loadAccount();
   };
 
-  const TABS: { id: SettingsTab; label: string; hidden?: boolean }[] = [
-    { id: 'account', label: '👤 Account' },
-    { id: 'local_ai', label: '🤖 Local AI', hidden: !developerMode },
-    { id: 'sdk', label: '🔧 SDK' },
-    { id: 'telemetry', label: '🔒 Privacy' },
-    { id: 'about', label: 'ℹ About' },
-  ];
+  const handleSaveSdk = async () => {
+    setSdkStatus('Saving…');
+    try {
+      await window.peep.setSettings({ flutterSdkPath: flutterPath.trim() || undefined });
+      setSavedFlutterPath(flutterPath.trim());
+      const sdk = await window.peep.detectFlutterSdk();
+      setSdkVersion(sdk?.version ?? null);
+      setSdkStatus(sdk?.version ? `Saved — Flutter ${sdk.version} detected.` : 'Saved — Flutter was not found at this location.');
+    } catch (err) {
+      setSdkStatus(ipcErrorMessage(err));
+    }
+  };
 
-  const usedPct = account ? Math.min(100, (account.usedCost / account.budgetCost) * 100) : 0;
-  const quotaColor = usedPct > 90 ? '#f44336' : usedPct > 70 ? '#ff9800' : '#4CAF50';
+  const handleBrowseSdk = async () => {
+    const folder = await window.peep.selectFolder();
+    if (folder) setFlutterPath(folder);
+  };
 
-  return (
-    <div className="settings-overlay" onClick={handleClose}>
-      <div className="settings-modal" onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
-        <div className="settings-modal__header">
-          <h2>Settings</h2>
-          <button type="button" className="btn btn-ghost" onClick={handleClose}>×</button>
-        </div>
+  const handleTelemetry = async (enabled: boolean) => {
+    setTelemetryEnabled(enabled);
+    await window.peep.setTelemetryEnabled(enabled);
+  };
 
-        {/* Tabs */}
-        <div className="settings-tabs">
-          {TABS.filter(t => !t.hidden).map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              className={`settings-tab ${tab === t.id ? 'settings-tab--active' : ''}`}
-              onClick={() => setTab(t.id)}
+  const handleDeveloperMode = async (enabled: boolean) => {
+    setDeveloperMode(enabled);
+    await window.peep.setSettings({ developerMode: enabled });
+  };
+
+  const handleSaveLocalAi = async () => {
+    setAiStatus('Saving…');
+    try {
+      await window.peep.setSettings(aiKey ? { aiProvider, aiProviderApiKey: aiKey } : { aiProvider });
+      if (aiKey) {
+        setAiKeyConfigured(true);
+        setAiKey('');
+      }
+      setAiStatus('Saved.');
+    } catch (err) {
+      setAiStatus(ipcErrorMessage(err));
+    }
+  };
+
+  const chooseModel = async (id: string | undefined) => {
+    setModel(id);
+    await window.peep.setSettings({ apiModel: id });
+  };
+
+  /** Brings over the VS Code settings Synkro supports, flipping only the ones that differ. */
+  const handleImportVsCode = async () => {
+    setImportStatus('Reading VS Code settings…');
+    try {
+      const result = await window.peep.readVsCodeSettings();
+      if (!result.found) {
+        setImportStatus(`VS Code settings were not found (${result.path}).`);
+        return;
+      }
+      const applied: string[] = [];
+      const apply = (value: boolean | undefined, commandId: string, label: string) => {
+        if (value === undefined) return;
+        if (!!getCommand(commandId)?.checked?.() !== value) runCommand(commandId);
+        applied.push(`${label} ${value ? 'on' : 'off'}`);
+      };
+      apply(result.settings.autoSave, 'workbench.action.toggleAutoSave', 'Auto Save');
+      apply(result.settings.wordWrap, 'editor.action.toggleWordWrap', 'Word Wrap');
+      apply(result.settings.minimap, 'editor.action.toggleMinimap', 'Minimap');
+      refresh();
+      setImportStatus(
+        applied.length > 0
+          ? `Imported from VS Code: ${applied.join(', ')}.`
+          : 'VS Code uses the defaults for Auto Save, Word Wrap and Minimap — nothing to change.',
+      );
+    } catch (err) {
+      setImportStatus(`Could not import: ${ipcErrorMessage(err)}`);
+    }
+  };
+
+  const signedIn = !!account;
+  const plan = (account?.tier || account?.plan || 'free').toString();
+  const isFreePlan = /^free( plan)?$/i.test(plan);
+  const poolLimit = account?.weeklyPoolUsd ?? account?.limit ?? account?.budgetCost ?? 0;
+  const poolUsed = account?.weeklyUsedUsd ?? account?.usage ?? account?.usedCost ?? 0;
+  const poolPct = poolLimit > 0 ? Math.min(100, (poolUsed / poolLimit) * 100) : 0;
+  const visibleSections: SectionId[] = query ? (Object.keys(SECTION_LABELS) as SectionId[]) : [section];
+
+  /* ── Sections ── */
+
+  const accountRow = accountLoading ? (
+    <Row title="Synkro Account" description="Loading account…" query={query} />
+  ) : signedIn ? (
+    <Row title="Synkro Account" description={`Manage your account and billing · ${account!.email}`} query={query}>
+      <button type="button" className="sx-btn" title="Opens the Synkro website" onClick={() => openWebPage('account')}>Open ↗</button>
+      <button type="button" className="sx-btn" onClick={() => void handleSignOut()}>Sign out</button>
+    </Row>
+  ) : (
+    <Row title="Synkro Account" description="Sign in to use the AI agent, chat and Tab completions." query={query}>
+      <button type="button" className="sx-btn" onClick={() => setAuthMode('signup')}>Sign up</button>
+      <button type="button" className="sx-btn sx-btn--primary" onClick={() => setAuthMode('signin')}>Sign in</button>
+    </Row>
+  );
+
+  const upgradeRow = (
+    <Row title="Upgrade to Pro" description="More weekly AI usage, unlimited Tab completions, and the most capable models." query={query}>
+      <button type="button" className="sx-btn sx-btn--upgrade" title="Opens Synkro pricing" onClick={() => openWebPage('pricing')}>↑ Upgrade</button>
+    </Row>
+  );
+
+  const authForm = authMode && (
+    <form className="sx-auth" onSubmit={handleAuthSubmit}>
+      <div className="sx-auth__title">{authMode === 'signin' ? 'Sign in to Synkro' : 'Create a Synkro account'}</div>
+      {authError && <div className="sx-error">{authError}</div>}
+      <input className="sx-input" type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required disabled={authBusy} autoFocus />
+      <input className="sx-input" type="password" placeholder="Password (8+ characters)" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={8} disabled={authBusy} />
+      <div className="sx-auth__actions">
+        <button type="button" className="sx-btn" onClick={() => { setAuthMode(null); setAuthError(''); }} disabled={authBusy}>Cancel</button>
+        <button type="submit" className="sx-btn sx-btn--primary" disabled={authBusy}>
+          {authBusy ? 'Please wait…' : authMode === 'signin' ? 'Sign in' : 'Create account'}
+        </button>
+      </div>
+    </form>
+  );
+
+  const sections: Record<SectionId, ReactNode> = {
+    general: (
+      <>
+        <Card>
+          {accountRow}
+          {authForm}
+          {signedIn && isFreePlan && upgradeRow}
+        </Card>
+        <Card label="Preferences">
+          <Row title="Editor Settings" description="Configure auto save, word wrap and the minimap" query={query}>
+            <button type="button" className="sx-btn" onClick={() => setSection('editor')}>Open</button>
+          </Row>
+          <Row title="Keyboard Shortcuts" description="See every keyboard shortcut" query={query}>
+            <button type="button" className="sx-btn" onClick={() => closeThen(() => runCommand('workbench.action.openGlobalKeybindings'))}>Open</button>
+          </Row>
+          <Row title="Command Palette" description="Search and run any command (Ctrl+Shift+P)" query={query}>
+            <button type="button" className="sx-btn" onClick={() => closeThen(() => runCommand('workbench.action.showCommands'))}>Open</button>
+          </Row>
+          <Row title="Zoom" description="Make the whole interface larger or smaller" query={query}>
+            <button type="button" className="sx-btn" title="Zoom Out (Ctrl+-)" onClick={() => runCommand('workbench.action.zoomOut')}>−</button>
+            <button type="button" className="sx-btn" title="Reset Zoom (Ctrl+0)" onClick={() => runCommand('workbench.action.zoomReset')}>Reset</button>
+            <button type="button" className="sx-btn" title="Zoom In (Ctrl+=)" onClick={() => runCommand('workbench.action.zoomIn')}>+</button>
+          </Row>
+          <Row title="Full Screen" description="Toggle full screen mode (F11)" query={query}>
+            <button type="button" className="sx-btn" onClick={() => runCommand('workbench.action.toggleFullScreen')}>Toggle</button>
+          </Row>
+          <Row title="Import Settings from VS Code" description="Bring over your VS Code auto save, word wrap and minimap settings" query={query}>
+            <button type="button" className="sx-btn" onClick={() => void handleImportVsCode()}>Import</button>
+          </Row>
+          {importStatus && <div className="sx-note">{importStatus}</div>}
+        </Card>
+        <Card label="Layout">
+          <Row title="Primary Side Bar" description="Show the explorer, search and source control side bar (Ctrl+B)" query={query}>
+            <CommandToggle id="workbench.action.toggleSidebarVisibility" onToggled={refresh} />
+          </Row>
+          <Row title="Chat" description="Show the AI chat pane (Ctrl+Alt+B)" query={query}>
+            <CommandToggle id="peep.toggleChat" onToggled={refresh} />
+          </Row>
+          <Row title="Preview" description="Show the mobile preview pane" query={query}>
+            <CommandToggle id="peep.togglePreview" onToggled={refresh} />
+          </Row>
+          <Row title="Bottom Panel" description="Show the terminal, problems and build panel (Ctrl+J)" query={query}>
+            <CommandToggle id="workbench.action.togglePanel" onToggled={refresh} />
+          </Row>
+          <Row title="Status Bar" description="Show the status bar at the bottom of the window" query={query}>
+            <CommandToggle id="workbench.action.toggleStatusbarVisibility" onToggled={refresh} />
+          </Row>
+        </Card>
+      </>
+    ),
+
+    usage: (
+      <Card>
+        {!signedIn ? (
+          <Row title="Not signed in" description="Sign in to see your plan and usage." query={query}>
+            <button type="button" className="sx-btn sx-btn--primary" onClick={() => { setSection('general'); setAuthMode('signin'); }}>Sign in</button>
+          </Row>
+        ) : (
+          <>
+            <Row title="Current Plan" description={`You are on the ${plan.charAt(0).toUpperCase() + plan.slice(1)} plan.`} query={query}>
+              <span className="sx-badge">{plan.toUpperCase()}</span>
+            </Row>
+            <Row
+              title="Included Usage"
+              description={account?.weekResetsAt ? `Refreshes weekly · next reset ${formatDate(account.weekResetsAt)}` : 'Usage is tracked and enforced by the Synkro server.'}
+              query={query}
             >
-              {t.label}
-            </button>
-          ))}
-        </div>
+              <div className="sx-meter">
+                <div className="sx-meter__text">${poolUsed.toFixed(2)} / ${poolLimit.toFixed(2)}</div>
+                <div className="sx-meter__bar"><div className={`sx-meter__fill ${poolPct > 90 ? 'sx-meter__fill--warn' : ''}`} style={{ width: `${poolPct}%` }} /></div>
+              </div>
+            </Row>
+            <Row
+              title="Tab Completions"
+              description={account?.monthlyCompletions === null ? 'Unlimited on your plan.' : account?.completionsResetAt ? `Resets ${formatDate(account.completionsResetAt)}` : 'Tab completions this month.'}
+              query={query}
+            >
+              <span className="sx-value">
+                {account?.monthlyCompletions === null
+                  ? 'Unlimited'
+                  : `${account?.completionsUsed ?? 0} / ${account?.monthlyCompletions ?? '—'}`}
+              </span>
+            </Row>
+            {isFreePlan && upgradeRow}
+            <Row title="Billing" description="Manage your subscription, payment method and invoices" query={query}>
+              <button type="button" className="sx-btn" title="Opens the Synkro website" onClick={() => openWebPage('billing')}>Open ↗</button>
+            </Row>
+            <Row title="Refresh" description="Fetch the latest usage from the server" query={query}>
+              <button type="button" className="sx-btn" onClick={() => void loadAccount()} disabled={accountLoading}>
+                {accountLoading ? 'Refreshing…' : 'Refresh'}
+              </button>
+            </Row>
+          </>
+        )}
+      </Card>
+    ),
 
-        {/* Body */}
-        <div className="settings-modal__body">
-
-          {/* ── Account ── */}
-          {tab === 'account' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-              <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0, lineHeight: 1.6 }}>
-                AI capabilities are powered by the Synkro Gateway. No provider API keys are ever
-                stored on this device.
-              </p>
-
-              {accountLoading ? (
-                <div style={{ textAlign: 'center', padding: '24px', color: 'var(--text-muted)', fontSize: '13px' }}>
-                  Loading account…
-                </div>
-              ) : authMode ? (
-                <form onSubmit={handleAuthSubmit} style={{ padding: '20px', background: 'var(--bg-card)', borderRadius: '10px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                  <div style={{ fontWeight: '600', fontSize: '15px' }}>{authMode === 'signin' ? 'Sign In' : 'Sign Up'}</div>
-                  
-                  {authError && (
-                    <div style={{ padding: '10px', background: 'rgba(244,67,54,0.1)', color: '#f44336', borderRadius: '6px', fontSize: '12px' }}>
-                      {authError}
-                    </div>
-                  )}
-
-                  <label className="settings-field">
-                    <span>Email</span>
-                    <input type="email" value={email} onChange={e => setEmail(e.target.value)} required disabled={authBusy} autoFocus />
-                  </label>
-                  
-                  <label className="settings-field">
-                    <span>Password</span>
-                    <input type="password" value={password} onChange={e => setPassword(e.target.value)} required disabled={authBusy} minLength={8} />
-                  </label>
-
-                  <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-                    <button type="submit" className="btn btn-primary" disabled={authBusy} style={{ flex: 1 }}>
-                      {authBusy ? 'Please wait…' : authMode === 'signin' ? 'Sign In' : 'Create Account'}
-                    </button>
-                    <button type="button" className="btn btn-ghost" onClick={() => { setAuthMode(null); setAuthError(''); }} disabled={authBusy}>
-                      Cancel
-                    </button>
-                  </div>
-                </form>
-              ) : !sessionActive || !account ? (
-                /* ── Signed-out state ── */
-                <div style={{ padding: '20px', background: 'var(--bg-card)', borderRadius: '10px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px', textAlign: 'center' }}>
-                  <div style={{ fontSize: '36px' }}>🔐</div>
-                  <div>
-                    <div style={{ fontWeight: '600', fontSize: '15px', marginBottom: '6px' }}>Not signed in</div>
-                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.6 }}>
-                      Sign in to your Synkro account to unlock AI features.<br />
-                      You will never be asked to enter a provider API key.
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', gap: '10px', width: '100%' }}>
-                    <button type="button" className="btn btn-primary" style={{ flex: 1 }} onClick={() => setAuthMode('signin')}>
-                      Sign In
-                    </button>
-                    <button type="button" className="btn btn-ghost" style={{ flex: 1 }} onClick={() => setAuthMode('signup')}>
-                      Sign Up
-                    </button>
-                  </div>
-                </div>
+    models: (
+      <Card>
+        {MODELS.map((m) => {
+          // Choosing a model is a paid feature; Free plans always run on Auto (enforced by the server).
+          const locked = (!signedIn || isFreePlan) && m.id !== undefined;
+          const selected = locked ? false : (!signedIn || isFreePlan) ? m.id === undefined : model === m.id;
+          return (
+            <Row key={m.label} title={m.label} description={locked ? `${m.hint} · available on paid plans` : m.hint} query={query}>
+              {locked ? (
+                <button type="button" className="sx-btn" title="Opens Synkro pricing" onClick={() => openWebPage('pricing')}>🔒 Upgrade</button>
               ) : (
-                /* ── Signed-in state ── */
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  {/* Account card */}
-                  <div style={{ padding: '16px', background: 'var(--bg-card)', borderRadius: '10px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Account</span>
-                      <span style={{ fontSize: '11px', color: '#4CAF50', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <span style={{ width: '6px', height: '6px', background: '#4CAF50', borderRadius: '50%', display: 'inline-block' }} />
-                        Gateway Connected
-                      </span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
-                      <span style={{ color: 'var(--text-muted)' }}>Email</span>
-                      <span style={{ fontWeight: '500' }}>{account.email}</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
-                      <span style={{ color: 'var(--text-muted)' }}>Plan</span>
-                      <span style={{
-                        background: 'linear-gradient(135deg, #667eea, #764ba2)',
-                        color: '#fff',
-                        padding: '2px 10px',
-                        borderRadius: '12px',
-                        fontSize: '11px',
-                        fontWeight: '700',
-                        letterSpacing: '0.05em'
-                      }}>
-                        {account.plan.toUpperCase()}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Usage card */}
-                  <div style={{ padding: '16px', background: 'var(--bg-card)', borderRadius: '10px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    <span style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Monthly Usage</span>
-
-                    {/* Cost quota */}
-                    <div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '5px' }}>
-                        <span>Cost</span>
-                        <span style={{ fontWeight: '600' }}>
-                          ${account.usedCost.toFixed(2)} <span style={{ color: 'var(--text-muted)', fontWeight: '400' }}>/ ${account.budgetCost.toFixed(2)}</span>
-                        </span>
-                      </div>
-                      <div style={{ height: '6px', background: 'rgba(128,128,128,0.15)', borderRadius: '3px', overflow: 'hidden' }}>
-                        <div style={{ width: `${usedPct}%`, height: '100%', background: quotaColor, borderRadius: '3px', transition: 'width 0.4s ease' }} />
-                      </div>
-                    </div>
-
-                    {/* Token quota */}
-                    <div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '5px' }}>
-                        <span>Tokens</span>
-                        <span style={{ fontWeight: '600' }}>
-                          {(account.usedTokens / 1000).toFixed(1)}K <span style={{ color: 'var(--text-muted)', fontWeight: '400' }}>/ {(account.budgetTokens / 1000000).toFixed(1)}M</span>
-                        </span>
-                      </div>
-                      <div style={{ height: '6px', background: 'rgba(128,128,128,0.15)', borderRadius: '3px', overflow: 'hidden' }}>
-                        <div style={{
-                          width: `${Math.min(100, (account.usedTokens / account.budgetTokens) * 100)}%`,
-                          height: '100%',
-                          background: '#667eea',
-                          borderRadius: '3px',
-                          transition: 'width 0.4s ease'
-                        }} />
-                      </div>
-                    </div>
-
-                    <p style={{ fontSize: '11px', color: 'var(--text-muted)', margin: 0, lineHeight: 1.5 }}>
-                      Usage is tracked and enforced server-side. Resets monthly.
-                    </p>
-                  </div>
-
-                  {/* Gateway connection status */}
-                  <div style={{ padding: '12px 16px', background: 'var(--bg-card)', borderRadius: '10px', border: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px' }}>
-                    <span style={{ color: 'var(--text-muted)' }}>Synkro AI Gateway</span>
-                    {account.gatewayConnected ? (
-                      <span style={{ color: '#4CAF50', fontWeight: '600', fontSize: '12px' }}>✓ Operational</span>
-                    ) : (
-                      <span style={{ color: '#f44336', fontWeight: '600', fontSize: '12px' }}>⚠ Unreachable</span>
-                    )}
-                  </div>
-
-                  {/* Security notice and Logout */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', lineHeight: 1.6, padding: '0 2px', flex: 1 }}>
-                      🔒 Provider API keys (OpenAI, Gemini, Anthropic) are never stored on this device.
-                      All AI requests are routed securely through the Synkro Gateway.
-                    </div>
-                    <button type="button" className="btn btn-ghost" style={{ fontSize: '12px', padding: '4px 8px', marginLeft: '10px' }} onClick={handleLogout}>
-                      Sign out
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* ── Local AI ── */}
-          {tab === 'local_ai' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <p style={{ fontSize: '13px', color: 'var(--text-muted)', margin: 0, lineHeight: 1.6 }}>
-                  If you do not have a Synkro SaaS account, you can configure a local AI provider here. 
-                  The API key will be encrypted and stored securely on your local device.
-                </p>
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                <label className="settings-field">
-                  <span>AI Provider</span>
-                  <select
-                    value={aiProvider}
-                    onChange={(e) => setAiProvider(e.target.value)}
-                    style={{
-                      background: 'var(--bg-input)',
-                      color: 'var(--text)',
-                      border: '1px solid var(--border)',
-                      padding: '8px',
-                      borderRadius: '6px',
-                      fontSize: '13px'
-                    }}
-                  >
-                    <option value="gemini">Google Gemini</option>
-                    <option value="openai">OpenAI (Coming Soon)</option>
-                    <option value="anthropic">Anthropic (Coming Soon)</option>
-                    <option value="ollama">Local Ollama (Coming Soon)</option>
-                  </select>
-                </label>
-
-                <label className="settings-field">
-                  <span>Provider API Key</span>
-                  <input
-                    type="password"
-                    placeholder={aiProviderApiKeyConfigured ? "•••••••••••••••• (Configured)" : "Enter API Key..."}
-                    value={aiProviderApiKey}
-                    onChange={(e) => setAiProviderApiKey(e.target.value)}
-                  />
-                </label>
-
-                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px' }}>
-                  <button 
-                    type="button" 
-                    className="btn btn-primary" 
-                    onClick={handleSaveLocalAi}
-                    disabled={saving}
-                  >
-                    {saving ? 'Saving...' : 'Save Configuration'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ── SDK ── */}
-          {tab === 'sdk' && (
-            <>
-              <label className="settings-field">
-                <span>Flutter SDK Path</span>
-                <input
-                  type="text"
-                  placeholder="C:\src\flutter or leave empty for PATH"
-                  value={flutterPath}
-                  onChange={(e) => setFlutterPath(e.target.value)}
-                />
-                {sdkVersion
-                  ? <small className="settings-field__ok">✓ Flutter {sdkVersion} detected</small>
-                  : <small>Leave empty to auto-detect from PATH.</small>
-                }
-              </label>
-
-              <div className="settings-info-card">
-                <div className="settings-info-card__row">
-                  <span>Flutter SDK</span>
-                  <span>{sdkVersion ?? 'Not detected'}</span>
-                </div>
-                <div className="settings-info-card__row">
-                  <span>Node.js</span>
-                  <span>Auto-detected from PATH</span>
-                </div>
-                <div className="settings-info-card__row">
-                  <span>React Native CLI</span>
-                  <span>Auto-detected from project</span>
-                </div>
-              </div>
-            </>
-          )}
-
-          {/* ── Privacy / Telemetry ── */}
-          {tab === 'telemetry' && (
-            <div className="settings-telemetry">
-              <div className="settings-telemetry__card">
-                <div className="settings-telemetry__header">
-                  <div>
-                    <strong>Anonymous analytics</strong>
-                    <p>Events stored locally only. No code, file names, or personal data is collected.</p>
-                  </div>
-                  <label className="settings-toggle">
-                    <input
-                      type="checkbox"
-                      checked={telemetryEnabled ?? false}
-                      onChange={(e) => void handleTelemetryToggle(e.target.checked)}
-                    />
-                    <span className="settings-toggle__slider" />
-                  </label>
-                </div>
-                <ul className="settings-telemetry__list">
-                  <li>✓ Feature usage (which panels you open)</li>
-                  <li>✓ Error counts (crash-free session rate)</li>
-                  <li>✗ No code content</li>
-                  <li>✗ No file paths or project names</li>
-                  <li>✗ No network requests</li>
-                </ul>
-              </div>
-            </div>
-          )}
-
-          {/* ── About ── */}
-          {tab === 'about' && (
-            <div className="settings-about">
-              <div className="settings-about__logo">
-                <span>👁</span>
-                <div>
-                  <strong>Peep</strong>
-                  <small>v{version || '—'}</small>
-                </div>
-              </div>
-              <p className="settings-about__tagline">The AI desktop IDE for mobile developers.</p>
-
-              <div className="settings-info-card">
-                <div className="settings-info-card__row">
-                  <span>Version</span>
-                  <span>{version || '—'}</span>
-                </div>
-                <div className="settings-info-card__row">
-                  <span>Platform</span>
-                  <span>{navigator.platform}</span>
-                </div>
-                {perfInfo && (
-                  <>
-                    <div className="settings-info-card__row">
-                      <span>Heap used</span>
-                      <span>{perfInfo.heapUsedMB} MB</span>
-                    </div>
-                    <div className="settings-info-card__row">
-                      <span>RSS memory</span>
-                      <span>{perfInfo.rssMemMB} MB</span>
-                    </div>
-                  </>
-                )}
-              </div>
-
-              {/* ── Auto Update Section ── */}
-              <div className="settings-about__links" style={{ marginTop: '16px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: 'var(--bg-card)', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
-                  <div>
-                    <div style={{ fontSize: '13px', fontWeight: '600' }}>Software Update</div>
-                    <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                      {updateInfo.status === 'idle' && 'Check for the latest version.'}
-                      {updateInfo.status === 'checking' && 'Checking for updates...'}
-                      {updateInfo.status === 'available' && `Update v${updateInfo.version} is available! Downloading...`}
-                      {updateInfo.status === 'not-available' && 'You are up to date!'}
-                      {updateInfo.status === 'downloading' && `Downloading update... ${updateInfo.percent}%`}
-                      {updateInfo.status === 'ready' && `Update v${updateInfo.version} is ready to install.`}
-                      {updateInfo.status === 'error' && <span style={{ color: 'var(--color-error)' }}>Error: {updateInfo.error}</span>}
-                    </div>
-                  </div>
-                  <div>
-                    {(updateInfo.status === 'idle' || updateInfo.status === 'not-available' || updateInfo.status === 'error') && (
-                      <button className="btn btn-outline" style={{ fontSize: '12px', padding: '4px 12px' }} onClick={() => window.peep.checkForUpdates?.()}>
-                        Check for Updates
-                      </button>
-                    )}
-                    {updateInfo.status === 'ready' && (
-                      <button className="btn btn-primary" style={{ fontSize: '12px', padding: '4px 12px' }} onClick={() => window.peep.downloadAndInstall?.()}>
-                        Restart to Install
-                      </button>
-                    )}
-                    {(updateInfo.status === 'checking' || updateInfo.status === 'available' || updateInfo.status === 'downloading') && (
-                      <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontStyle: 'italic' }}>Working...</span>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              <div className="settings-about__links" style={{ marginTop: '16px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: 'var(--bg-card)', borderRadius: '10px', border: '1px solid var(--border-color)', marginBottom: '16px' }}>
-                  <div>
-                    <div style={{ fontSize: '13px', fontWeight: '600' }}>Developer Mode</div>
-                    <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Enable experimental local AI features.</div>
-                  </div>
-                  <label className="settings-toggle">
-                    <input
-                      type="checkbox"
-                      checked={developerMode}
-                      onChange={(e) => void handleDeveloperModeToggle(e.target.checked)}
-                    />
-                    <span className="settings-toggle__slider" />
-                  </label>
-                </div>
-                
                 <button
                   type="button"
-                  className="btn btn-ghost"
-                  onClick={() => void window.peep.checkForUpdates()}
-                >
-                  Check for updates
-                </button>
-              </div>
-            </div>
-          )}
+                  role="radio"
+                  aria-checked={selected}
+                  className={`sx-radio ${selected ? 'sx-radio--on' : ''}`}
+                  onClick={() => void chooseModel(m.id)}
+                  title={`Use ${m.label}`}
+                />
+              )}
+            </Row>
+          );
+        })}
+        <div className="sx-note">
+          {signedIn && !isFreePlan
+            ? 'Also available from the model menu under the chat input.'
+            : 'On the Free plan, Auto picks a fast model for each task. Upgrade to Pro to choose a model.'}
         </div>
+      </Card>
+    ),
 
-        {/* Footer */}
-        {tab === 'sdk' && (
-          <div className="settings-modal__footer">
-            <button type="button" className="btn btn-ghost" onClick={handleClose}>Cancel</button>
+    editor: (
+      <Card>
+        <Row title="Auto Save" description="Save files automatically shortly after you stop typing" query={query}>
+          <CommandToggle id="workbench.action.toggleAutoSave" onToggled={refresh} />
+        </Row>
+        <Row title="Word Wrap" description="Wrap long lines to fit the editor width (Alt+Z)" query={query}>
+          <CommandToggle id="editor.action.toggleWordWrap" onToggled={refresh} />
+        </Row>
+        <Row title="Minimap" description="Show the code overview on the right side of the editor" query={query}>
+          <CommandToggle id="editor.action.toggleMinimap" onToggled={refresh} />
+        </Row>
+      </Card>
+    ),
+
+    tab: (
+      <Card>
+        <Row title="Synkro Tab" description="AI suggestions as you type. Tab accepts, Esc dismisses, Ctrl+→ accepts word by word." query={query}>
+          <CommandToggle id="peep.toggleAICompletions" onToggled={refresh} />
+        </Row>
+        <Row title="Trigger Suggestion" description="Ask for a suggestion at the cursor at any time with Alt+\" query={query} />
+      </Card>
+    ),
+
+    rules: (
+      <Card>
+        <Row
+          title="Project Rules"
+          description={project ? 'Instructions the AI follows in this project (.synkro/rules.md)' : 'Open a project to edit its rules.'}
+          query={query}
+        >
+          <button type="button" className="sx-btn" disabled={!project} onClick={() => closeThen(() => runCommand('synkro.openProjectRules'))}>Open</button>
+        </Row>
+      </Card>
+    ),
+
+    sdk: (
+      <Card>
+        <Row
+          title="Flutter SDK"
+          description={sdkVersion ? `Flutter ${sdkVersion} detected` : 'Flutter was not detected. Choose its folder, or leave empty to use PATH.'}
+          query={query}
+        >
+          <span className={`sx-status ${sdkVersion ? 'sx-status--ok' : 'sx-status--warn'}`}>{sdkVersion ? 'Detected' : 'Not found'}</span>
+        </Row>
+        <Row title="Flutter SDK Path" description="Leave empty to auto-detect from PATH" query={query}>
+          <input className="sx-input sx-input--wide" placeholder="C:\src\flutter" value={flutterPath} onChange={(e) => setFlutterPath(e.target.value)} />
+          <button type="button" className="sx-btn" onClick={() => void handleBrowseSdk()}>Browse</button>
+          <button type="button" className="sx-btn sx-btn--primary" disabled={flutterPath.trim() === savedFlutterPath} onClick={() => void handleSaveSdk()}>Save</button>
+        </Row>
+        {sdkStatus && <div className="sx-note">{sdkStatus}</div>}
+      </Card>
+    ),
+
+    privacy: (
+      <Card>
+        <Row
+          title="Anonymous Usage Data"
+          description="Share feature usage and crash counts to help improve Synkro. Never includes code, file names or personal data."
+          query={query}
+        >
+          <Toggle checked={telemetryEnabled} onChange={(v) => void handleTelemetry(v)} />
+        </Row>
+      </Card>
+    ),
+
+    beta: (
+      <>
+        <Card>
+          <Row title="Developer Mode" description="Use your own AI provider key instead of a Synkro account" query={query}>
+            <Toggle checked={developerMode} onChange={(v) => void handleDeveloperMode(v)} />
+          </Row>
+          <Row title="Developer Tools" description="Open Chromium developer tools for this window (Ctrl+Shift+I)" query={query}>
+            <button type="button" className="sx-btn" onClick={() => runCommand('workbench.action.toggleDevTools')}>Toggle</button>
+          </Row>
+        </Card>
+        {developerMode && (
+          <Card label="Local AI Provider">
+            <Row title="Provider" description="Only Google Gemini is supported for now" query={query}>
+              <select className="sx-input" value={aiProvider} onChange={(e) => setAiProvider(e.target.value)}>
+                <option value="gemini">Google Gemini</option>
+              </select>
+            </Row>
+            <Row title="API Key" description="Encrypted and stored only on this device" query={query}>
+              <input
+                className="sx-input sx-input--wide"
+                type="password"
+                placeholder={aiKeyConfigured ? '•••••••• (configured)' : 'Paste API key'}
+                value={aiKey}
+                onChange={(e) => setAiKey(e.target.value)}
+              />
+              <button type="button" className="sx-btn sx-btn--primary" onClick={() => void handleSaveLocalAi()}>Save</button>
+            </Row>
+            {aiStatus && <div className="sx-note">{aiStatus}</div>}
+          </Card>
+        )}
+      </>
+    ),
+
+    about: (
+      <Card>
+        <Row title="Version" description={`Synkro ${version || '—'} · ${navigator.platform}`} query={query} />
+        <Row
+          title="Software Update"
+          description={
+            updateInfo.status === 'checking' ? 'Checking for updates…'
+              : updateInfo.status === 'available' ? `Version ${updateInfo.version} is available — downloading…`
+              : updateInfo.status === 'downloading' ? `Downloading update… ${updateInfo.percent ?? 0}%`
+              : updateInfo.status === 'ready' ? `Version ${updateInfo.version} is ready to install.`
+              : updateInfo.status === 'not-available' ? 'You are on the latest version.'
+              : updateInfo.status === 'error' ? `Update failed: ${updateInfo.error}`
+              : 'Check for a newer version of Synkro.'
+          }
+          query={query}
+        >
+          {updateInfo.status === 'ready' ? (
+            <button type="button" className="sx-btn sx-btn--primary" onClick={() => void window.peep.downloadAndInstall?.()}>Restart to Install</button>
+          ) : (
             <button
               type="button"
-              className="btn btn-primary"
-              onClick={() => void handleSaveSdk()}
-              disabled={saving}
+              className="sx-btn"
+              disabled={['checking', 'available', 'downloading'].includes(updateInfo.status)}
+              onClick={() => void window.peep.checkForUpdates?.()}
             >
-              {saving ? 'Saving…' : 'Save'}
+              Check for Updates
+            </button>
+          )}
+        </Row>
+        {perfInfo && (
+          <Row title="Memory" description={`Heap ${perfInfo.heapUsedMB} MB · Resident ${perfInfo.rssMemMB} MB`} query={query} />
+        )}
+      </Card>
+    ),
+  };
+
+  const initial = account?.email?.charAt(0).toUpperCase() ?? '?';
+
+  return (
+    <div className="sx-page" style={{ top: 35 }} role="dialog" aria-label="Synkro Settings">
+      <div className="sx-tabbar">
+        <div className="sx-tab">
+          <Icon name="settings" />
+          <span>Synkro Settings</span>
+          <button type="button" className="sx-tab__close" title="Close (Esc)" onClick={handleClose}>×</button>
+        </div>
+      </div>
+
+      <div className="sx-body">
+        <aside className="sx-nav">
+          <div className="sx-profile">
+            <div className="sx-avatar">{initial}</div>
+            <div className="sx-profile__text">
+              <div className="sx-profile__email">{accountLoading ? 'Loading…' : account?.email ?? 'Not signed in'}</div>
+              <div className="sx-profile__plan">{signedIn ? `${plan.charAt(0).toUpperCase() + plan.slice(1)} Plan` : 'Sign in to use AI'}</div>
+            </div>
+          </div>
+
+          <input
+            className="sx-search"
+            placeholder="Search settings"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Escape' && search) { e.preventDefault(); setSearch(''); } }}
+          />
+
+          {NAV.map(({ group }, i) => (
+            <div key={i} className="sx-nav__group">
+              {group.map((id) => (
+                <button
+                  key={id}
+                  type="button"
+                  className={`sx-nav__item ${!query && section === id ? 'sx-nav__item--active' : ''}`}
+                  onClick={() => { setSearch(''); setSection(id); }}
+                >
+                  <Icon name={id} />
+                  {SECTION_LABELS[id]}
+                </button>
+              ))}
+            </div>
+          ))}
+
+          <div className="sx-nav__group">
+            <button type="button" className="sx-nav__item" title="Opens the Synkro docs" onClick={() => openWebPage('docs')}>
+              <Icon name="rules" />
+              Docs ↗
             </button>
           </div>
-        )}
-        {tab === 'account' && !accountLoading && !sessionActive && (
-          <div className="settings-modal__footer">
-            <button type="button" className="btn btn-ghost" onClick={handleClose}>Close</button>
+          {signedIn && isFreePlan && (
+            <button type="button" className="sx-nav__upgrade" onClick={() => openWebPage('pricing')}>
+              <Icon name="usage" />
+              Upgrade to Pro
+            </button>
+          )}
+        </aside>
+
+        <main className="sx-content">
+          <div className="sx-content__inner">
+            {visibleSections.map((id) => (
+              <section key={id} className="sx-section">
+                <h2 className="sx-section__title">{SECTION_LABELS[id]}</h2>
+                {sections[id]}
+              </section>
+            ))}
+            {query && <div className="sx-empty">No settings match “{search}”.</div>}
           </div>
-        )}
+        </main>
       </div>
     </div>
   );

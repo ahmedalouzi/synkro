@@ -1,4 +1,4 @@
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { FrameworkProvider, ProviderPreviewSession } from './base-provider';
 import type { MobileEnvironment, ValidationResult, BuildResult, TestResult, AppStartResult, AppStatusResult, AppLogsResult, RuntimeError } from '@peep/shared';
 import type { ProcessManager } from '../process-manager';
@@ -523,11 +523,13 @@ export class ReactNativeManagedProvider extends FrameworkProvider {
   }
 
   async bootstrapProject(projectPath: string, _options?: { template?: string }): Promise<{ success: boolean; message: string }> {
+    const appName = basename(projectPath);
+    const appSlug = appName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'app';
     try {
       
       // 1. Create package.json
       const packageJson = {
-        name: "peep-managed-app",
+        name: appSlug,
         version: "1.0.0",
         scripts: {
           "start": "expo start",
@@ -566,8 +568,8 @@ export class ReactNativeManagedProvider extends FrameworkProvider {
       // 3. Create app.json
       const appJson = {
         expo: {
-          name: "PeepApp",
-          slug: "peep-app",
+          name: appName,
+          slug: appSlug,
           version: "1.0.0",
           orientation: "portrait",
           icon: "./assets/icon.png",
@@ -601,7 +603,7 @@ import { StatusBar } from 'expo-status-bar';
 export default function App() {
   return (
     <View style={styles.container}>
-      <Text>Welcome to your new Peep React Native app!</Text>
+      <Text>Welcome to your new Synkro React Native app!</Text>
       <StatusBar style="auto" />
     </View>
   );

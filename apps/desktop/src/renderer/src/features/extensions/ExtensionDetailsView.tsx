@@ -134,11 +134,6 @@ export function ExtensionDetailsView({ extensionId }: ExtensionDetailsViewProps)
             >
               {isInstalling ? 'Working...' : 'Uninstall'}
             </button>
-            <button type="button" className="btn btn-secondary btn-mock">Disable</button>
-            <button type="button" className="btn btn-secondary btn-mock">Switch to Pre-Release Version</button>
-            <label className="extension-details__auto-update">
-              <input type="checkbox" defaultChecked /> Auto Update
-            </label>
           </div>
         </div>
       </div>

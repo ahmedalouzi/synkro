@@ -33,7 +33,8 @@ export function DetachedPreview() {
     const availH = el.clientHeight - 32;
     if (availW <= 0 || availH <= 0) return;
     const s = Math.min(availW / FRAME_W, availH / FRAME_H);
-    setScale(Math.min(Math.max(s, 0.2), 1.6));
+    // zoom keeps the app sharp at any size, so it can grow beyond 1x.
+    setScale(Math.min(Math.max(s, 0.2), 2));
   }, [FRAME_W, FRAME_H]);
 
   useEffect(() => {
@@ -61,7 +62,7 @@ export function DetachedPreview() {
         </div>
 
         <div className="detached-actions" style={{ WebkitAppRegion: 'no-drag' } as any}>
-          <button type="button" className="detached-icon-btn" title="Home" onClick={() => {}}>
+          <button type="button" className="detached-icon-btn" title="Home (restart at the app's first screen)" onClick={() => setIframeKey(p => p + 1)}>
              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
           </button>
           {isRunning && (
@@ -77,7 +78,8 @@ export function DetachedPreview() {
 
       {/* Body: phone frame centered */}
       <div className="detached-body" ref={bodyRef}>
-        {/* Scale wrapper (reserves space for centered layout) */}
+        {/* CSS zoom (not transform: scale): the iframe is re-rendered at the zoomed
+            size, so the app stays sharp while still seeing the device's logical width. */}
         <div
           className="detached-phone-slot"
           style={{ width: FRAME_W * scale, height: FRAME_H * scale }}
@@ -87,8 +89,7 @@ export function DetachedPreview() {
             style={{
               width: FRAME_W,
               height: FRAME_H,
-              transform: `scale(${scale})`,
-              transformOrigin: 'top left',
+              zoom: scale,
               boxSizing: 'border-box',
               paddingLeft: device.screenCutout.x,
               paddingTop: device.screenCutout.y,

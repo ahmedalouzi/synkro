@@ -3,10 +3,25 @@ import { Terminal } from '@xterm/xterm';
 import { useBuildStore } from '../../stores/build-store';
 import { buildApi } from '../../services/build-api';
 import { CloudBuildJob } from '@peep/shared';
-// CSS imports — bundled by Vite at build time via ?inline static imports.
-// This is the correct Vite/Electron renderer pattern; no require() needed.
-import _buildPanelCss from './BuildPanel.css?inline';
-import _xtermCss from '@xterm/xterm/css/xterm.css?inline';
+// Styles (BuildPanel.css, xterm.css) are imported by BottomPanel.tsx: this module is also
+// loaded by the Node test harness, which can't import CSS. (An unused `?inline` import here
+// was silently dropped by the TypeScript transform, so the panel rendered unstyled.)
+
+function Icon({ d }: { d: string }) {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d={d} />
+    </svg>
+  );
+}
+
+const ICON = {
+  copy: 'M8 8h12v12H8zM4 16V4h12',
+  check: 'M20 6 9 17l-5-5',
+  stop: 'M6 6h12v12H6z',
+  download: 'M12 3v12M7 10l5 5 5-5M5 21h14',
+  build: 'M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z',
+};
 
 export function BuildPanel() {
   const currentBuild = useBuildStore((s) => s.currentBuild);
@@ -61,14 +76,19 @@ export function BuildPanel() {
     if (!termInstance.current) {
       const term = new Terminal({
         theme: {
-          background: '#0a0a0f',
+          background: '#0f0f12',
           foreground: '#e2e8f0',
           cursor: 'transparent'
         },
         fontSize: 12,
+        lineHeight: 1.35,
         fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
         convertEol: true,
-        copyOnSelect: true,
+        disableStdin: true,
+      });
+      // xterm has no copyOnSelect option; VS Code implements it on selection change too.
+      term.onSelectionChange(() => {
+        if (term.hasSelection()) void navigator.clipboard.writeText(term.getSelection());
       });
       term.open(termRef.current);
       termInstance.current = term;
@@ -124,7 +144,9 @@ export function BuildPanel() {
   if (!currentBuild) {
     return (
       <div id="build-panel-empty" className="build-panel empty">
-        No active build.
+        <div className="build-empty-icon"><Icon d={ICON.build} /></div>
+        <div className="build-empty-title">No active build.</div>
+        <div className="build-empty-hint">Click <strong>Build APK</strong> in the top bar or press <kbd>Ctrl+Shift+B</kbd> in a Flutter or React Native project.</div>
       </div>
     );
   }
@@ -134,32 +156,37 @@ export function BuildPanel() {
     <div id="build-panel" className="build-panel">
       <div className="build-header">
         <div className="build-info">
-          <span id="build-status-badge" className={`status-badge ${currentBuild.status || 'unknown'}`}>
+          <span id="build-status-badge" className={`status-badge ${currentBuild.status || 'unknown'}`} data-status={currentBuild.status || 'unknown'}>
             {(currentBuild.status || 'unknown').toUpperCase()}
           </span>
           <span id="build-target-label" className="build-target">
             {currentBuild.framework || 'unknown'} • {(currentBuild.target || 'apk').toUpperCase()}
           </span>
           {(currentBuild.status === 'running' || elapsed > 0) && (
-            <span id="build-elapsed" className="build-time">⏱ {timeStr}</span>
+            <span id="build-elapsed" className="build-time">{timeStr}</span>
           )}
         </div>
         <div className="build-actions">
-          <button id="build-copy-btn" className="btn-copy" onClick={handleCopyLog}>
+          <button id="build-copy-btn" className="btn-copy" onClick={handleCopyLog} title="Copy the build log (or the selected text)">
+            <Icon d={copyLabel === 'Copied!' ? ICON.check : ICON.copy} />
             {copyLabel}
           </button>
           {isActive && (
             <button id="build-cancel-btn" className="btn-cancel" onClick={handleCancel}>
+              <Icon d={ICON.stop} />
               Cancel Build
             </button>
           )}
           {currentBuild.status === 'success' && currentBuild.artifactUrl && (
             <button id="build-download-btn" className="btn-download" onClick={handleDownload}>
+              <Icon d={ICON.download} />
               Download {currentBuild.target.toUpperCase()}
             </button>
           )}
         </div>
       </div>
+
+      {isActive && <div className="build-progress" aria-hidden="true" />}
 
       {currentBuild.status === 'failed' && currentBuild.errorLog && (
         <div id="build-error-banner" className="build-error-banner">
@@ -196,7 +223,10 @@ export function renderBuildPanel(opts: BuildPanelOpts, doc: Document): HTMLEleme
     const empty = doc.createElement('div');
     empty.id = 'build-panel-empty';
     empty.className = 'build-panel empty';
-    empty.textContent = 'No active build.';
+    const emptyTitle = doc.createElement('div');
+    emptyTitle.className = 'build-empty-title';
+    emptyTitle.textContent = 'No active build.';
+    empty.append(emptyTitle);
     return empty;
   }
 
@@ -250,6 +280,12 @@ export function renderBuildPanel(opts: BuildPanelOpts, doc: Document): HTMLEleme
   header.append(actions);
   root.append(header);
 
+  if (isActive) {
+    const progress = doc.createElement('div');
+    progress.className = 'build-progress';
+    root.append(progress);
+  }
+
   // Error banner (only when failed AND errorLog is set)
   if (currentBuild.status === 'failed' && currentBuild.errorLog) {
     const banner = doc.createElement('div');
@@ -301,10 +337,10 @@ export function renderBuildButton(opts: BuildButtonOpts, doc: Document): HTMLEle
 
   const btn = doc.createElement('button');
   btn.id = 'build-apk-btn';
-  btn.title = 'Build Android APK';
+  btn.title = isBuilding ? 'Build already in progress' : 'Build Android APK (Ctrl+Shift+B)';
   btn.disabled = isBuilding;
-  btn.className = 'layout-btn';
-  btn.textContent = '🚀 BUILD APK';
+  btn.className = 'topbar__build';
+  btn.textContent = isBuilding ? 'Building…' : 'Build APK';
   btn.onclick = () => {
     if (!isBuilding) onBuildApk();
   };

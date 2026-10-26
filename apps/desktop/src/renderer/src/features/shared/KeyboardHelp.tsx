@@ -1,3 +1,4 @@
+import { COMMANDS } from '../../commands/commands';
 import './KeyboardHelp.css';
 
 interface KeyboardHelpProps {
@@ -6,21 +7,11 @@ interface KeyboardHelpProps {
 }
 
 const SHORTCUTS = [
-  { group: 'Navigation',   key: 'Ctrl+P',        desc: 'Quick file open' },
-  { group: 'Navigation',   key: 'Ctrl+Shift+F',  desc: 'Find in project' },
-  { group: 'Navigation',   key: 'Ctrl+`',        desc: 'Toggle terminal' },
-  { group: 'Editor',       key: 'Ctrl+S',        desc: 'Save file' },
-  { group: 'Editor',       key: 'Ctrl+Z',        desc: 'Undo' },
-  { group: 'Editor',       key: 'Ctrl+Shift+Z',  desc: 'Redo' },
-  { group: 'Editor',       key: 'Ctrl+/',        desc: 'Toggle comment' },
-  { group: 'Editor',       key: 'F2',            desc: 'Rename symbol' },
-  { group: 'Preview',      key: 'Ctrl+R',        desc: 'Refresh preview' },
-  { group: 'Preview',      key: 'Ctrl+Shift+P',  desc: 'Start/stop preview' },
-  { group: 'AI Agent',     key: 'Ctrl+Enter',    desc: 'Send message' },
-  { group: 'AI Agent',     key: 'Escape',        desc: 'Cancel agent' },
-  { group: 'App',          key: 'Ctrl+,',        desc: 'Open settings' },
-  { group: 'App',          key: 'Ctrl+N',        desc: 'New project' },
-  { group: 'App',          key: 'F1',            desc: 'Show keyboard shortcuts' },
+  ...[...COMMANDS.values()]
+    .filter((c) => c.keybinding)
+    .map((c) => ({ id: c.id, group: c.category ?? 'General', key: c.keybinding!, desc: c.title })),
+  { id: 'chat.send',   group: 'AI Agent', key: 'Ctrl+Enter', desc: 'Send message' },
+  { id: 'chat.cancel', group: 'AI Agent', key: 'Escape',     desc: 'Cancel agent' },
 ];
 
 const groups = [...new Set(SHORTCUTS.map((s) => s.group))];
@@ -41,7 +32,7 @@ export function KeyboardHelp({ open, onClose }: KeyboardHelpProps) {
               <div className="kbd-group__title">{group}</div>
               <div className="kbd-group__items">
                 {SHORTCUTS.filter((s) => s.group === group).map((s) => (
-                  <div key={s.key} className="kbd-row">
+                  <div key={s.id} className="kbd-row">
                     <span className="kbd-desc">{s.desc}</span>
                     <kbd className="kbd-key">{s.key}</kbd>
                   </div>
@@ -52,7 +43,7 @@ export function KeyboardHelp({ open, onClose }: KeyboardHelpProps) {
         </div>
 
         <div className="kbd-modal__footer">
-          <span>Press <kbd className="kbd-key-inline">F1</kbd> or <kbd className="kbd-key-inline">?</kbd> to toggle this panel</span>
+          <span>Press <kbd className="kbd-key-inline">Ctrl+K Ctrl+S</kbd> to open this panel · <kbd className="kbd-key-inline">Ctrl+Shift+P</kbd> for all commands</span>
         </div>
       </div>
     </div>

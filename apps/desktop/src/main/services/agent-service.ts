@@ -8,13 +8,20 @@ import { IPC_EVENTS, ProviderError } from '@peep/shared';
 import * as Sentry from '@sentry/electron/main';
 import log from 'electron-log/main';
 import type { ProposedEdit, AgentStreamEvent, AgentSendOptions } from '@peep/shared';
-import { buildAgentContext, runAgentLoop, SCAFFOLD_SYSTEM_ADDENDUM, type ChatMessage, classifyCommand, loadDesignManifest, saveDesignManifest, serializeDesignManifest, ProductionAIGateway, MockAIGateway, GoogleGeminiAdapter, truncateConversationHistory, AgentStateMachine, type AgentLogger } from '@peep/agent';
+import { buildAgentContext, runAgentLoop, SCAFFOLD_SYSTEM_ADDENDUM, type ChatMessage, classifyCommand, loadDesignManifest, saveDesignManifest, serializeDesignManifest, GoogleGeminiAdapter, truncateConversationHistory, AgentStateMachine, type AgentLogger } from '@peep/agent';
 import type { AgentPhase } from '@peep/shared';
 import type { DatabaseService } from './db';
 import type { WorkspaceManager } from './workspace-manager';
 import type { TerminalService } from './terminal-service';
 import { searchFiles } from './file-search';
 import { searchContent } from './content-search';
+import { resolveMentions } from './mention-resolver';
+import { createAIGateway } from './gateway-factory';
+import { CheckpointService } from './checkpoint-service';
+import { loadProjectRules } from './project-rules';
+
+/** Agent tools that change a file at `args.path` (captured for checkpoints). */
+const FILE_WRITING_TOOLS = new Set(['patch_file', 'propose_file_edit', 'delete_file', 'write_file']);
 
 /** Maximum bytes of run_command output forwarded to the LLM as tool result. */
 const RUN_COMMAND_LLM_OUTPUT_LIMIT = 50_000;
@@ -54,6 +61,9 @@ export class AgentService {
   private activeToolProcesses = new Set<any>();
   /** Session ID of the currently-running agent run_command, if any. */
   private agentCommandSessionId: string | null = null;
+  private checkpoints = new CheckpointService((id, fileCount) => {
+    this.mainWindow?.webContents.send(IPC_EVENTS.AGENT_CHECKPOINT, { id, fileCount });
+  });
 
   constructor(
     private db: DatabaseService,
@@ -110,6 +120,11 @@ export class AgentService {
 
     walk(entries);
     return lines.slice(0, 80).join('\n') || projectPath;
+  }
+
+  /** Rolls files back to before the given agent message; returns the restored paths. */
+  restoreCheckpoint(id: string): Promise<string[]> {
+    return this.checkpoints.restore(id);
   }
 
   getPendingEdits(): ProposedEdit[] {
@@ -273,6 +288,8 @@ export class AgentService {
       }
     }
 
+    const rulesContext = projectPath ? await loadProjectRules(projectPath, options.openFilePath) : '';
+
     let providerDetails = '';
     if (mobileEnv) {
       providerDetails = `\n\n[ENVIRONMENT CAPABILITIES]\n\`\`\`json\n${JSON.stringify(mobileEnv, null, 2)}\n\`\`\`\n\n[FRAMEWORK CONTEXT]\n${providerContextStr}\n`;
@@ -288,6 +305,7 @@ export class AgentService {
         intelligenceContext +
         memoryContext +
         designManifestContext +
+        rulesContext +
         buildAgentContext({
           projectPath: options.projectPath,
         treeSummary,
@@ -318,7 +336,14 @@ export class AgentService {
       }
     }
 
-    messages.push({ role: 'user', content: options.message });
+    const mentionContext = projectPath && options.mentions?.length
+      ? await resolveMentions(projectPath, options.mentions, options.diagnostics)
+      : '';
+    messages.push({
+      role: 'user',
+      content: options.message + mentionContext,
+      ...(options.images?.length ? { images: options.images } : {}),
+    });
 
 
 
@@ -329,6 +354,14 @@ export class AgentService {
         console.log(`[E2E_VERIFICATION] 7. Tool Execution Requested by LLM: ${name}`);
         if (!projectPath) {
           throw new Error('No project workspace open. Please open a project first.');
+        }
+
+        // Checkpoint: remember each file's original content before the agent first changes it.
+        if (name === 'rename_file') {
+          await this.checkpoints.capture(this.resolvePath(projectPath, String(args.oldPath)));
+          await this.checkpoints.capture(this.resolvePath(projectPath, String(args.newPath)));
+        } else if (FILE_WRITING_TOOLS.has(name) && typeof args.path === 'string') {
+          await this.checkpoints.capture(this.resolvePath(projectPath, args.path));
         }
 
         switch (name) {
@@ -937,64 +970,26 @@ export class AgentService {
     );
 
     try {
-      const GATEWAY_BASE_URL = settings.gatewayUrl || process.env.SYNKRO_GATEWAY_URL || 'https://api.synkro.com';
-      
-      console.log("\n[AUTH_TRACE] Gateway Decision Evaluation:");
-      console.log({
-        sessionToken: settings.sessionToken,
-        developerMode: settings.developerMode,
-        devAuthBypass: process.env.SYNKRO_DEV_AUTH_BYPASS,
-        gatewayUrl: process.env.SYNKRO_GATEWAY_URL,
+      const resolved = createAIGateway(this.db, settings, {
+        testGateway: options._testGateway,
+        onSessionExpired: () => {
+          this.emitStream({ type: 'error', content: 'Session expired or not signed in. Please sign in via Settings → Account.' });
+          this.abortController?.abort();
+        },
       });
-
-      console.log(`[AUTH_TRACE] Boolean values -> SYNKRO_USE_MOCK_GATEWAY === 'true': ${process.env.SYNKRO_USE_MOCK_GATEWAY === 'true'}`);
-      console.log(`[AUTH_TRACE] Boolean values -> !!settings.sessionToken: ${!!settings.sessionToken}`);
-
-      let gateway: any;
-
-      if (process.env.SYNKRO_USE_MOCK_GATEWAY === 'true') {
-        gateway = new MockAIGateway();
-      } else if (options._testGateway) {
-        gateway = options._testGateway;
-      } else if (settings.sessionToken) {
-        gateway = new ProductionAIGateway({ 
-            baseUrl: GATEWAY_BASE_URL, 
-            sessionToken: settings.sessionToken,
-            refreshToken: settings.refreshToken,
-            onTokensUpdated: async (newSession, newRefresh) => {
-              if (newSession === '' && newRefresh === '') {
-                await this.db.setSettings({ sessionToken: '', refreshToken: '' });
-                this.emitStream({ type: 'error', content: 'Session expired or not signed in. Please sign in via Settings → Account.' });
-                this.abortController?.abort();
-              } else {
-                await this.db.setSettings({ sessionToken: newSession, refreshToken: newRefresh });
-                settings.sessionToken = newSession;
-                settings.refreshToken = newRefresh;
-              }
-            }
-        });
-      } else {
-        // Fallback to local AI Provider for development without SaaS session
-        // SECURITY GUARD: client-side key fallback is strictly prohibited in production.
-        if (process.env.NODE_ENV === 'production') {
-          this.emitStream({ type: 'error', content: 'AUTH_REQUIRED: No session token present. Client-side key fallback is disabled in production. Please sign in via Settings → Account.' }, options.threadId);
-          return;
-        }
-        const providerName = settings.aiProvider || 'gemini';
-        const localKey = settings.aiProviderApiKey || process.env.GOOGLE_API_KEY || process.env.GOOGLE_GEMINI_API_KEY;
-        
-        if (localKey) {
-          if (providerName === 'gemini') {
-            gateway = new GoogleGeminiAdapter(localKey);
-          } else {
-            this.emitStream({ type: 'error', content: `AUTH_REQUIRED: The selected local provider '${providerName}' is not yet supported in the desktop build.` });
-            return;
-          }
-        } else {
-          this.emitStream({ type: 'error', content: 'AUTH_REQUIRED: You must sign in via Settings, or configure a Local AI Provider API Key.' }, options.threadId);
-          return;
-        }
+      if ('error' in resolved) {
+        this.emitStream({ type: 'error', content: resolved.error }, options.threadId);
+        return;
       }
+      const GATEWAY_BASE_URL = resolved.baseUrl;
+      if (options.checkpointId && projectPath) this.checkpoints.begin(options.checkpointId, projectPath);
+      // Never log the token itself — only whether one is present.
+      console.log('[AUTH_TRACE] Gateway decision:', {
+        hasSessionToken: !!settings.sessionToken,
+        developerMode: settings.developerMode,
+        mockGateway: process.env.SYNKRO_USE_MOCK_GATEWAY === 'true',
+      });
+      const gateway: any = resolved.gateway;
 
       console.log("\n[AUTH_TRACE] Selected Gateway:", gateway?.constructor?.name);
 
@@ -1036,7 +1031,7 @@ export class AgentService {
             capabilityTier: settings.capabilityTier || 'fast',
             manualModel: settings.apiModel,
             gateway: selectedGw,
-            sessionToken: settings.sessionToken || 'dev_test_session',
+            sessionToken: settings.sessionToken || (process.env.SYNKRO_DEV_AUTH_BYPASS === 'true' ? 'dev_test_session' : ''),
             threadId: options.threadId,
             logger: agentLogger,
           },
@@ -1108,10 +1103,11 @@ export class AgentService {
             this.emitStream({ type: 'error', content: 'AUTH_REQUIRED: Your authentication session has expired or is invalid. Please sign in again.' });
             break;
           case 'BUDGET_EXCEEDED':
-            this.emitStream({ type: 'error', content: 'Your usage budget has been reached. Please check your plan in Settings.' });
+            // The server explains which allowance ran out and when it resets.
+            this.emitStream({ type: 'error', content: error.message || 'Your usage limit has been reached. Please check your plan in Settings.' });
             break;
           case 'RATE_LIMIT_EXCEEDED':
-            this.emitStream({ type: 'error', content: 'AI provider rate limit reached. Please wait a moment.' });
+            this.emitStream({ type: 'error', content: error.message || 'Too many requests. Please wait a moment.' });
             break;
           case 'NETWORK_FAILURE':
             this.emitStream({ type: 'error', content: 'Unable to connect to AI Gateway. Please check your network connection or configure your Gateway URL in Settings.' });
@@ -1146,6 +1142,7 @@ export class AgentService {
         }
       }
     } finally {
+      this.checkpoints.end();
       // Always reset the SM so the renderer returns to 'idle' even on error/cancel.
       sm.reset();
       this.abortController = null;

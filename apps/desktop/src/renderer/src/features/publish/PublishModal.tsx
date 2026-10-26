@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useWorkspaceStore } from '../../stores/workspace-store';
+import QRCode from 'qrcode';
 import './PublishModal.css';
 
 interface PublishModalProps {
@@ -7,7 +8,17 @@ interface PublishModalProps {
   onClose: () => void;
 }
 
-
+function UrlQrCode({ url }: { url: string }) {
+  const [dataUrl, setDataUrl] = useState('');
+  useEffect(() => {
+    let cancelled = false;
+    QRCode.toDataURL(url, { margin: 1, width: 160 })
+      .then((d) => { if (!cancelled) setDataUrl(d); })
+      .catch(() => setDataUrl(''));
+    return () => { cancelled = true; };
+  }, [url]);
+  return dataUrl ? <img className="publish-qrcode" src={dataUrl} alt={`QR code for ${url}`} /> : null;
+}
 
 export function PublishModal({ open, onClose }: PublishModalProps) {
   const project = useWorkspaceStore((s) => s.project);
@@ -73,12 +84,9 @@ export function PublishModal({ open, onClose }: PublishModalProps) {
 
         {/* Navigation Tabs */}
         <div className="publish-tabs">
-          <button
-            type="button"
-            className="publish-tab publish-tab--active"
-          >
+          <div className="publish-tab publish-tab--active">
             🌐 Web / PWA Hosting
-          </button>
+          </div>
         </div>
 
         {/* Body */}
@@ -155,15 +163,8 @@ export function PublishModal({ open, onClose }: PublishModalProps) {
                   </a>
 
                   <div className="pwa-install-tip">
-                    <p>📱 Scan this layout link on your phone to install it as a PWA app.</p>
-                    {/* Generates a simple visual mock-up representation of QR code */}
-                    <div className="mock-qrcode">
-                      <div className="mock-qrcode__dots">
-                        {[...Array(64)].map((_, i) => (
-                          <span key={i} className={i % 3 === 0 || i % 7 === 0 ? 'active' : ''} />
-                        ))}
-                      </div>
-                    </div>
+                    <p>📱 Scan this code with your phone to open the app and install it as a PWA.</p>
+                    <UrlQrCode url={status.url} />
                   </div>
                 </div>
               )}

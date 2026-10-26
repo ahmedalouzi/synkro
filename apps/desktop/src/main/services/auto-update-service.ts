@@ -78,7 +78,11 @@ export class AutoUpdateService {
   }
 
   async checkForUpdates(): Promise<void> {
-    if (!app.isPackaged) return;
+    if (!app.isPackaged) {
+      // Explicit check from the UI: say why nothing happens instead of failing silently.
+      this.send({ status: 'error', error: 'Updates are only checked in the installed app, not in development builds.' });
+      return;
+    }
     await autoUpdater.checkForUpdates();
   }
 

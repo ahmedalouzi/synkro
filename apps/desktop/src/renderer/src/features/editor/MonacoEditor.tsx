@@ -5,6 +5,9 @@ import './MonacoEditor.css';
 import { useDiagnosticsStore } from '../../stores/preview-store';
 import { useWorkspaceStore } from '../../stores/workspace-store';
 import { emmetHTML, emmetCSS, emmetJSX } from 'emmet-monaco-es';
+import { clearActiveEditor, setActiveEditor } from '../../commands/editor-registry';
+import { registerInlineCompletions } from './inline-completions';
+import { registerFixWithAI, setupInlineEdit } from './InlineEdit';
 
 let emmetInitialized = false;
 
@@ -92,24 +95,34 @@ function languageForPath(filePath: string): string {
 
 export function MonacoEditor({ path, value, onChange, onSave, externallyModified, onKeepLocal, onReloadFromDisk }: MonacoEditorProps) {
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
+  const wordWrap = useWorkspaceStore((s) => s.editorWordWrap);
+  const minimap = useWorkspaceStore((s) => s.editorMinimap);
+
+  useEffect(() => () => {
+    if (editorRef.current) clearActiveEditor(editorRef.current);
+  }, []);
 
   const handleMount: OnMount = useCallback(
     (editorInstance, monaco) => {
       editorRef.current = editorInstance;
+      setActiveEditor(editorInstance);
+
+      // F1 opens the workbench command palette (VS Code), not Monaco's built-in one.
+      editorInstance.addCommand(monaco.KeyCode.F1, () => {
+        window.dispatchEvent(new CustomEvent('peep:open-command-palette'));
+      });
 
       editorInstance.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
         onSave?.();
       });
 
-      editorInstance.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyK, () => {
-        window.dispatchEvent(
-          new CustomEvent('peep:open-composer', {
-            detail: { filePath: path },
-          })
-        );
-      });
+      // Ctrl+K: inline AI edit in the editor (the composer lives on Ctrl+I).
+      setupInlineEdit(editorInstance, monaco);
+      registerFixWithAI(monaco);
 
       editorInstance.focus();
+
+      registerInlineCompletions(monaco);
 
       if (!emmetInitialized) {
         try {
@@ -311,17 +324,18 @@ export function MonacoEditor({ path, value, onChange, onSave, externallyModified
           fontFamily: "'Cascadia Code', 'JetBrains Mono', Consolas, monospace",
           fontSize: 14,
           lineHeight: 22,
-          minimap: { enabled: true },
+          minimap: { enabled: minimap },
           scrollBeyondLastLine: false,
           automaticLayout: true,
           tabSize: 2,
-          wordWrap: 'on',
+          wordWrap: wordWrap ? 'on' : 'off',
           padding: { top: 12 },
           renderWhitespace: 'selection',
           bracketPairColorization: { enabled: true },
           lineNumbers: 'on',
           lineNumbersMinChars: 3,
           glyphMargin: false,
+          inlineSuggest: { enabled: true, mode: 'subwordSmart' },
         }}
       />
     </div>

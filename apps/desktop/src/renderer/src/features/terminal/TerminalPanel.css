@@ -10,3 +10,121 @@
 .terminal-panel .xterm-viewport {
   overflow-y: auto !important;
 }
+
+/* ── Tabs ── */
+.terminal-tabs {
+  display: flex;
+  background: var(--bg-base);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+
+.terminal-tab-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  font-size: 11px;
+  cursor: pointer;
+  border-right: 1px solid var(--border);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.terminal-tab-item.active {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+
+.terminal-tab-close {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+  opacity: 0.6;
+}
+
+.terminal-tab-close:hover {
+  opacity: 1;
+}
+
+.terminal-tab-add {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px 10px;
+  font-size: 14px;
+}
+
+.terminal-tab-add:hover {
+  color: var(--text-primary);
+}
+
+.terminal-rename-input {
+  width: 110px;
+  font-size: 11px;
+  padding: 1px 4px;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  outline: none;
+}
+
+/* ── Viewport ── */
+.terminal-viewport {
+  position: absolute;
+  inset: 0;
+  padding: 4px;
+  overflow: hidden;
+}
+
+/* ── Find widget (VS Code terminal find) ── */
+.terminal-find {
+  position: absolute;
+  top: 4px;
+  right: 16px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-bright);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.terminal-find input {
+  width: 180px;
+  height: 22px;
+  padding: 0 6px;
+  font-size: 12px;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  border: 1px solid var(--border-bright);
+  border-radius: 3px;
+  outline: none;
+}
+
+.terminal-find input:focus {
+  border-color: var(--accent);
+}
+
+.terminal-find button {
+  width: 22px;
+  height: 22px;
+  background: none;
+  border: none;
+  border-radius: 3px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.terminal-find button:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}

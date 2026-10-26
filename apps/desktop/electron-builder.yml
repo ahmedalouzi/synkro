@@ -1,13 +1,16 @@
-appId: com.peep.desktop
-productName: Peep
+appId: com.synkro.desktop
+productName: Synkro
 directories:
   output: release
 files:
   - out/**/*
+# node-pty's native binaries (.node, conpty.dll, OpenConsole.exe) can't be loaded from inside the asar.
+asarUnpack:
+  - "**/node_modules/@lydell/node-pty*/**"
 publish:
   provider: github
   owner: ahmedalouzi
-  repo: peep
+  repo: synkro
 win:
   target: nsis
   icon: resources/icons/icon.ico

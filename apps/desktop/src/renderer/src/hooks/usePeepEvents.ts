@@ -59,6 +59,13 @@ export function usePeepEvents(): void {
       }
     });
 
+    // Agent steps (read / edit / run …) shown inline in the reply that produced them.
+    const unsubTimeline = window.peep.onAgentTimeline((activity: import('@peep/shared').AgentTimelineActivity) => {
+      if (activity.threadId && activity.threadId !== useChatStore.getState().activeThreadId) return;
+      if (useComposerStore.getState().isOpen) return;
+      useChatStore.getState().upsertTimelineActivity(activity);
+    });
+
     const unsubEdits = window.peep.onProposedEdits((edits) => {
       const isComposer = useComposerStore.getState().isOpen;
       const workspaceStore = useWorkspaceStore.getState();
@@ -148,6 +155,7 @@ export function usePeepEvents(): void {
       unsubLog();
       unsubAgent();
       unsubEdits();
+      unsubTimeline();
       unsubOpenFile();
       unsubFileChanged();
       unsubPlan?.();

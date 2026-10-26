@@ -2,6 +2,7 @@ import './EmptyState.css';
 import { useState } from 'react';
 import { useWorkspaceStore } from '../../stores/workspace-store';
 import { useWorkspace } from '../../hooks/useWorkspace';
+import { openWebPage } from '../../config/web';
 
 /* ── Generic preset ─────────────────────────────────────────────────── */
 
@@ -90,7 +91,7 @@ export function NoProjectEmptyState({
               <span className="synkro-dot">•</span>
               <span style={{ fontSize: '12px' }}>{user.email}</span>
               <span className="synkro-dot">•</span>
-              <a href="#" onClick={(e) => { e.preventDefault(); window.open('https://synkro.com/upgrade'); }} className="synkro-link" style={{ color: '#60a5fa', textDecoration: 'underline' }}>Upgrade</a>
+              <a href="#" onClick={(e) => { e.preventDefault(); openWebPage('pricing'); }} className="synkro-link" style={{ color: '#60a5fa', textDecoration: 'underline' }}>Upgrade</a>
             </div>
           )}
         </div>
@@ -106,6 +107,14 @@ export function NoProjectEmptyState({
           
           <button className="synkro-action-card" onClick={onNew}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+            <span>New project</span>
+          </button>
+
+          <button className="synkro-action-card" onClick={() => window.dispatchEvent(new CustomEvent('peep:clone-repo'))}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
               <polyline points="7 10 12 15 17 10" />
               <line x1="12" y1="15" x2="12" y2="3" />
@@ -113,7 +122,7 @@ export function NoProjectEmptyState({
             <span>Clone repo</span>
           </button>
           
-          <button className="synkro-action-card" onClick={() => alert('SSH connection feature is coming soon!')}>
+          <button className="synkro-action-card" onClick={() => window.dispatchEvent(new CustomEvent('peep:ssh-connect'))}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
               <polyline points="4 17 10 11 4 5"></polyline>
               <line x1="12" y1="19" x2="20" y2="19"></line>

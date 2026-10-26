@@ -1,11 +1,18 @@
-import { app, BrowserWindow, shell } from 'electron';
+import './migrate-user-data';
+import { app, BrowserWindow, Menu, shell } from 'electron';
 import { join } from 'node:path';
 import { cleanupServices, registerIpcHandlers, setMainWindow } from './ipc';
 import { config } from 'dotenv';
 import * as Sentry from '@sentry/electron/main';
 import log from 'electron-log/main';
 
-config(); // Load .env from root
+if (app.isPackaged) {
+  // Release builds never read a .env and can't be switched into dev auth bypass from the environment.
+  delete process.env.SYNKRO_DEV_AUTH_BYPASS;
+  delete process.env.E2E_TESTING;
+} else {
+  config(); // Load .env from root
+}
 
 log.initialize();
 log.transports.file.level = 'info';
@@ -83,9 +90,15 @@ function createWindow(): void {
     minWidth: 1024,
     minHeight: 640,
     show: false,
-    title: 'Peep',
+    title: 'Synkro',
     backgroundColor: '#0d1117',
     autoHideMenuBar: true,
+    // The renderer draws the title bar (menus, search, layout buttons) like Cursor/VS Code.
+    // Windows/Linux keep the native window buttons as an overlay; macOS keeps its traffic lights.
+    titleBarStyle: 'hidden',
+    ...(process.platform === 'darwin'
+      ? { trafficLightPosition: { x: 12, y: 11 } }
+      : { titleBarOverlay: { color: '#0f0f12', symbolColor: '#a1a1aa', height: 35 } }),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
@@ -137,14 +150,23 @@ import { setupPoCIpc } from './ipc/poc';
 
 app.whenReady().then(() => {
   if (process.platform === 'win32') {
-    app.setAppUserModelId('com.peep.desktop');
+    app.setAppUserModelId('com.synkro.desktop');
     // Terminate any orphaned dart processes to release active sockets and lockfiles
     import('node:child_process').then(({ exec }) => {
       exec('taskkill /f /im dart.exe', () => {});
     });
   }
 
-  void registerIpcHandlers({ createWindow, syncSentryOptIn }).then((services) => {
+  // The renderer draws its own VS Code-style menu bar and owns the keybindings, so drop
+  // Electron's default menu (its accelerators steal Ctrl+W, Ctrl+R, …). macOS keeps a
+  // minimal app/edit menu because native clipboard shortcuts depend on it there.
+  Menu.setApplicationMenu(
+    process.platform === 'darwin'
+      ? Menu.buildFromTemplate([{ role: 'appMenu' }, { role: 'editMenu' }])
+      : null,
+  );
+
+  void registerIpcHandlers({ syncSentryOptIn }).then((services) => {
     appServices = services;
     createWindow();
     setupPoCIpc(mainWindow);

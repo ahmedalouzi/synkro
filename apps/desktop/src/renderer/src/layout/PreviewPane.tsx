@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { usePreviewStore } from '../stores/preview-store';
 import { useWorkspaceStore } from '../stores/workspace-store';
 import { PreviewAssembly } from '../features/preview/PreviewAssembly';
@@ -236,41 +236,36 @@ Please modify the selected element and its corresponding component files as foll
   const platColor = getPlatformColor(platform);
   const device = DEVICES.find((d) => d.id === deviceId) ?? DEVICES[0]!;
 
-  /* ── Scale: observe outermost pane ── */
-  useEffect(() => {
-    const el = paneRef.current;
+  /* ── Scale: fit the phone into the stage below the header ── */
+  const stageBodyRef = useRef<HTMLDivElement>(null);
+  const fitScale = useCallback(() => {
+    const el = stageBodyRef.current;
     if (!el) return;
-
-    const compute = () => {
-      const d = DEVICES.find((x) => x.id === deviceRef.current) ?? DEVICES[0]!;
-      const availW = el.clientWidth - 24;
-      const availH = el.clientHeight - 34 - 50;
-      if (availW < 10 || availH < 10) return;
-      const outerW = d.logicalViewport.width + d.screenCutout.x * 2;
-      const outerH = d.logicalViewport.height + d.screenCutout.y * 2;
-      const s = Math.min(availW / outerW, availH / outerH);
-      setScale(Math.min(Math.max(s, 0.2), 1.0));
-    };
-
-    compute();
-    const ro = new ResizeObserver(compute);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-
-  // Recompute when device changes
-  useEffect(() => {
-    const el = paneRef.current;
-    if (!el) return;
-    const d = DEVICES.find((x) => x.id === deviceId) ?? DEVICES[0]!;
+    const d = DEVICES.find((x) => x.id === deviceRef.current) ?? DEVICES[0]!;
+    // Stage padding (14px top/bottom, 12px sides) + device label row with its gap.
     const availW = el.clientWidth - 24;
-    const availH = el.clientHeight - 34 - 50;
+    const availH = el.clientHeight - 28 - 26;
     if (availW < 10 || availH < 10) return;
     const outerW = d.logicalViewport.width + d.screenCutout.x * 2;
     const outerH = d.logicalViewport.height + d.screenCutout.y * 2;
     const s = Math.min(availW / outerW, availH / outerH);
     setScale(Math.min(Math.max(s, 0.2), 1.0));
-  }, [deviceId]);
+  }, []);
+
+  useEffect(() => {
+    fitScale();
+    const el = stageBodyRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(fitScale);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [fitScale]);
+
+  // Recompute when device changes
+  useEffect(() => {
+    deviceRef.current = deviceId;
+    fitScale();
+  }, [deviceId, fitScale]);
 
   /* ── Detach listener ── */
   useEffect(() => {
@@ -308,7 +303,47 @@ Please modify the selected element and its corresponding component files as foll
     }
     usePreviewStore.getState().bumpIframe();
   };
-  const handleDetach = () => void window.peep.detachPreview(deviceId);
+  const handleStop = () => {
+    if (platform === 'react-native' || platform === 'expo') {
+      if (session?.processId) {
+        void window.peep.rnStopPreview(session.processId);
+      }
+    } else {
+      void window.peep.stopPreview();
+    }
+  };
+
+  /* ── Run menu commands (Start / Reload / Stop Preview) ── */
+  const runHandlersRef = useRef({ handleStart, handleRefresh, handleStop });
+  runHandlersRef.current = { handleStart, handleRefresh, handleStop };
+  useEffect(() => {
+    const onStart = () => runHandlersRef.current.handleStart();
+    const onReload = () => runHandlersRef.current.handleRefresh();
+    const onStop = () => runHandlersRef.current.handleStop();
+    window.addEventListener('peep:preview-start', onStart);
+    window.addEventListener('peep:preview-reload', onReload);
+    window.addEventListener('peep:preview-stop', onStop);
+    return () => {
+      window.removeEventListener('peep:preview-start', onStart);
+      window.removeEventListener('peep:preview-reload', onReload);
+      window.removeEventListener('peep:preview-stop', onStop);
+    };
+  }, []);
+  const handleDetach = () => void window.peep.detachPreview(deviceId, {
+    width: device.logicalViewport.width + device.screenCutout.x * 2,
+    height: device.logicalViewport.height + device.screenCutout.y * 2,
+  });
+
+  // Switching device while detached: resize the detached window and show the new device.
+  const lastDetachedDeviceRef = useRef(deviceId);
+  useEffect(() => {
+    if (!isDetached || lastDetachedDeviceRef.current === deviceId) return;
+    lastDetachedDeviceRef.current = deviceId;
+    handleDetach();
+  }, [deviceId, isDetached]);
+  useEffect(() => {
+    if (isDetached) lastDetachedDeviceRef.current = deviceId;
+  }, [isDetached]);
   const handleAutoHeal = () => {
     if (!project || !session?.error) return;
     const { agentPaneOpen, toggleAgentPane } = useWorkspaceStore.getState();
@@ -393,15 +428,7 @@ Please modify the selected element and its corresponding component files as foll
                   <button type="button" className="preview-action-btn" onClick={handleRefresh} title="Hot reload">
                     ↺ Refresh
                   </button>
-                  <button type="button" className="preview-action-btn" onClick={() => {
-                    if (platform === 'react-native' || platform === 'expo') {
-                      if (session?.processId) {
-                        void window.peep.rnStopPreview(session.processId);
-                      }
-                    } else {
-                      void window.peep.stopPreview();
-                    }
-                  }} title="Stop preview">
+                  <button type="button" className="preview-action-btn" onClick={handleStop} title="Stop preview">
                     ⏹ Stop
                   </button>
                 </>
@@ -438,7 +465,7 @@ Please modify the selected element and its corresponding component files as foll
       }}>
 
         {/* ── Body ── */}
-        <div className="panel-body preview-pane__body">
+        <div className="panel-body preview-pane__body" ref={stageBodyRef}>
           {isDetached ? (
             <div className="preview-placeholder">
               <span className="preview-placeholder__icon">↗️</span>
@@ -452,24 +479,14 @@ Please modify the selected element and its corresponding component files as foll
           ) : (
             <div className="preview-stage">
               <div className="preview-device-label">{device.label}</div>
-              {/* Slot reserves scaled pixel space; transform div scales from top-left */}
-              <div className="phone-scale-slot" style={{
-                width: (device.logicalViewport.width + device.screenCutout.x * 2) * scale,
-                height: (device.logicalViewport.height + device.screenCutout.y * 2) * scale,
-                flexShrink: 0,
-                position: 'relative',
-              }}>
+              {/* CSS zoom (not transform: scale): Chromium re-renders the iframe at the
+                  zoomed size so the app stays sharp, while it still sees the device's
+                  logical width (e.g. 393px). transform would stretch a 1x bitmap. */}
               <div className="phone-scale-container" style={{
                 width: device.logicalViewport.width + device.screenCutout.x * 2,
                 height: device.logicalViewport.height + device.screenCutout.y * 2,
-                transform: `scale(${scale})`,
-                transformOrigin: 'top left',
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                /* Offset the device-assembly so the frame background (which extends
-                   -cutout.x/-cutout.y from device-assembly) aligns exactly with the
-                   container boundary — no visible edge left/right/top/bottom */
+                zoom: scale,
+                flexShrink: 0,
                 boxSizing: 'border-box',
                 paddingLeft: device.screenCutout.x,
                 paddingTop: device.screenCutout.y,
@@ -557,7 +574,6 @@ Please modify the selected element and its corresponding component files as foll
                     </div>
                   )}
                 </PreviewAssembly>
-              </div>
               </div>
             </div>
           )}

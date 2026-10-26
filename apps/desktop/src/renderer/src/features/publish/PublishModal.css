@@ -249,33 +249,12 @@
   margin: 0 0 12px 0;
 }
 
-.mock-qrcode {
-  width: 100px;
-  height: 100px;
-  background-color: #f0f6fc;
+.publish-qrcode {
+  width: 120px;
+  height: 120px;
   border-radius: 6px;
-  padding: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  background: #fff;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
-}
-
-.mock-qrcode__dots {
-  display: grid;
-  grid-template-columns: repeat(8, 1fr);
-  gap: 3px;
-  width: 100%;
-  height: 100%;
-}
-
-.mock-qrcode__dots span {
-  background-color: #e1e4e8;
-  border-radius: 1px;
-}
-
-.mock-qrcode__dots span.active {
-  background-color: #0d1117;
 }
 
 .publish-log-box {

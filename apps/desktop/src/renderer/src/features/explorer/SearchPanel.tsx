@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useWorkspaceStore } from '../../stores/workspace-store';
 import { useWorkspace } from '../../hooks/useWorkspace';
 
@@ -83,6 +83,14 @@ function HighlightedText({ text, query, useRegex, caseSensitive }: {
   }
 }
 
+/** Matches the case pattern of `matched` (UPPER, lower, Capitalized) like VS Code's Preserve Case. */
+function applyPreserveCase(matched: string, replacement: string): string {
+  if (matched === matched.toUpperCase() && matched !== matched.toLowerCase()) return replacement.toUpperCase();
+  if (matched === matched.toLowerCase()) return replacement.toLowerCase();
+  if (matched[0] === matched[0].toUpperCase()) return replacement.charAt(0).toUpperCase() + replacement.slice(1);
+  return replacement;
+}
+
 /* ── Main component ──────────────────────────────────────────────────────── */
 export function SearchPanel() {
   const project = useWorkspaceStore((s) => s.project);
@@ -97,9 +105,26 @@ export function SearchPanel() {
   const [wholeWord, setWholeWord] = useState(false);
   const [showReplace, setShowReplace] = useState(false);
   const [replaceText, setReplaceText] = useState('');
+  const [preserveCase, setPreserveCase] = useState(false);
+  const [replacing, setReplacing] = useState(false);
   const [includeFiles, setIncludeFiles] = useState('');
   const [excludeFiles, setExcludeFiles] = useState('');
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Edit › Find in Files / Replace in Files — seeded with the editor selection like VS Code.
+  useEffect(() => {
+    const onFocus = (e: Event) => {
+      const { replace } = (e as CustomEvent<{ replace?: boolean } | undefined>).detail ?? {};
+      if (replace) setShowReplace(true);
+      const selection = useWorkspaceStore.getState().activeSelection?.text;
+      if (selection && !selection.includes('\n')) setQuery(selection);
+      searchInputRef.current?.focus();
+      searchInputRef.current?.select();
+    };
+    window.addEventListener('peep:search-focus', onFocus);
+    return () => window.removeEventListener('peep:search-focus', onFocus);
+  }, []);
 
   const doSearch = useCallback(async (q: string) => {
     if (!project || !q.trim()) {
@@ -151,6 +176,59 @@ export function SearchPanel() {
       if (next.has(file)) next.delete(file); else next.add(file);
       return next;
     });
+  };
+
+  const replaceAll = async () => {
+    if (!query || results.length === 0 || replacing) return;
+    const matchCount = results.reduce((acc, r) => acc + r.matches.length, 0);
+    const confirmed = window.confirm(
+      `Replace ${matchCount} occurrence${matchCount === 1 ? '' : 's'} across ${results.length} file${results.length === 1 ? '' : 's'} with '${replaceText}'?`,
+    );
+    if (!confirmed) return;
+
+    let regex: RegExp;
+    try {
+      const escaped = useRegex ? query : query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      regex = new RegExp(wholeWord ? `\\b${escaped}\\b` : escaped, caseSensitive ? 'g' : 'gi');
+    } catch (err) {
+      window.alert(`Invalid regular expression: ${(err as Error).message}`);
+      return;
+    }
+
+    const replaceMatch = (matched: string, ...groups: unknown[]) => {
+      // With regex mode, $1-style references expand like VS Code; otherwise the text is literal.
+      let text = replaceText;
+      if (useRegex) {
+        // replace() passes captures, then the numeric offset, the input, and (optionally) named groups.
+        const captures = groups.slice(0, groups.findIndex((g) => typeof g === 'number')) as (string | undefined)[];
+        text = replaceText.replace(/\$(\d+|&)/g, (ref, n: string) => (n === '&' ? matched : captures[Number(n) - 1] ?? ref));
+      }
+      return preserveCase ? applyPreserveCase(matched, text) : text;
+    };
+
+    setReplacing(true);
+    const failures: string[] = [];
+    const store = useWorkspaceStore.getState();
+    for (const result of results) {
+      try {
+        const open = store.openFiles.find((f) => f.path === result.fullPath);
+        if (open?.dirty) {
+          // Unsaved edits live only in the editor: replace there and leave the file dirty.
+          store.updateFileContent(open.path, open.content.replace(regex, replaceMatch));
+          continue;
+        }
+        const content = await window.peep.readFile(result.fullPath);
+        const next = content.replace(regex, replaceMatch);
+        if (next === content) continue;
+        await window.peep.writeFile(result.fullPath, next);
+        if (open) store.syncFileContent(open.path, next);
+      } catch (err) {
+        failures.push(`${result.file}: ${(err as Error).message}`);
+      }
+    }
+    setReplacing(false);
+    if (failures.length) window.alert(`Some files could not be updated:\n${failures.join('\n')}`);
+    void doSearch(query);
   };
 
   const collapseAll = () => setCollapsed(new Set(results.map((r) => r.file)));
@@ -220,6 +298,7 @@ export function SearchPanel() {
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 }}>
             {/* Input */}
             <input
+              ref={searchInputRef}
               autoFocus
               type="text"
               placeholder="Search"
@@ -257,12 +336,14 @@ export function SearchPanel() {
                 style={{ ...inputStyle, paddingRight: '28px' }}
               />
               <div style={{ position: 'absolute', right: '4px', display: 'flex', alignItems: 'center' }}>
-                <IconBtn title="Preserve Case (Alt+P)">AB</IconBtn>
+                <IconBtn title="Preserve Case (Alt+P)" active={preserveCase} onClick={() => setPreserveCase((v) => !v)}>AB</IconBtn>
               </div>
             </div>
             <button
               title="Replace All"
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '3px', display: 'flex', alignItems: 'center', flexShrink: 0 }}
+              onClick={() => void replaceAll()}
+              disabled={replacing || results.length === 0}
+              style={{ background: 'none', border: 'none', cursor: results.length ? 'pointer' : 'default', opacity: results.length ? 1 : 0.4, color: 'var(--text-muted)', padding: '3px', display: 'flex', alignItems: 'center', flexShrink: 0 }}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="2" width="8" height="8" rx="1"/><rect x="14" y="2" width="8" height="8" rx="1"/><rect x="2" y="14" width="8" height="8" rx="1"/><path d="M14 17h8m-4-4v8"/></svg>
             </button>

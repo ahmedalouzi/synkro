@@ -1,8 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
-import { Terminal } from '@xterm/xterm';
+import { Terminal, type ITerminalOptions } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
+import { SearchAddon } from '@xterm/addon-search';
+import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
 import { useWorkspaceStore } from '../../stores/workspace-store';
+import { isGlobalKeybinding } from '../../commands/keybindings';
+import { ContextMenu, type ContextMenuItem } from '../shared/ContextMenu';
+import { clearActiveTerminal, getActiveTerminalOutput, setActiveTerminal } from './terminal-registry';
+import { askAgent } from '../chat/ask-agent';
 import './TerminalPanel.css';
 
 interface TermInstance {
@@ -10,25 +16,152 @@ interface TermInstance {
   name: string;
   term: Terminal;
   fit: FitAddon;
+  search: SearchAddon;
 }
 
-export function TerminalPanel() {
+const AGENT_TERMINAL_ID = 'agent-terminal';
+
+const BASE_OPTIONS: ITerminalOptions = {
+  theme: {
+    background: '#0d1117',
+    foreground: '#e6edf3',
+    cursor: '#58a6ff',
+    selectionBackground: '#264f78',
+  },
+  fontFamily: "'Cascadia Code', Consolas, monospace",
+  fontSize: 12,
+  scrollback: 5000,
+};
+
+/** Creates an xterm instance with the addons VS Code's terminal uses (fit, search, links). */
+function createXterm(
+  id: string,
+  name: string,
+  options: ITerminalOptions,
+  onFind: () => void,
+): TermInstance {
+  const term = new Terminal({ ...BASE_OPTIONS, ...options });
+  const fit = new FitAddon();
+  const search = new SearchAddon();
+  term.loadAddon(fit);
+  term.loadAddon(search);
+  // Ctrl/Cmd+click opens URLs, like VS Code.
+  term.loadAddon(new WebLinksAddon((event, uri) => {
+    if (event.ctrlKey || event.metaKey) window.open(uri);
+  }));
+
+  // xterm needs a parent element before it can render; it's moved into the panel when shown.
+  const host = document.createElement('div');
+  host.style.height = '100%';
+  term.open(host);
+
+  term.attachCustomKeyEventHandler((e) => {
+    if (e.type !== 'keydown') return true;
+    const ctrl = e.ctrlKey || e.metaKey;
+
+    // Copy when there is a selection; otherwise Ctrl+C goes to the shell as SIGINT.
+    if (ctrl && !e.shiftKey && e.code === 'KeyC' && term.hasSelection()) {
+      void navigator.clipboard.writeText(term.getSelection());
+      term.clearSelection();
+      return false;
+    }
+    if (ctrl && e.code === 'KeyV') {
+      if (!options.disableStdin) {
+        void navigator.clipboard.readText().then((text) => text && term.paste(text));
+      }
+      return false;
+    }
+    if (ctrl && !e.shiftKey && e.code === 'KeyF') {
+      onFind();
+      return false;
+    }
+    // Let workbench keybindings (Ctrl+`, Ctrl+B, Ctrl+P, …) reach the global handler.
+    if (isGlobalKeybinding(e)) return false;
+    return true;
+  });
+
+  return { id, name, term, fit, search };
+}
+
+interface TerminalPanelProps {
+  /** Kill the shells when the panel goes away (the start page's terminal has no other owner). */
+  disposeOnUnmount?: boolean;
+}
+
+export function TerminalPanel({ disposeOnUnmount = false }: TerminalPanelProps = {}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const project = useWorkspaceStore((s) => s.project);
-  
+
   const [terminals, setTerminals] = useState<TermInstance[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
-  
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const [findOpen, setFindOpen] = useState(false);
+  const [findQuery, setFindQuery] = useState('');
+  const findInputRef = useRef<HTMLInputElement>(null);
+
   // Keep refs for event handlers to avoid stale closures
   const terminalsRef = useRef(terminals);
   terminalsRef.current = terminals;
   const activeIdRef = useRef(activeId);
   activeIdRef.current = activeId;
   const lastAgentSessionIdRef = useRef<string | null>(null);
+  const terminalCounterRef = useRef(0);
+
+  const getActive = () => terminalsRef.current.find((t) => t.id === activeIdRef.current);
+
+  const openFind = () => {
+    setFindOpen(true);
+    const selection = getActive()?.term.getSelection();
+    if (selection && !selection.includes('\n')) setFindQuery(selection);
+    requestAnimationFrame(() => {
+      findInputRef.current?.focus();
+      findInputRef.current?.select();
+    });
+  };
+  const openFindRef = useRef(openFind);
+  openFindRef.current = openFind;
+
+  /** Removes a terminal tab; `killProcess` is false when the shell already exited. */
+  const disposeTerminal = (id: string, killProcess = true) => {
+    const t = terminalsRef.current.find((x) => x.id === id);
+    if (!t) return;
+    clearActiveTerminal(t.term);
+    t.term.dispose();
+    if (killProcess && id !== AGENT_TERMINAL_ID) void window.peep.destroyTerminal(id);
+    setTerminals((prev) => {
+      const next = prev.filter((x) => x.id !== id);
+      if (activeIdRef.current === id) {
+        setActiveId(next.length > 0 ? next[next.length - 1].id : null);
+      }
+      return next;
+    });
+  };
+
+  const addTerminal = () => {
+    const id = `term-${Date.now()}`;
+    terminalCounterRef.current += 1;
+    const instance = createXterm(id, `Terminal ${terminalCounterRef.current}`, { cursorBlink: true }, () => openFindRef.current());
+
+    instance.term.onData((data) => {
+      void window.peep.writeTerminal(id, data);
+    });
+    // Keep the pseudo-terminal's size in sync with the view (like terminalResizeDebouncer).
+    instance.term.onResize(({ cols, rows }) => {
+      void window.peep.resizeTerminal(id, cols, rows);
+    });
+
+    // Without a project (start page) the main process falls back to the home folder.
+    void window.peep.createTerminal({ id, cwd: project?.path ?? '', cols: instance.term.cols, rows: instance.term.rows });
+
+    // Updated now (not on the next render) so a second "create the first terminal" pass sees it.
+    terminalsRef.current = [...terminalsRef.current, instance];
+    setTerminals((prev) => [...prev, instance]);
+    setActiveId(id);
+  };
 
   // Initialize first terminal on mount
   useEffect(() => {
-    if (!project) return;
     if (terminalsRef.current.length === 0) {
       addTerminal();
     }
@@ -37,42 +170,20 @@ export function TerminalPanel() {
   // Handle terminal output and exit events
   useEffect(() => {
     const getOrCreateAgentTerminal = (terminalsArr: TermInstance[]) => {
-      let agentTerm = terminalsArr.find(t => t.id === 'agent-terminal');
+      let agentTerm = terminalsArr.find((t) => t.id === AGENT_TERMINAL_ID);
       if (!agentTerm) {
-        const term = new Terminal({
-          theme: { background: '#0d1117', foreground: '#e6edf3', cursor: '#58a6ff', selectionBackground: '#264f78' },
-          fontFamily: "'Cascadia Code', Consolas, monospace",
-          fontSize: 12,
-          scrollback: 5000,
-          convertEol: true,
-          disableStdin: true,
-          cursorBlink: false
-        });
-        const fit = new FitAddon();
-        term.loadAddon(fit);
-        const tempDiv = document.createElement('div');
-        term.open(tempDiv);
-        
-        term.attachCustomKeyEventHandler((e) => {
-          if ((e.ctrlKey || e.metaKey) && e.code === 'KeyC' && term.hasSelection() && e.type === 'keydown') {
-            navigator.clipboard.writeText(term.getSelection());
-            return false;
-          }
-          return true;
-        });
+        // Agent commands run without a pty, so normalize bare \n line endings.
+        agentTerm = createXterm(
+          AGENT_TERMINAL_ID,
+          '🤖 Agent Terminal',
+          { convertEol: true, disableStdin: true, cursorBlink: false },
+          () => openFindRef.current(),
+        );
+        const created = agentTerm;
+        setTerminals((prev) => [...prev, created]);
 
-        tempDiv.addEventListener('copy', (e) => {
-          if (term.hasSelection()) {
-            e.clipboardData?.setData('text/plain', term.getSelection());
-            e.preventDefault();
-          }
-        });
-
-        agentTerm = { id: 'agent-terminal', name: '🤖 Agent Terminal', term, fit };
-        setTerminals(prev => [...prev, agentTerm!]);
-        
         // Auto-switch to Agent Terminal when created
-        setActiveId('agent-terminal');
+        setActiveId(AGENT_TERMINAL_ID);
         // Ensure bottom panel is open and on the terminal tab
         const wsState = useWorkspaceStore.getState();
         if (wsState.bottomPanelTab !== 'terminal') wsState.setBottomPanelTab('terminal');
@@ -92,33 +203,29 @@ export function TerminalPanel() {
         return;
       }
 
-      const t = terminalsRef.current.find(x => x.id === id);
+      const t = terminalsRef.current.find((x) => x.id === id);
       if (t) t.term.write(data);
     });
 
     const unsubExit = window.peep.onTerminalExit(({ id, code }) => {
       if (id.startsWith('agent-cmd-')) {
-        const t = terminalsRef.current.find(x => x.id === 'agent-terminal');
+        const t = terminalsRef.current.find((x) => x.id === AGENT_TERMINAL_ID);
         if (t) t.term.writeln(`\r\n\x1b[90m[Agent command finished with code ${code}]\x1b[0m\r\n`);
         return;
       }
 
-      const t = terminalsRef.current.find(x => x.id === id);
-      if (t && code !== 0) t.term.writeln(`\r\n[process exited with code ${code}]`);
-    });
-
-    const unsubPreviewLog = window.peep.onPreviewLog((msg) => {
-      const targetId = activeIdRef.current || (terminalsRef.current.length > 0 ? terminalsRef.current[0].id : null);
-      if (targetId) {
-        const t = terminalsRef.current.find(x => x.id === targetId);
-        if (t) t.term.writeln(msg.replace(/\r?\n/g, '\r\n'));
+      // VS Code closes the tab when the shell exits cleanly (e.g. `exit`) and keeps it otherwise.
+      if (code === 0) {
+        disposeTerminal(id, false);
+        return;
       }
+      const t = terminalsRef.current.find((x) => x.id === id);
+      if (t) t.term.writeln(`\r\n\x1b[90m[The terminal process terminated with exit code: ${code}]\x1b[0m`);
     });
 
     return () => {
       unsubOutput();
       unsubExit();
-      unsubPreviewLog();
     };
   }, []);
 
@@ -126,185 +233,216 @@ export function TerminalPanel() {
   useEffect(() => {
     if (!containerRef.current) return;
     const container = containerRef.current;
-    
-    // Clear container
+
     while (container.firstChild) {
       container.removeChild(container.firstChild);
     }
-    
-    if (!activeId) return;
-    
-    const active = terminals.find(t => t.id === activeId);
+
+    const active = terminals.find((t) => t.id === activeId);
+    setActiveTerminal(active?.term ?? null);
     if (active && active.term.element) {
       container.appendChild(active.term.element);
-      setTimeout(() => {
+      requestAnimationFrame(() => {
         active.fit.fit();
         active.term.focus();
-      }, 50);
+      });
     }
   }, [activeId, terminals]);
 
-  // Handle window resize
+  // Refit when the panel is resized (window resize or dragging the panel splitter).
   useEffect(() => {
-    const handleResize = () => {
-      const active = terminals.find(t => t.id === activeId);
-      if (active) active.fit.fit();
+    const container = containerRef.current;
+    if (!container) return;
+    let frame = 0;
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const active = getActive();
+        if (active && container.offsetWidth > 0 && container.offsetHeight > 0) active.fit.fit();
+      });
+    });
+    observer.observe(container);
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
     };
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, [activeId, terminals]);
+  }, [project]);
 
-  const addTerminal = () => {
-    if (!project) return;
-    const id = `term-${Date.now()}`;
-    const name = `Terminal ${terminalsRef.current.length + 1}`;
-    
-    const term = new Terminal({
-      theme: {
-        background: '#0d1117',
-        foreground: '#e6edf3',
-        cursor: '#58a6ff',
-        selectionBackground: '#264f78',
-      },
-      fontFamily: "'Cascadia Code', Consolas, monospace",
-      fontSize: 12,
-      cursorBlink: true,
-      scrollback: 5000,
-      convertEol: true,
-    });
-
-    const fit = new FitAddon();
-    term.loadAddon(fit);
-    
-    // We don't mount it to DOM yet, just create it. 
-    // It will be mounted in the useEffect above when activeId changes.
-    // Wait, xterm requires an element to be passed to open() before fit() can work.
-    // We can create an invisible container for it.
-    const tempDiv = document.createElement('div');
-    term.open(tempDiv);
-    
-    // Fix: Allow Ctrl+C / Cmd+C to copy when text is selected
-    term.attachCustomKeyEventHandler((e) => {
-      if ((e.ctrlKey || e.metaKey) && e.code === 'KeyC') {
-        if (term.hasSelection()) {
-          if (e.type === 'keydown') {
-            navigator.clipboard.writeText(term.getSelection());
-          }
-          return false; // Prevent xterm from sending ^C to the pty
+  const mountedRef = useRef(false);
+  useEffect(() => {
+    mountedRef.current = true;
+    if (!disposeOnUnmount) return;
+    return () => {
+      mountedRef.current = false;
+      // Deferred so React StrictMode's immediate re-mount in dev doesn't kill the shells.
+      setTimeout(() => {
+        if (mountedRef.current) return;
+        for (const t of terminalsRef.current) {
+          clearActiveTerminal(t.term);
+          t.term.dispose();
+          if (t.id !== AGENT_TERMINAL_ID) void window.peep.destroyTerminal(t.id);
         }
+      }, 0);
+    };
+  }, [disposeOnUnmount]);
+
+  // Commands from the menu bar / command palette (Terminal menu)
+  const addTerminalRef = useRef(addTerminal);
+  addTerminalRef.current = addTerminal;
+  const disposeTerminalRef = useRef(disposeTerminal);
+  disposeTerminalRef.current = disposeTerminal;
+  useEffect(() => {
+    const onNew = () => addTerminalRef.current();
+    const onClear = () => getActive()?.term.clear();
+    const onRunText = (e: Event) => {
+      const text = (e as CustomEvent<string>).detail;
+      let target = getActive();
+      if (!target || target.id === AGENT_TERMINAL_ID) {
+        target = terminalsRef.current.find((t) => t.id !== AGENT_TERMINAL_ID);
       }
-
-      // Fix: Allow Ctrl+V / Cmd+V to paste
-      if ((e.ctrlKey || e.metaKey) && e.code === 'KeyV') {
-        if (e.type === 'keydown') {
-          navigator.clipboard.readText().then((text) => {
-            if (text) void window.peep.writeTerminal(id, text);
-          }).catch(err => console.error('Failed to read clipboard', err));
-        }
-        return false; // Prevent xterm from handling the event natively
+      if (target && text) {
+        setActiveId(target.id);
+        void window.peep.writeTerminal(target.id, text.endsWith('\n') ? text : `${text}\r`);
       }
+    };
+    const onKill = () => {
+      const t = getActive();
+      if (t && t.id !== AGENT_TERMINAL_ID) disposeTerminalRef.current(t.id);
+    };
+    window.addEventListener('peep:terminal-new', onNew);
+    window.addEventListener('peep:terminal-clear', onClear);
+    window.addEventListener('peep:terminal-run-text', onRunText);
+    window.addEventListener('peep:terminal-kill', onKill);
+    return () => {
+      window.removeEventListener('peep:terminal-new', onNew);
+      window.removeEventListener('peep:terminal-clear', onClear);
+      window.removeEventListener('peep:terminal-run-text', onRunText);
+      window.removeEventListener('peep:terminal-kill', onKill);
+    };
+  }, []);
 
-      // Fix: Allow Ctrl+Z / Cmd+Z to send suspend/EOF signal to the pty
-      if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ') {
-        if (e.type === 'keydown') {
-          void window.peep.writeTerminal(id, '\x1a');
-        }
-        return false; // Prevent xterm or browser from treating it as an undo action
-      }
-
-      return true;
-    });
-
-    // Fix: Ensure 'copy' event (e.g. from app menu or context menu) gets the selection
-    tempDiv.addEventListener('copy', (e) => {
-      if (term.hasSelection()) {
-        e.clipboardData?.setData('text/plain', term.getSelection());
-        e.preventDefault();
-      }
-    });
-    
-    term.onData((data) => {
-      void window.peep.writeTerminal(id, data);
-    });
-
-    void window.peep.createTerminal({ id, cwd: project.path });
-
-    setTerminals(prev => [...prev, { id, name, term, fit }]);
-    setActiveId(id);
+  const runFind = (direction: 'next' | 'previous') => {
+    const active = getActive();
+    if (!active || !findQuery) return;
+    if (direction === 'next') active.search.findNext(findQuery);
+    else active.search.findPrevious(findQuery);
   };
 
-  const removeTerminal = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    
-    const t = terminals.find(x => x.id === id);
-    if (t) {
-      t.term.dispose();
-      void window.peep.destroyTerminal(id);
-    }
-
-    setTerminals(prev => {
-      const next = prev.filter(x => x.id !== id);
-      if (activeId === id) {
-        setActiveId(next.length > 0 ? next[next.length - 1].id : null);
-      }
-      return next;
-    });
+  const closeFind = () => {
+    setFindOpen(false);
+    getActive()?.term.clearSelection();
+    getActive()?.term.focus();
   };
 
-  if (!project) {
-    return <div className="bottom-panel__empty">Open a project to use the terminal.</div>;
-  }
+  const commitRename = (id: string, value: string) => {
+    const name = value.trim();
+    if (name) setTerminals((prev) => prev.map((t) => (t.id === id ? { ...t, name } : t)));
+    setRenamingId(null);
+  };
+
+  const active = terminals.find((t) => t.id === activeId);
+  const isUserTerminal = !!active && active.id !== AGENT_TERMINAL_ID;
+  const menuItems: ContextMenuItem[] = [
+    { label: 'Copy', keybinding: 'Ctrl+C', enabled: !!active?.term.hasSelection(), run: () => {
+      if (active) void navigator.clipboard.writeText(active.term.getSelection());
+    } },
+    { label: 'Paste', keybinding: 'Ctrl+V', enabled: isUserTerminal, run: () => {
+      void navigator.clipboard.readText().then((text) => text && active?.term.paste(text));
+    } },
+    { label: 'Select All', enabled: !!active, run: () => active?.term.selectAll() },
+    '-',
+    { label: '✦ Fix with AI', enabled: !!active, run: () => {
+      const output = getActiveTerminalOutput(80);
+      if (output) askAgent(`Explain the error in this terminal output and fix it:\n\n\`\`\`\n${output}\n\`\`\``);
+    } },
+    '-',
+    { label: 'Find', keybinding: 'Ctrl+F', enabled: !!active, run: openFind },
+    { label: 'Clear Terminal', enabled: !!active, run: () => active?.term.clear() },
+    '-',
+    { label: 'New Terminal', keybinding: 'Ctrl+Shift+`', run: addTerminal },
+    { label: 'Rename...', enabled: isUserTerminal, run: () => active && setRenamingId(active.id) },
+    { label: 'Kill Terminal', enabled: isUserTerminal, run: () => active && disposeTerminal(active.id) },
+  ];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       {/* Terminal Tabs */}
-      <div style={{ display: 'flex', background: 'var(--bg-base)', borderBottom: '1px solid var(--border)' }}>
-        {terminals.map(t => (
-          <div 
-            key={t.id} 
+      <div className="terminal-tabs">
+        {terminals.map((t) => (
+          <div
+            key={t.id}
+            className={`terminal-tab-item ${activeId === t.id ? 'active' : ''}`}
             onClick={() => setActiveId(t.id)}
-            style={{ 
-              padding: '4px 10px', 
-              fontSize: '11px', 
-              cursor: 'pointer', 
-              borderRight: '1px solid var(--border)',
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: '6px',
-              background: activeId === t.id ? 'var(--bg-elevated)' : 'transparent',
-              color: activeId === t.id ? 'var(--text-primary)' : 'var(--text-muted)'
-            }}
+            onDoubleClick={() => t.id !== AGENT_TERMINAL_ID && setRenamingId(t.id)}
+            onAuxClick={(e) => { if (e.button === 1 && t.id !== AGENT_TERMINAL_ID) disposeTerminal(t.id); }}
+            title={t.id !== AGENT_TERMINAL_ID ? 'Double-click to rename' : undefined}
           >
-            <span>{t.name}</span>
-            {t.id !== 'agent-terminal' && (
-              <button 
-                onClick={(e) => removeTerminal(t.id, e)}
-                style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0, opacity: 0.6 }}
-                title="Close terminal"
+            {renamingId === t.id ? (
+              <input
+                autoFocus
+                className="terminal-rename-input"
+                defaultValue={t.name}
+                onClick={(e) => e.stopPropagation()}
+                onBlur={(e) => commitRename(t.id, e.currentTarget.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') commitRename(t.id, e.currentTarget.value);
+                  if (e.key === 'Escape') setRenamingId(null);
+                  e.stopPropagation();
+                }}
+              />
+            ) : (
+              <span>{t.name}</span>
+            )}
+            {t.id !== AGENT_TERMINAL_ID && (
+              <button
+                className="terminal-tab-close"
+                onClick={(e) => { e.stopPropagation(); disposeTerminal(t.id); }}
+                title="Kill Terminal"
               >
                 ✕
               </button>
             )}
           </div>
         ))}
-        <button 
-          onClick={addTerminal}
-          style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '4px 10px', fontSize: '14px' }}
-          title="New Terminal"
-        >
+        <button className="terminal-tab-add" onClick={addTerminal} title="New Terminal (Ctrl+Shift+`)">
           +
         </button>
       </div>
 
       {/* Terminal Viewport */}
-      <div 
-        ref={containerRef} 
-        style={{ flex: 1, padding: '4px', overflow: 'hidden' }} 
-        onClick={() => {
-          const active = terminals.find(t => t.id === activeId);
-          if (active) active.term.focus();
-        }}
-      />
+      <div style={{ flex: 1, position: 'relative', minHeight: 0 }}>
+        {findOpen && (
+          <div className="terminal-find" onMouseDown={(e) => e.stopPropagation()}>
+            <input
+              ref={findInputRef}
+              placeholder="Find"
+              value={findQuery}
+              onChange={(e) => setFindQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') runFind(e.shiftKey ? 'previous' : 'next');
+                else if (e.key === 'Escape') closeFind();
+                else return;
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+            />
+            <button title="Previous Match (Shift+Enter)" onClick={() => runFind('previous')}>↑</button>
+            <button title="Next Match (Enter)" onClick={() => runFind('next')}>↓</button>
+            <button title="Close (Escape)" onClick={closeFind}>✕</button>
+          </div>
+        )}
+        <div
+          ref={containerRef}
+          className="terminal-viewport"
+          onClick={() => getActive()?.term.focus()}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            setMenu({ x: e.clientX, y: e.clientY });
+          }}
+        />
+      </div>
+
+      {menu && <ContextMenu x={menu.x} y={menu.y} items={menuItems} onClose={() => setMenu(null)} />}
     </div>
   );
 }

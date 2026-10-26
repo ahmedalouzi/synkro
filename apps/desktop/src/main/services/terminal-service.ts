@@ -23,6 +23,34 @@ const ALLOWED_PREFIXES = [
   'echo ',
 ];
 
+/** Kills a shell and everything it started (e.g. `npm start`), not just the shell itself. */
+function killTree(child: ChildProcess): void {
+  if (child.pid === undefined || child.exitCode !== null) return;
+  if (platform() === 'win32') {
+    spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
+  } else {
+    child.kill();
+  }
+}
+
+type PtyModule = typeof import('@lydell/node-pty');
+type Pty = import('@lydell/node-pty').IPty;
+
+let ptyModule: PtyModule | null | undefined;
+
+/** Loads node-pty lazily; null if the native module is unavailable (pipe fallback is used). */
+function loadPty(): PtyModule | null {
+  if (ptyModule === undefined) {
+    try {
+      ptyModule = require('@lydell/node-pty') as PtyModule;
+    } catch (err) {
+      console.error('[TerminalService] node-pty unavailable, falling back to pipes:', err);
+      ptyModule = null;
+    }
+  }
+  return ptyModule;
+}
+
 interface TerminalSession {
   process: ChildProcess;
   cwd: string;
@@ -31,6 +59,9 @@ interface TerminalSession {
 }
 
 export class TerminalService {
+  /** Interactive terminals backed by a real pseudo-terminal (like VS Code's terminalProcess). */
+  private ptySessions = new Map<string, Pty>();
+  /** Fallback interactive terminals when node-pty can't load. */
   private sessions = new Map<string, TerminalSession>();
   private commandSessions = new Map<string, TerminalSession>();
   private mainWindow: BrowserWindow | null = null;
@@ -57,7 +88,7 @@ export class TerminalService {
     return { command: process.env.SHELL ?? '/bin/bash', args: ['-i'] };
   }
 
-  create(id: string, cwd: string): void {
+  create(id: string, cwd: string, cols = 80, rows = 24): void {
     if (!cwd || !existsSync(cwd)) {
       console.warn(`[TerminalService] Provided cwd '${cwd}' does not exist. Falling back to homedir.`);
       cwd = homedir();
@@ -75,8 +106,13 @@ export class TerminalService {
         : `${binPath}:${existingPath}`;
     }
 
+    const pty = loadPty();
+    if (pty) {
+      this.createPty(pty, id, cwd, customEnv, cols, rows);
+      return;
+    }
+
     const shell = this.getShell();
-    console.log(`[TerminalService] Spawning shell command: ${shell.command} with args:`, shell.args);
     const child = spawn(shell.command, shell.args, {
       cwd,
       env: customEnv,
@@ -93,17 +129,11 @@ export class TerminalService {
     };
 
     child.stdout?.on('data', (chunk: Buffer) => {
-      const output = chunk.toString();
-      console.log(`[TerminalService] stdout: ${JSON.stringify(output)}`);
-      this.checkAndAutoRespond(id, output, child);
-      emit(output.replace(/\r?\n/g, '\r\n'));
+      emit(chunk.toString().replace(/\r?\n/g, '\r\n'));
     });
-    
+
     child.stderr?.on('data', (chunk: Buffer) => {
-      const output = chunk.toString();
-      console.log(`[TerminalService] stderr: ${JSON.stringify(output)}`);
-      this.checkAndAutoRespond(id, output, child);
-      emit(output.replace(/\r?\n/g, '\r\n'));
+      emit(chunk.toString().replace(/\r?\n/g, '\r\n'));
     });
 
     child.on('exit', (code) => {
@@ -119,12 +149,56 @@ export class TerminalService {
       console.error(`[TerminalService] Spawn error:`, error);
       emit(`\r\n[terminal error] ${error.message}\r\n`);
     });
+  }
 
+  private createPty(pty: PtyModule, id: string, cwd: string, env: NodeJS.ProcessEnv, cols: number, rows: number): void {
+    const isWin = platform() === 'win32';
+    const command = isWin ? 'powershell.exe' : process.env.SHELL ?? '/bin/bash';
+    const args = isWin ? ['-NoLogo'] : platform() === 'darwin' ? ['-l'] : [];
 
+    let proc: Pty;
+    try {
+      proc = pty.spawn(command, args, {
+        name: 'xterm-256color',
+        cols: Math.max(cols, 1),
+        rows: Math.max(rows, 1),
+        cwd,
+        env: { ...env, TERM_PROGRAM: 'synkro', COLORTERM: 'truecolor' } as Record<string, string>,
+      });
+    } catch (error) {
+      console.error('[TerminalService] PTY spawn error:', error);
+      this.emitOutput(id, `\r\n[terminal error] ${(error as Error).message}\r\n`);
+      return;
+    }
+
+    this.ptySessions.set(id, proc);
+    proc.onData((data) => {
+      if (this.ptySessions.get(id) === proc) this.emitOutput(id, data);
+    });
+    proc.onExit(({ exitCode }) => {
+      if (this.ptySessions.get(id) !== proc) return;
+      this.ptySessions.delete(id);
+      this.mainWindow?.webContents.send(IPC_EVENTS.TERMINAL_EXIT, { id, code: exitCode });
+    });
+  }
+
+  resize(id: string, cols: number, rows: number): void {
+    const proc = this.ptySessions.get(id);
+    if (!proc || cols < 1 || rows < 1) return;
+    try {
+      proc.resize(Math.floor(cols), Math.floor(rows));
+    } catch {
+      // The process may have exited between the check and the resize.
+    }
   }
 
   write(id: string, data: string): void {
-    console.log(`[TerminalService] write called for id: ${id}, data: ${JSON.stringify(data)}`);
+    const proc = this.ptySessions.get(id);
+    if (proc) {
+      proc.write(data);
+      return;
+    }
+
     const session = this.sessions.get(id);
     if (!session) {
       console.warn(`[TerminalService] No session found for id: ${id}`);
@@ -158,7 +232,6 @@ export class TerminalService {
 
       if (char === '\r' || char === '\n') {
         const command = session.buffer;
-        console.log(`[TerminalService] Submitting command: ${JSON.stringify(command)}`);
         session.buffer = '';
         if (session.process.stdin?.writable) {
           session.process.stdin.write(command + '\r\n');
@@ -172,7 +245,6 @@ export class TerminalService {
           emit('\b \b');
         }
       } else if (char === '\x03') {
-        console.log('[TerminalService] Ctrl+C received');
         session.buffer = '';
         if (session.process.stdin?.writable) {
           session.process.stdin.write('\x03');
@@ -190,14 +262,26 @@ export class TerminalService {
   }
 
   destroy(id: string): void {
+    const proc = this.ptySessions.get(id);
+    if (proc) {
+      // Delete first so the exit event isn't reported for a terminal the user closed.
+      this.ptySessions.delete(id);
+      try {
+        proc.kill();
+      } catch {
+        // Already exited.
+      }
+      return;
+    }
+
     const session = this.sessions.get(id);
     if (!session) return;
-    session.process.kill();
     this.sessions.delete(id);
+    killTree(session.process);
   }
 
   destroyAll(): void {
-    for (const id of [...this.sessions.keys()]) {
+    for (const id of [...this.ptySessions.keys(), ...this.sessions.keys()]) {
       this.destroy(id);
     }
   }
@@ -245,31 +329,6 @@ export class TerminalService {
         resolve({ stdout, stderr, exitCode: code ?? 1 });
       });
     });
-  }
-
-  private checkAndAutoRespond(id: string, text: string, child: ChildProcess): void {
-    const trimmed = text.trim();
-    const promptRegexes = [
-      /\(y\/n\)\??\s*$/i,
-      /\[y\/n\]\??\s*$/i,
-      /yes\/no\??\s*$/i,
-      /proceed\??\s*$/i,
-      /terminate\??\s*$/i,
-      /y\/n\s*$/i
-    ];
-    
-    const isPrompt = promptRegexes.some(regex => regex.test(trimmed));
-    if (isPrompt) {
-      console.log(`[TerminalService] Interactive prompt detected in session ${id}: ${trimmed}`);
-      if (child.stdin?.writable) {
-        console.log(`[TerminalService] Auto-responding 'y' to session ${id}`);
-        child.stdin.write('y\r\n');
-        
-        setTimeout(() => {
-          this.emitOutput(id, '\r\n[peep auto-respond] y\r\n');
-        }, 100);
-      }
-    }
   }
 
   async streamCommand(id: string, command: string, cwd: string): Promise<number> {
@@ -324,7 +383,7 @@ export class TerminalService {
 
       const timeoutHandle = setTimeout(() => {
         this.commandSessions.delete(id);
-        child.kill();
+        killTree(child);
         reject(new Error(`Command timed out after 120s: ${command}`));
       }, 120000);
     });
@@ -333,7 +392,7 @@ export class TerminalService {
   cancelCommand(id: string): void {
     const session = this.commandSessions.get(id);
     if (!session) return;
-    session.process.kill();
+    killTree(session.process);
     this.commandSessions.delete(id);
     if (session.reject) {
       session.reject(new Error('Command cancelled'));

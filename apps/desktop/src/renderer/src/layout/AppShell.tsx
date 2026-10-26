@@ -20,7 +20,7 @@ interface AppShellProps {
   onNewProject: () => void;
 }
 
-export function AppShell({ onOpenSettings, onNewProject }: AppShellProps) {
+export function AppShell({ onOpenSettings }: AppShellProps) {
   const bottomPanelOpen = useWorkspaceStore((s) => s.bottomPanelOpen);
   const sidebarOpen = useWorkspaceStore((s) => s.sidebarOpen);
   const agentPaneOpen = useWorkspaceStore((s) => s.agentPaneOpen);
@@ -30,6 +30,17 @@ export function AppShell({ onOpenSettings, onNewProject }: AppShellProps) {
 
   const [terminalHeight, setTerminalHeight] = useState(160);
   const [isResizing, setIsResizing] = useState(false);
+  const [panelMaximized, setPanelMaximized] = useState(false);
+  // Maximized leaves a sliver of editor visible, like VS Code.
+  const statusBarVisible = useWorkspaceStore((s) => s.statusBarVisible);
+  const chromeHeight = 35 + (statusBarVisible ? 22 : 0);
+  const panelHeight = panelMaximized ? Math.max(terminalHeight, window.innerHeight - chromeHeight - 80) : terminalHeight;
+
+  useEffect(() => {
+    const onToggleMaximize = () => setPanelMaximized((v) => !v);
+    window.addEventListener('peep:panel-toggle-maximize', onToggleMaximize);
+    return () => window.removeEventListener('peep:panel-toggle-maximize', onToggleMaximize);
+  }, []);
   
   const [agentWidth, setAgentWidth] = useState(280);
   const [previewWidth, setPreviewWidth] = useState(320);
@@ -38,6 +49,7 @@ export function AppShell({ onOpenSettings, onNewProject }: AppShellProps) {
 
   const startResizing = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
+    setPanelMaximized(false);
     setIsResizing(true);
   }, []);
 
@@ -56,7 +68,7 @@ export function AppShell({ onOpenSettings, onNewProject }: AppShellProps) {
 
     const handleMouseMove = (e: MouseEvent) => {
       if (isResizing) {
-        const newHeight = window.innerHeight - e.clientY - 22;
+        const newHeight = window.innerHeight - e.clientY - (statusBarVisible ? 22 : 0);
         if (newHeight > 100 && newHeight < window.innerHeight * 0.8) {
           setTerminalHeight(newHeight);
         }
@@ -88,7 +100,7 @@ export function AppShell({ onOpenSettings, onNewProject }: AppShellProps) {
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isResizing, isResizingAgent, isResizingPreview, agentWidth, agentPaneOpen]);
+  }, [isResizing, isResizingAgent, isResizingPreview, agentWidth, agentPaneOpen, statusBarVisible]);
 
   const handleNewProject = () => {
     window.dispatchEvent(new CustomEvent('peep:new-project'));
@@ -96,12 +108,14 @@ export function AppShell({ onOpenSettings, onNewProject }: AppShellProps) {
 
   return (
     <>
-      <TitleBar onNewProject={onNewProject} />
+      <TitleBar />
       <div 
         className="layout"
         style={{
           gridTemplateColumns: `46px ${sidebarOpen ? '240px' : '0px'} 1fr ${previewPaneOpen ? `${previewWidth}px` : '0px'} ${agentPaneOpen ? `${agentWidth}px` : '0px'}`,
-          gridTemplateRows: `calc(100vh - 82px - ${bottomPanelOpen ? terminalHeight : 0}px) ${bottomPanelOpen ? terminalHeight : 0}px`,
+          // 35px top bar + 22px status bar (when shown).
+          height: `calc(100vh - ${chromeHeight}px)`,
+          gridTemplateRows: `calc(100vh - ${chromeHeight}px - ${bottomPanelOpen ? panelHeight : 0}px) ${bottomPanelOpen ? panelHeight : 0}px`,
         }}
       >
         {project ? (
@@ -177,7 +191,7 @@ export function AppShell({ onOpenSettings, onNewProject }: AppShellProps) {
           </div>
         )}
       </div>
-      <StatusBar />
+ {statusBarVisible && <StatusBar />}
       
       {/* Global dragging overlay to prevent iframe selection while resizing */}
       {(isResizing || isResizingAgent || isResizingPreview) && (

@@ -1,9 +1,11 @@
 // QA Edit Injection Test - Concurrent Modification Triggered!
-import { ipcMain, dialog, app, BrowserWindow } from 'electron';
+import { ipcMain, dialog, app, BrowserWindow, screen } from 'electron';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import { IPC_CHANNELS, IPC_EVENTS } from '@peep/shared';
-import type { Settings } from '@peep/shared';
+import type { InlineCompletionRequest, InlineEditRequest, Settings, SshTarget } from '@peep/shared';
+import { InlineEditService } from '../services/inline-edit-service';
+import { InlineCompletionService } from '../services/inline-completion-service';
 import { DatabaseService } from '../services/db';
 import { WorkspaceManager } from '../services/workspace-manager';
 import { ProcessManager } from '../services/process-manager';
@@ -14,6 +16,8 @@ import { searchFiles } from '../services/file-search';
 import { searchContent } from '../services/content-search';
 import { AgentService } from '../services/agent-service';
 import { GitService } from '../services/git-service';
+import { openSshTerminal } from '../services/ssh-service';
+import { readVsCodeSettings } from '../services/vscode-import';
 import { TerminalService } from '../services/terminal-service';
 import { ProjectService } from '../services/project-service';
 import { TelemetryService } from '../services/telemetry-service';
@@ -124,14 +128,13 @@ async function onProjectOpened(
 }
 
 interface IpcDependencies {
-  createWindow: () => void;
   syncSentryOptIn: (enabled: boolean) => void;
 }
 
-export async function registerIpcHandlers({
-  createWindow,
-  syncSentryOptIn,
-}: IpcDependencies): Promise<{
+/** Account used by the login screen's dev bypass button. */
+const DEV_BYPASS_EMAIL = 'dev@synkro.local';
+
+export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies): Promise<{
   db: DatabaseService;
   workspace: WorkspaceManager;
   flutter: FlutterService;
@@ -314,23 +317,95 @@ export async function registerIpcHandlers({
     return result.filePath;
   });
 
-  ipcMain.handle(IPC_CHANNELS.APP_NEW_WINDOW, async () => {
-    await createWindow();
+  ipcMain.handle(IPC_CHANNELS.APP_NEW_WINDOW, () => {
+    // Services in this process are bound to a single main window, so a new window
+    // is a separate app instance (like VS Code's "New Window").
+    const { spawn } = require('node:child_process') as typeof import('node:child_process');
+    const child = spawn(process.execPath, process.argv.slice(1), {
+      detached: true,
+      stdio: 'ignore',
+      env: process.env,
+    });
+    child.unref();
   });
 
   ipcMain.handle(IPC_CHANNELS.APP_EXIT, () => {
     app.quit();
   });
 
-  ipcMain.handle(IPC_CHANNELS.APP_MINIMIZE, () => {
-    mainWindow?.minimize();
+  ipcMain.handle(IPC_CHANNELS.APP_MINIMIZE, (event) => {
+    BrowserWindow.fromWebContents(event.sender)?.minimize();
   });
 
-  ipcMain.handle(IPC_CHANNELS.APP_MAXIMIZE, () => {
-    if (mainWindow?.isMaximized()) {
-      mainWindow?.unmaximize();
+  ipcMain.handle(IPC_CHANNELS.APP_MAXIMIZE, (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (win?.isMaximized()) {
+      win.unmaximize();
     } else {
-      mainWindow?.maximize();
+      win?.maximize();
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.APP_CLOSE_WINDOW, (event) => {
+    BrowserWindow.fromWebContents(event.sender)?.close();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.APP_RELOAD_WINDOW, (event) => {
+    event.sender.reload();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.APP_TOGGLE_FULLSCREEN, (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    win?.setFullScreen(!win.isFullScreen());
+  });
+
+  ipcMain.handle(IPC_CHANNELS.APP_TOGGLE_DEVTOOLS, (event) => {
+    event.sender.toggleDevTools();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.APP_ZOOM, (event, direction: 'in' | 'out' | 'reset') => {
+    const contents = event.sender;
+    if (direction === 'reset') {
+      contents.setZoomLevel(0);
+    } else {
+      const next = contents.getZoomLevel() + (direction === 'in' ? 0.5 : -0.5);
+      contents.setZoomLevel(Math.max(-8, Math.min(8, next)));
+    }
+  });
+
+  const EDIT_ACTIONS = new Set(['undo', 'redo', 'cut', 'copy', 'paste', 'selectAll']);
+  ipcMain.handle(IPC_CHANNELS.APP_EDIT_ACTION, (event, action: string) => {
+    if (!EDIT_ACTIONS.has(action)) return;
+    (event.sender as any)[action]();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.APP_SHOW_ABOUT, async (event) => {
+    const os = require('node:os') as typeof import('node:os');
+    const detail = [
+      `Version: ${app.getVersion()}`,
+      `Electron: ${process.versions.electron}`,
+      `Chromium: ${process.versions.chrome}`,
+      `Node.js: ${process.versions.node}`,
+      `V8: ${process.versions.v8}`,
+      `OS: ${os.type()} ${os.arch()} ${os.release()}`,
+    ].join('\n');
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const options = {
+      type: 'info' as const,
+      title: 'Synkro',
+      message: 'Synkro',
+      detail,
+      buttons: ['Copy', 'OK'],
+      defaultId: 1,
+      cancelId: 1,
+      noLink: true,
+    };
+    const { response } = win
+      ? await dialog.showMessageBox(win, options)
+      : await dialog.showMessageBox(options);
+    if (response === 0) {
+      const { clipboard } = require('electron') as typeof import('electron');
+      clipboard.writeText(detail);
     }
   });
 
@@ -514,8 +589,8 @@ export async function registerIpcHandlers({
     await workspace.revealItem(path);
   });
 
-  ipcMain.handle(IPC_CHANNELS.WORKSPACE_SEARCH_FILES, async (_event, rootPath: string, query: string) => {
-    return searchFiles(rootPath, query);
+  ipcMain.handle(IPC_CHANNELS.WORKSPACE_SEARCH_FILES, async (_event, rootPath: string, query: string, includeDirectories?: boolean) => {
+    return searchFiles(rootPath, query, 50, includeDirectories === true);
   });
 
   ipcMain.handle(IPC_CHANNELS.SETTINGS_GET, () => {
@@ -572,21 +647,55 @@ export async function registerIpcHandlers({
 
   let currentDetachedDeviceId = 'iphone-15';
 
-  ipcMain.handle(IPC_CHANNELS.PREVIEW_DETACH, async (_event, deviceId?: string) => {
+  /** Detached window size that shows the whole device frame (portrait phones and wide foldables alike). */
+  const detachedWindowSize = (frame?: { width: number; height: number }) => {
+    // DetachedPreview chrome: 44px header + 32px margin on each axis.
+    const chromeW = 32;
+    const chromeH = 44 + 32;
+    if (!frame || frame.width <= 0 || frame.height <= 0) return { width: 400, height: 820 };
+    const { workArea } = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+    const maxW = workArea.width * 0.8 - chromeW;
+    const maxH = workArea.height * 0.85 - chromeH;
+    // Up to the device's natural (1x) size; smaller only when the screen can't fit it.
+    const scale = Math.min(1, maxW / frame.width, maxH / frame.height);
+    return {
+      width: Math.round(frame.width * scale + chromeW),
+      height: Math.round(frame.height * scale + chromeH),
+    };
+  };
+
+  const loadDetachedPreview = (win: BrowserWindow) => {
+    const isDev = !app.isPackaged && process.env.ELECTRON_RENDERER_URL;
+    if (isDev) {
+      void win.loadURL(`${process.env.ELECTRON_RENDERER_URL}?windowType=preview&deviceId=${currentDetachedDeviceId}`);
+    } else {
+      void win.loadFile(path.join(__dirname, '../renderer/index.html'), { query: { windowType: 'preview', deviceId: currentDetachedDeviceId } });
+    }
+  };
+
+  ipcMain.handle(IPC_CHANNELS.PREVIEW_DETACH, async (_event, deviceId?: string, frame?: { width: number; height: number }) => {
+    const deviceChanged = !!deviceId && deviceId !== currentDetachedDeviceId;
     if (deviceId) {
       currentDetachedDeviceId = deviceId;
     }
+    const size = detachedWindowSize(frame);
+
     if (previewWindow && !previewWindow.isDestroyed()) {
+      // Already detached: switch to the newly selected device and fit the window to it.
+      if (deviceChanged) {
+        previewWindow.setSize(size.width, size.height, true);
+        loadDetachedPreview(previewWindow);
+      }
       previewWindow.focus();
       return;
     }
 
     previewWindow = new BrowserWindow({
-      width: 400,
-      height: 820,
-      minWidth: 320,
-      minHeight: 600,
-      title: 'Peep Mobile Preview',
+      width: size.width,
+      height: size.height,
+      minWidth: 240,
+      minHeight: 320,
+      title: 'Synkro Mobile Preview',
       backgroundColor: '#00000000',
       transparent: true,
       frame: false,
@@ -600,12 +709,7 @@ export async function registerIpcHandlers({
       },
     });
 
-    const isDev = !app.isPackaged && process.env.ELECTRON_RENDERER_URL;
-    if (isDev) {
-      previewWindow.loadURL(`${process.env.ELECTRON_RENDERER_URL}?windowType=preview&deviceId=${currentDetachedDeviceId}`);
-    } else {
-      previewWindow.loadFile(path.join(__dirname, '../renderer/index.html'), { query: { windowType: 'preview', deviceId: currentDetachedDeviceId } });
-    }
+    loadDetachedPreview(previewWindow);
 
     previewWindow.on('closed', () => {
       previewWindow = null;
@@ -635,6 +739,10 @@ export async function registerIpcHandlers({
   ipcMain.handle(IPC_CHANNELS.AGENT_APPROVE_PLAN, async (_event, projectPath?: string) => {
     // @ts-ignore
     await agentService!.approvePlan(projectPath);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.AGENT_RESTORE_CHECKPOINT, async (_event, id: string) => {
+    return agentService!.restoreCheckpoint(id);
   });
 
   ipcMain.handle(IPC_CHANNELS.AGENT_APPLY_EDITS, async (_event, editIds: string[]) => {
@@ -723,8 +831,38 @@ export async function registerIpcHandlers({
     notifyGitChanged();
   });
 
-  ipcMain.handle(IPC_CHANNELS.TERMINAL_CREATE, async (_event, options: { id: string; cwd: string }) => {
-    terminalService.create(options.id, options.cwd);
+  ipcMain.handle(IPC_CHANNELS.GIT_CLONE, async (_event, url: string, parentDir: string) => {
+    return gitService.clone(url, parentDir);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.SSH_OPEN_TERMINAL, async (_event, target: SshTarget) => {
+    openSshTerminal(target);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.VSCODE_READ_SETTINGS, async () => readVsCodeSettings());
+
+  ipcMain.handle(IPC_CHANNELS.TERMINAL_CREATE, async (_event, options: { id: string; cwd: string; cols?: number; rows?: number }) => {
+    terminalService.create(options.id, options.cwd, options.cols, options.rows);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.TERMINAL_RESIZE, async (_event, id: string, cols: number, rows: number) => {
+    terminalService.resize(id, cols, rows);
+  });
+
+  const inlineCompletions = new InlineCompletionService(() => db);
+  ipcMain.handle(IPC_CHANNELS.AI_INLINE_COMPLETE, (_event, request: InlineCompletionRequest) => {
+    return inlineCompletions.complete(request);
+  });
+  ipcMain.handle(IPC_CHANNELS.AI_INLINE_CANCEL, () => {
+    inlineCompletions.cancel();
+  });
+
+  const inlineEdits = new InlineEditService(() => db);
+  ipcMain.handle(IPC_CHANNELS.AI_INLINE_EDIT, (_event, request: InlineEditRequest) => {
+    return inlineEdits.edit(request);
+  });
+  ipcMain.handle(IPC_CHANNELS.AI_INLINE_EDIT_CANCEL, () => {
+    inlineEdits.cancel();
   });
 
   ipcMain.handle(IPC_CHANNELS.TERMINAL_WRITE, async (_event, id: string, data: string) => {
@@ -822,7 +960,9 @@ export async function registerIpcHandlers({
   // ── Auth ─────────────────────────────────────────────────────────────
 
   ipcMain.handle(IPC_CHANNELS.AUTH_SIGN_IN, async (_event, email, password) => {
-    if (process.env.NODE_ENV !== 'production' && process.env.SYNKRO_DEV_AUTH_BYPASS === 'true') {
+    // Only the login screen's "Bypass and Log In" button (the dev account) skips the server;
+    // any real account always signs in for real.
+    if (process.env.NODE_ENV !== 'production' && process.env.SYNKRO_DEV_AUTH_BYPASS === 'true' && email === DEV_BYPASS_EMAIL) {
       await db!.setSettings({
         sessionToken: 'dev_test_session',
         refreshToken: 'dev_test_refresh'
@@ -857,7 +997,9 @@ export async function registerIpcHandlers({
   });
 
   ipcMain.handle(IPC_CHANNELS.AUTH_SIGN_UP, async (_event, email, password) => {
-    if (process.env.NODE_ENV !== 'production' && process.env.SYNKRO_DEV_AUTH_BYPASS === 'true') {
+    // Only the login screen's "Bypass and Log In" button (the dev account) skips the server;
+    // any real account always signs in for real.
+    if (process.env.NODE_ENV !== 'production' && process.env.SYNKRO_DEV_AUTH_BYPASS === 'true' && email === DEV_BYPASS_EMAIL) {
       await db!.setSettings({
         sessionToken: 'dev_test_session',
         refreshToken: 'dev_test_refresh'

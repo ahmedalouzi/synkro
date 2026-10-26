@@ -248,3 +248,13 @@
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+.login-dragbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 35px;
+  z-index: 10;
+  -webkit-app-region: drag;
+}

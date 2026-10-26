@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { IPC_CHANNELS, IPC_EVENTS } from '@peep/shared';
 import type {
+  SshTarget,
   AgentSendOptions,
   AgentStreamEvent,
   Diagnostic,
@@ -31,6 +32,13 @@ const api: IpcApi = {
   exitApp: () => ipcRenderer.invoke(IPC_CHANNELS.APP_EXIT),
   minimizeWindow: () => ipcRenderer.invoke(IPC_CHANNELS.APP_MINIMIZE),
   maximizeWindow: () => ipcRenderer.invoke(IPC_CHANNELS.APP_MAXIMIZE),
+  closeWindow: () => ipcRenderer.invoke(IPC_CHANNELS.APP_CLOSE_WINDOW),
+  reloadWindow: () => ipcRenderer.invoke(IPC_CHANNELS.APP_RELOAD_WINDOW),
+  toggleFullScreen: () => ipcRenderer.invoke(IPC_CHANNELS.APP_TOGGLE_FULLSCREEN),
+  toggleDevTools: () => ipcRenderer.invoke(IPC_CHANNELS.APP_TOGGLE_DEVTOOLS),
+  zoom: (direction) => ipcRenderer.invoke(IPC_CHANNELS.APP_ZOOM, direction),
+  editAction: (action) => ipcRenderer.invoke(IPC_CHANNELS.APP_EDIT_ACTION, action),
+  showAbout: () => ipcRenderer.invoke(IPC_CHANNELS.APP_SHOW_ABOUT),
   openProjectByPath: (path: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_OPEN_FOLDER, path) as Promise<ProjectInfo>,
   getRecentProjects: () => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_GET_RECENT),
@@ -44,8 +52,8 @@ const api: IpcApi = {
   deleteItem: (path: string) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_DELETE_ITEM, path),
   revealItem: (path: string) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_REVEAL_ITEM, path),
   getProject: () => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_GET_PROJECT),
-  searchFiles: (rootPath: string, query: string) =>
-    ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_SEARCH_FILES, rootPath, query),
+  searchFiles: (rootPath: string, query: string, includeDirectories?: boolean) =>
+    ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_SEARCH_FILES, rootPath, query, includeDirectories),
   searchContent: (opts) =>
     ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_SEARCH_CONTENT, opts),
   getSettings: () => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_GET) as Promise<Settings>,
@@ -66,7 +74,8 @@ const api: IpcApi = {
   rnReloadPreview: (processId: number) => ipcRenderer.invoke(IPC_CHANNELS.RN_RELOAD_PREVIEW, processId),
   getPreviewSession: () =>
     ipcRenderer.invoke(IPC_CHANNELS.PREVIEW_GET_SESSION) as Promise<PreviewSession | null>,
-  detachPreview: (deviceId?: string) => ipcRenderer.invoke(IPC_CHANNELS.PREVIEW_DETACH, deviceId) as Promise<void>,
+  detachPreview: (deviceId?: string, frame?: { width: number; height: number }) =>
+    ipcRenderer.invoke(IPC_CHANNELS.PREVIEW_DETACH, deviceId, frame) as Promise<void>,
   attachPreview: () => ipcRenderer.invoke(IPC_CHANNELS.PREVIEW_ATTACH) as Promise<void>,
   isPreviewDetached: () => ipcRenderer.invoke(IPC_CHANNELS.PREVIEW_IS_DETACHED) as Promise<boolean>,
   sendAgentMessage: (options: AgentSendOptions) => ipcRenderer.invoke(IPC_CHANNELS.AGENT_SEND, options),
@@ -90,10 +99,21 @@ const api: IpcApi = {
   gitPush: (projectPath: string) => ipcRenderer.invoke(IPC_CHANNELS.GIT_PUSH, projectPath),
   gitCheckout: (projectPath: string, branch: string) => ipcRenderer.invoke(IPC_CHANNELS.GIT_CHECKOUT, projectPath, branch),
   gitBranch: (projectPath: string, branch: string) => ipcRenderer.invoke(IPC_CHANNELS.GIT_BRANCH, projectPath, branch),
+  gitClone: (url: string, parentDir: string) => ipcRenderer.invoke(IPC_CHANNELS.GIT_CLONE, url, parentDir),
+  openSshTerminal: (target: SshTarget) => ipcRenderer.invoke(IPC_CHANNELS.SSH_OPEN_TERMINAL, target),
+  readVsCodeSettings: () => ipcRenderer.invoke(IPC_CHANNELS.VSCODE_READ_SETTINGS),
   createTerminal: (options: TerminalCreateOptions) =>
     ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_CREATE, options),
   writeTerminal: (id: string, data: string) => ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_WRITE, id, data),
   destroyTerminal: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_DESTROY, id),
+  resizeTerminal: (id: string, cols: number, rows: number) =>
+    ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_RESIZE, id, cols, rows),
+  inlineComplete: (request) => ipcRenderer.invoke(IPC_CHANNELS.AI_INLINE_COMPLETE, request) as Promise<string>,
+  cancelInlineCompletion: () => ipcRenderer.invoke(IPC_CHANNELS.AI_INLINE_CANCEL),
+  inlineEdit: (request) => ipcRenderer.invoke(IPC_CHANNELS.AI_INLINE_EDIT, request) as Promise<import('@peep/shared').InlineEditResult>,
+  cancelInlineEdit: () => ipcRenderer.invoke(IPC_CHANNELS.AI_INLINE_EDIT_CANCEL),
+  restoreCheckpoint: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.AGENT_RESTORE_CHECKPOINT, id) as Promise<string[]>,
+  onAgentCheckpoint: (callback) => subscribe<{ id: string; fileCount: number }>(IPC_EVENTS.AGENT_CHECKPOINT, callback),
   runCommand: (options) =>
     ipcRenderer.invoke(IPC_CHANNELS.RUN_COMMAND, options) as Promise<RunCommandResult>,
   listProjectTemplates: () =>

@@ -463,19 +463,22 @@
 }
 
 .pf-fold-hinge {
+  /* The real inner-screen crease is barely visible: a soft translucent shade
+     that never hides the app's content. */
   position: absolute;
   top: 0; bottom: 0;
   left: 50%;
   transform: translateX(-50%);
-  width: 4px;
-  background: linear-gradient(180deg,
-    #1a1a1a 0%, #2e2e2e 30%,
-    #383838 50%, #2e2e2e 70%, #1a1a1a 100%
+  width: 16px;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    rgba(0, 0, 0, 0.035) 35%,
+    rgba(0, 0, 0, 0.07) 50%,
+    rgba(0, 0, 0, 0.035) 65%,
+    transparent 100%
   );
   z-index: 30;
-  box-shadow:
-    0 0 6px rgba(0,0,0,0.95),
-    inset 0 0 2px rgba(255,255,255,0.06);
+  pointer-events: none;
 }
 
 .pf-punchhole--fold {
