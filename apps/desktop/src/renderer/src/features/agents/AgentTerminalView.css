@@ -1,0 +1,55 @@
+.agent-terminal {
+  position: absolute;
+  inset: 0;
+  padding: 8px 0 0 12px;
+  background: #0d1117;
+  overflow: hidden;
+}
+
+/* Icons for installed agents at the end of the editor tab bar. */
+.agent-launchers {
+  position: sticky;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  align-self: stretch;
+  padding: 0 6px;
+  background: var(--bg-surface);
+}
+
+.agent-launcher {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.agent-launcher:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.agent-launcher img {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  object-fit: contain;
+}
+
+.agent-launcher__fallback {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-primary, #e4e4e7);
+}
+
+.agent-tab-icon {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  object-fit: contain;
+}

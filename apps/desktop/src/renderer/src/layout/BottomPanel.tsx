@@ -170,7 +170,7 @@ export function BottomPanel() {
     <div className="terminal-area" style={{ gridRow: 2, gridColumn: '3 / 5' }}>
       <div className="terminal-tabs">
         <div className={`terminal-tab ${tab === 'terminal' ? 'active' : ''}`} onClick={() => setTab('terminal')}>
-          <div className="terminal-tab-dot td-gold"></div>
+          <div className="terminal-tab-dot td-green"></div>
           Terminal
         </div>
         <div className={`terminal-tab ${tab === 'logs' ? 'active' : ''}`} onClick={() => setTab('logs')}>
@@ -180,8 +180,9 @@ export function BottomPanel() {
 
         <div className={`terminal-tab ${tab === 'problems' ? 'active' : ''}`} onClick={() => setTab('problems')}>
           Problems
-          {errorCount > 0 && <span style={{marginLeft: 4, color: 'var(--red)'}}>{errorCount}</span>}
-          {warningCount > 0 && <span style={{marginLeft: 4, color: 'var(--yellow)'}}>{warningCount}</span>}
+          <span className={`terminal-tab-count${errorCount ? ' terminal-tab-count--error' : warningCount ? ' terminal-tab-count--warn' : ''}`}>
+            {errorCount + warningCount}
+          </span>
         </div>
         
         <div id="bottom-panel-build-tab" className={`terminal-tab ${tab === 'build' ? 'active' : ''}`} onClick={() => setTab('build')}>

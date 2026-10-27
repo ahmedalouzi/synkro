@@ -21,7 +21,7 @@ interface MonacoEditorProps {
   onReloadFromDisk?: () => void;
 }
 
-function languageForPath(filePath: string): string {
+export function languageForPath(filePath: string): string {
   const lower    = filePath.toLowerCase();
   // Detect .env files by basename (e.g. .env, .env.local, .env.example)
   const basename = lower.replace(/\\/g, '/').split('/').pop() ?? '';

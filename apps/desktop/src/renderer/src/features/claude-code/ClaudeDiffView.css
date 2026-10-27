@@ -1,0 +1,91 @@
+.claude-diff {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-base);
+}
+
+.claude-diff__bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 38px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface, #0f0f12);
+  font-size: 12.5px;
+  color: var(--text-secondary, #a1a1aa);
+}
+
+.claude-diff__mark {
+  color: #d97757;
+  font-size: 15px;
+}
+
+.claude-diff__title {
+  color: var(--text-primary, #e4e4e7);
+  white-space: nowrap;
+}
+
+.claude-diff__path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted, #71717a);
+  font-size: 11.5px;
+}
+
+.claude-diff__error {
+  color: #f87171;
+  font-size: 11.5px;
+}
+
+.claude-diff__actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.claude-diff__btn {
+  padding: 4px 12px;
+  border-radius: 5px;
+  border: 1px solid var(--border-strong, rgba(255, 255, 255, 0.14));
+  background: transparent;
+  color: var(--text-primary, #e4e4e7);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.claude-diff__btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.claude-diff__btn--primary {
+  border-color: transparent;
+  background: #d97757;
+  color: #fff;
+  font-weight: 600;
+}
+
+.claude-diff__btn--primary:hover:not(:disabled) {
+  background: #e08a6d;
+}
+
+.claude-diff__btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.claude-diff__editor {
+  flex: 1;
+  min-height: 0;
+}
+
+.claude-diff__empty {
+  padding: 24px;
+  color: var(--text-muted, #71717a);
+  font-size: 13px;
+}

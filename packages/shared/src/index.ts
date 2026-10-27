@@ -480,6 +480,38 @@ export interface GitDiffResult {
   diff: string;
 }
 
+/** A tool call from the Claude Code CLI that the editor answers (see ClaudeIdeServer). */
+export interface ClaudeIdeRequest {
+  requestId: string;
+  tool: string;
+  args: Record<string, unknown>;
+}
+
+/** MCP tool result: text blocks sent back to Claude. */
+export interface ClaudeIdeToolResult {
+  content: Array<{ type: 'text'; text: string }>;
+  isError?: boolean;
+}
+
+/** An installed coding-agent extension (Claude Code, Codex, ...) that opens in an editor tab. */
+export interface AgentInfo {
+  extensionId: string;
+  name: string;
+  iconUrl?: string;
+  /** The bundled CLI, or null when the build on disk is for another platform. */
+  cliPath: string | null;
+  /** Arguments to start the CLI with. */
+  args: string[];
+}
+
+export interface ClaudeIdeStatus {
+  /** Port of the local server Claude connects to; 0 when it isn't running. */
+  port: number;
+  connected: boolean;
+  /** The `claude` executable Synkro found (bundled with the extension or on PATH), or null. */
+  cliPath: string | null;
+}
+
 export interface TerminalCreateOptions {
   id: string;
   cwd: string;
@@ -645,6 +677,13 @@ export const IPC_CHANNELS = {
   EXTENSIONS_INSTALL: 'extensions:install',
   EXTENSIONS_UNINSTALL: 'extensions:uninstall',
   EXTENSIONS_DETAILS: 'extensions:details',
+  // Claude Code IDE integration
+  CLAUDE_IDE_RESPOND: 'claudeIde:respond',
+  CLAUDE_IDE_NOTIFY: 'claudeIde:notify',
+  CLAUDE_IDE_SET_WORKSPACE: 'claudeIde:setWorkspace',
+  CLAUDE_IDE_STATUS: 'claudeIde:status',
+  AGENTS_LIST: 'agents:list',
+  AGENTS_RESOLVE_CLI: 'agents:resolveCli',
   // Publish
   PUBLISH_GET_STATUS: 'publish:getStatus',
   PUBLISH_DEPLOY: 'publish:deploy',
@@ -765,6 +804,8 @@ export interface DependencyCheckResult {
 export const IPC_EVENTS = {
   /** { id, fileCount } — how many files a checkpoint can restore. */
   AGENT_CHECKPOINT: 'agent:checkpoint',
+  /** ClaudeIdeRequest — a Claude Code tool call the editor has to answer. */
+  CLAUDE_IDE_REQUEST: 'claudeIde:request',
   PREVIEW_STATUS: 'preview:status',
   DIAGNOSTICS_UPDATED: 'diagnostics:updated',
   PREVIEW_LOG: 'preview:log',
@@ -913,6 +954,14 @@ export interface IpcApi {
   onUpdateStatus: (callback: (info: UpdateInfo) => void) => () => void;
   // Extensions
   searchExtensions: (query: string, offset?: number, size?: number) => Promise<ExtensionSearchResult>;
+  claudeIdeRespond: (requestId: string, result: ClaudeIdeToolResult) => Promise<void>;
+  claudeIdeNotify: (method: string, params: unknown) => Promise<void>;
+  claudeIdeSetWorkspace: (folders: string[]) => Promise<void>;
+  getClaudeIdeStatus: () => Promise<ClaudeIdeStatus>;
+  listAgents: () => Promise<AgentInfo[]>;
+  /** The agent's CLI path; reinstalls the extension for this platform if needed. */
+  resolveAgentCli: (extensionId: string) => Promise<string | null>;
+  onClaudeIdeRequest: (callback: (request: ClaudeIdeRequest) => void) => () => void;
   getInstalledExtensions: () => Promise<ExtensionInfo[]>;
   installExtension: (extensionId: string, downloadUrl?: string) => Promise<void>;
   uninstallExtension: (extensionId: string) => Promise<void>;

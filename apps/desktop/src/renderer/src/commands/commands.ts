@@ -4,6 +4,7 @@ import { useComposerStore } from '../stores/composer-store';
 import { useBuildStore } from '../stores/build-store';
 import { buildApi } from '../services/build-api';
 import { isAICompletionsEnabled, toggleAICompletions } from '../features/editor/inline-completions';
+import { openAgentTab, useAgentsStore } from '../features/agents/agents-store';
 import {
   editorHasFocus,
   getActiveEditor,
@@ -345,6 +346,18 @@ function terminalAction(action: 'new' | 'kill' | 'clear' | 'run-text', detail?: 
   emitAfterRender(`peep:terminal-${action}`, detail);
 }
 
+/** Opens Claude Code in its own editor tab (like VS Code's Claude Code panel). */
+async function openClaudeCode() {
+  await useAgentsStore.getState().refresh();
+  const agent = useAgentsStore.getState().agents.find((a) => a.extensionId.toLowerCase() === 'anthropic.claude-code');
+  if (!agent) {
+    ws().openFile({ path: 'extension://Anthropic.claude-code', name: 'Extension: Claude Code', content: '', dirty: false });
+    alert('Claude Code is not installed. Install "Claude Code for VS Code" from the Extensions view, then run this command again.');
+    return;
+  }
+  openAgentTab(agent);
+}
+
 /* ── Registry ──────────────────────────────────────────────────── */
 
 const commandList: Command[] = [
@@ -451,6 +464,7 @@ const commandList: Command[] = [
   { id: 'peep.publish', category: 'Run', title: 'Publish Application...', run: () => emit('peep:open-publish'), enabled: hasProject },
 
   // Terminal
+  { id: 'claude-code.open', category: 'Claude Code', title: 'Open in New Tab', keybinding: 'Ctrl+Escape', run: () => void openClaudeCode(), enabled: hasProject },
   { id: 'workbench.action.terminal.new', category: 'Terminal', title: 'New Terminal', keybinding: 'Ctrl+Shift+`', run: () => (hasProject() ? terminalAction('new') : emit('peep:home-terminal', 'new')) },
   { id: 'workbench.action.terminal.runActiveFile', category: 'Terminal', title: 'Run Active File', run: runActiveFile, enabled: () => { const f = activeFile(); return !!f && isSavable(f) && !isUntitled(f.path) && !!runnerFor(f.path); } },
   { id: 'workbench.action.terminal.runSelectedText', category: 'Terminal', title: 'Run Selected Text', run: () => { const sel = ws().activeSelection; if (sel) terminalAction('run-text', sel.text); }, enabled: () => !!ws().activeSelection },

@@ -12,10 +12,17 @@ import { ContextMenu, type ContextMenuItem } from '../features/shared/ContextMen
 const TAB_DRAG_TYPE = 'application/x-synkro-tab';
 import { ExtensionDetailsView } from '../features/extensions/ExtensionDetailsView';
 import { GitDiffView } from '../features/git/GitDiffView';
+import { ClaudeDiffView } from '../features/claude-code/ClaudeDiffView';
+import { AgentTerminalView } from '../features/agents/AgentTerminalView';
+import { AgentIcon, AgentLaunchers } from '../features/agents/AgentLaunchers';
+import { AGENT_TAB_PREFIX, agentIdFromTab, useAgentsStore } from '../features/agents/agents-store';
+import { CLAUDE_DIFF_PREFIX } from '../features/claude-code/claude-diff-store';
 import { getFileIcon } from '../features/explorer/FileIcons';
 
 function isVirtualPath(path: string): boolean {
   return path.startsWith('git-diff://') ||
+    path.startsWith(CLAUDE_DIFF_PREFIX) ||
+    path.startsWith(AGENT_TAB_PREFIX) ||
     path.startsWith('extension://') ||
     path === 'peep://proposed-changes' ||
     path.endsWith('.peep/plan.md') ||
@@ -97,6 +104,7 @@ function ImageViewer({ filePath, fileName }: { filePath: string; fileName: strin
 }
 
 export function EditorPane() {
+  const agents = useAgentsStore((s) => s.agents);
   const {
     project,
     openFiles,
@@ -182,7 +190,9 @@ export function EditorPane() {
               }}
             >
               <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: isActive ? 1 : 0.7, filter: isActive ? 'none' : 'grayscale(0.5)' }}>
-                {getFileIcon(file.name)}
+                {file.path.startsWith(AGENT_TAB_PREFIX)
+                  ? <AgentIcon className="agent-tab-icon" agent={agents.find((a) => a.extensionId === agentIdFromTab(file.path))} />
+                  : getFileIcon(file.name)}
               </span>
               {file.name}
               {file.dirty && <span className="tab-dot"></span>}
@@ -190,6 +200,7 @@ export function EditorPane() {
             </div>
           );
         })}
+        <AgentLaunchers />
       </div>
       {tabMenu && (
         <ContextMenu
@@ -255,6 +266,10 @@ export function EditorPane() {
           <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, overflow: 'auto', background: 'var(--bg-base)' }}>
             <ExtensionDetailsView extensionId={activeFile.path.replace('extension://', '')} />
           </div>
+        ) : activeFile.path.startsWith(AGENT_TAB_PREFIX) ? (
+          <AgentTerminalView path={activeFile.path} />
+        ) : activeFile.path.startsWith(CLAUDE_DIFF_PREFIX) ? (
+          <ClaudeDiffView requestId={activeFile.path.slice(CLAUDE_DIFF_PREFIX.length)} />
         ) : activeFile.path.startsWith('git-diff://') ? (
           <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, overflow: 'hidden', background: 'var(--bg-base)' }}>
             <GitDiffView filePath={activeFile.path.replace('git-diff://', '')} />

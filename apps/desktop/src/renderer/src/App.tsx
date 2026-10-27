@@ -2,6 +2,7 @@ import { useEffect, useState, lazy, Suspense } from 'react';
 import { AppShell } from './layout/AppShell';
 import { UpdateBanner } from './features/shared/UpdateBanner';
 import { usePeepEvents } from './hooks/usePeepEvents';
+import { useClaudeIdeBridge } from './features/claude-code/useClaudeIdeBridge';
 import { DetachedPreview } from './features/preview/DetachedPreview';
 import { useComposerStore } from './stores/composer-store';
 import { handleGlobalKeyDown } from './commands/keybindings';
@@ -23,6 +24,7 @@ const CommandPalette = lazy(() => import('./features/shared/CommandPalette').the
 
 export default function App() {
   usePeepEvents();
+  useClaudeIdeBridge();
 
   const query = new URLSearchParams(window.location.search);
   const windowType = query.get('windowType');

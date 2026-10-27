@@ -51,6 +51,21 @@ function loadPty(): PtyModule | null {
   return ptyModule;
 }
 
+/**
+ * Replaces PowerShell's default "PS C:\full\path>" prompt with "folder ›", matching Synkro's
+ * terminal design. Custom prompts (oh-my-posh, starship, a $PROFILE prompt) are left alone.
+ */
+const SHORT_PROMPT_PS = [
+  "if ((Get-Command prompt -CommandType Function -ErrorAction SilentlyContinue).Definition -match 'executionContext\\.SessionState\\.Path\\.CurrentLocation') {",
+  '  function global:prompt {',
+  '    $e = [char]27',
+  '    $name = Split-Path -Leaf (Get-Location)',
+  '    if (-not $name) { $name = (Get-Location).Path }',
+  '    "$e[38;2;165;180;252m$name$e[0m $e[38;2;82;82;91m$([char]0x203A)$e[0m "',
+  '  }',
+  '}',
+].join('\n');
+
 interface TerminalSession {
   process: ChildProcess;
   cwd: string;
@@ -66,6 +81,8 @@ export class TerminalService {
   private commandSessions = new Map<string, TerminalSession>();
   private mainWindow: BrowserWindow | null = null;
   private flutterSdkPath?: string;
+  /** Extra variables and PATH folders for interactive terminals (Claude Code IDE integration). */
+  private envProvider?: () => { env: Record<string, string>; pathDirs: string[] };
 
   setMainWindow(window: BrowserWindow | null): void {
     this.mainWindow = window;
@@ -75,6 +92,10 @@ export class TerminalService {
     globalIpcBatcher.bufferString(IPC_EVENTS.TERMINAL_OUTPUT, id, data, 16, (flushId, accumulated) => {
       this.mainWindow?.webContents.send(IPC_EVENTS.TERMINAL_OUTPUT, { id: flushId, data: accumulated });
     });
+  }
+
+  setEnvProvider(provider: () => { env: Record<string, string>; pathDirs: string[] }): void {
+    this.envProvider = provider;
   }
 
   setFlutterSdkPath(path: string | undefined): void {
@@ -104,6 +125,12 @@ export class TerminalService {
       customEnv[pathKeyActual] = platform() === 'win32'
         ? `${binPath};${existingPath}`
         : `${binPath}:${existingPath}`;
+    }
+    const extra = this.envProvider?.();
+    if (extra) {
+      Object.assign(customEnv, extra.env);
+      const pathKey = Object.keys(customEnv).find(k => k.toLowerCase() === 'path') || 'PATH';
+      customEnv[pathKey] = [...extra.pathDirs, customEnv[pathKey] || ''].join(platform() === 'win32' ? ';' : ':');
     }
 
     const pty = loadPty();
@@ -154,7 +181,9 @@ export class TerminalService {
   private createPty(pty: PtyModule, id: string, cwd: string, env: NodeJS.ProcessEnv, cols: number, rows: number): void {
     const isWin = platform() === 'win32';
     const command = isWin ? 'powershell.exe' : process.env.SHELL ?? '/bin/bash';
-    const args = isWin ? ['-NoLogo'] : platform() === 'darwin' ? ['-l'] : [];
+    const args = isWin
+      ? ['-NoLogo', '-NoExit', '-EncodedCommand', Buffer.from(SHORT_PROMPT_PS, 'utf16le').toString('base64')]
+      : platform() === 'darwin' ? ['-l'] : [];
 
     let proc: Pty;
     try {

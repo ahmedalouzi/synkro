@@ -156,6 +156,13 @@ const api: IpcApi = {
   onTerminalOutput: (callback) =>
     subscribe<{ id: string; data: string }>(IPC_EVENTS.TERMINAL_OUTPUT, callback),
   onTerminalExit: (callback) => subscribe<{ id: string; code: number }>(IPC_EVENTS.TERMINAL_EXIT, callback),
+  claudeIdeRespond: (requestId, result) => ipcRenderer.invoke(IPC_CHANNELS.CLAUDE_IDE_RESPOND, requestId, result),
+  claudeIdeNotify: (method, params) => ipcRenderer.invoke(IPC_CHANNELS.CLAUDE_IDE_NOTIFY, method, params),
+  claudeIdeSetWorkspace: (folders) => ipcRenderer.invoke(IPC_CHANNELS.CLAUDE_IDE_SET_WORKSPACE, folders),
+  getClaudeIdeStatus: () => ipcRenderer.invoke(IPC_CHANNELS.CLAUDE_IDE_STATUS),
+  listAgents: () => ipcRenderer.invoke(IPC_CHANNELS.AGENTS_LIST),
+  resolveAgentCli: (extensionId) => ipcRenderer.invoke(IPC_CHANNELS.AGENTS_RESOLVE_CLI, extensionId),
+  onClaudeIdeRequest: (callback) => subscribe<import('@peep/shared').ClaudeIdeRequest>(IPC_EVENTS.CLAUDE_IDE_REQUEST, callback),
   onGitChanged: (callback) => subscribe<void>(IPC_EVENTS.GIT_CHANGED, callback),
   onWorkspaceChangedBatch: (callback) => subscribe<any>('workspace:changed:batch', callback),
   onUpdateStatus: (callback) => subscribe<UpdateInfo>(IPC_EVENTS.APP_UPDATE_STATUS, callback),

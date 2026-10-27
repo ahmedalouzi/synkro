@@ -3,7 +3,7 @@ import { ipcMain, dialog, app, BrowserWindow, screen } from 'electron';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import { IPC_CHANNELS, IPC_EVENTS } from '@peep/shared';
-import type { InlineCompletionRequest, InlineEditRequest, Settings, SshTarget } from '@peep/shared';
+import type { ClaudeIdeStatus, ClaudeIdeToolResult, InlineCompletionRequest, InlineEditRequest, Settings, SshTarget } from '@peep/shared';
 import { InlineEditService } from '../services/inline-edit-service';
 import { InlineCompletionService } from '../services/inline-completion-service';
 import { DatabaseService } from '../services/db';
@@ -28,6 +28,7 @@ import { ReactNativeManagedProvider } from '../services/providers/react-native-m
 import { PlatformRegistry } from '../services/platform-registry';
 import { buildAuditReport, capturePerformanceSnapshot } from '../services/audit-service';
 import { ExtensionService } from '../services/extension-service';
+import { ClaudeIdeServer } from '../services/claude-ide-server';
 import { PublishService } from '../services/publish-service';
 import { DeviceService } from '../services/device-service';
 
@@ -48,12 +49,25 @@ let autoUpdateService: AutoUpdateService | null = null;
 let rnService: ReactNativeService | null = null;
 let platformRegistry: PlatformRegistry | null = null;
 const extensionService = new ExtensionService();
+const claudeIdeServer = new ClaudeIdeServer();
+
+// Terminals Synkro opens let `claude` find and connect to this window, like VS Code's terminals do.
+terminalService.setEnvProvider(() => {
+  const port = claudeIdeServer.getPort();
+  const cli = extensionService.findClaudeCli();
+  const env: Record<string, string> = port ? { CLAUDE_CODE_SSE_PORT: String(port), ENABLE_IDE_INTEGRATION: 'true' } : {};
+  return {
+    env,
+    pathDirs: cli ? [path.dirname(cli)] : [],
+  };
+});
 
 export function setMainWindow(window: BrowserWindow | null): void {
   mainWindow = window;
   previewManager.setMainWindow(window);
   agentService?.setMainWindow(window);
   terminalService.setMainWindow(window);
+  claudeIdeServer.setMainWindow(window);
   autoUpdateService?.setMainWindow(window);
   publishService?.setMainWindow(window);
 }
@@ -957,6 +971,33 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
     return extensionService.getExtensionDetails(id);
   });
 
+  // ── Claude Code IDE integration ─────────────────────────────────────────────
+
+  void claudeIdeServer.start().catch((error) => console.error('[ClaudeIde] failed to start:', error));
+
+  ipcMain.handle(IPC_CHANNELS.CLAUDE_IDE_RESPOND, async (_event, requestId: string, result: ClaudeIdeToolResult) => {
+    claudeIdeServer.respond(requestId, result);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.CLAUDE_IDE_NOTIFY, async (_event, method: string, params: unknown) => {
+    claudeIdeServer.notify(method, params);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.CLAUDE_IDE_SET_WORKSPACE, async (_event, folders: string[]) => {
+    claudeIdeServer.setWorkspaceFolders(Array.isArray(folders) ? folders : []);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.AGENTS_LIST, async () => extensionService.listAgents());
+
+  ipcMain.handle(IPC_CHANNELS.AGENTS_RESOLVE_CLI, async (_event, extensionId: string) =>
+    extensionService.ensureAgentCli(extensionId).catch(() => null));
+
+  ipcMain.handle(IPC_CHANNELS.CLAUDE_IDE_STATUS, async (): Promise<ClaudeIdeStatus> => ({
+    port: claudeIdeServer.getPort(),
+    connected: claudeIdeServer.isConnected(),
+    cliPath: await extensionService.ensureClaudeCli().catch(() => null),
+  }));
+
   // ── Auth ─────────────────────────────────────────────────────────────
 
   ipcMain.handle(IPC_CHANNELS.AUTH_SIGN_IN, async (_event, email, password) => {
@@ -1229,4 +1270,5 @@ export function cleanupServices(): void {
   agentService?.cancel();
   publishService?.cancel();
   terminalService.destroyAll();
+  claudeIdeServer.stop();
 }

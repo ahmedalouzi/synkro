@@ -797,40 +797,53 @@ html[data-window-type="preview"] body {
   overflow: hidden;
 }
 .terminal-tabs {
-  height: 32px;
+  height: 30px;
   display: flex;
-  align-items: center;
-  padding: 0 12px;
-  gap: 0;
-  border-bottom: 1px solid var(--border);
+  align-items: stretch;
+  padding: 0 8px;
+  gap: 4px;
+  background: #0d0d10;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   flex-shrink: 0;
 }
 .terminal-tab {
-  height: 28px;
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 0 14px;
-  font-size: 11px;
-  color: var(--text-muted);
+  padding: 0 8px;
+  font-size: 11.5px;
+  color: #71717a;
   cursor: pointer;
-  border-bottom: 2px solid transparent;
-  transition: color 0.12s, border-color 0.12s;
+  box-shadow: inset 0 -1.5px 0 transparent;
+  transition: color 0.12s, box-shadow 0.12s;
 }
-.terminal-tab:hover { color: var(--text-secondary); }
+.terminal-tab:hover { color: #a1a1aa; }
 .terminal-tab.active {
-  color: var(--text-primary);
-  border-bottom-color: var(--gold);
+  color: #e4e4e7;
+  box-shadow: inset 0 -1.5px 0 #7c83ff;
 }
+.terminal-tab-count {
+  min-width: 16px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #a1a1aa;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 15px;
+  text-align: center;
+}
+.terminal-tab-count--error { background: rgba(248, 113, 113, 0.16); color: #f87171; }
+.terminal-tab-count--warn { background: rgba(252, 211, 77, 0.14); color: #fcd34d; }
 .terminal-tab-dot { width: 6px; height: 6px; border-radius: 50%; }
 .td-green { background: var(--green); box-shadow: 0 0 6px var(--green); }
 .td-blue  { background: var(--blue);  box-shadow: 0 0 6px var(--blue); }
 .td-gold  { background: var(--gold);  box-shadow: 0 0 6px var(--gold); }
-.terminal-controls { margin-left: auto; display: flex; gap: 4px; }
+.terminal-controls { margin-left: auto; display: flex; align-items: center; gap: 2px; }
 .terminal-btn {
   padding: 2px 8px;
   border-radius: var(--radius);
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
   background: transparent;
   color: var(--text-muted);
   font-family: var(--font-ui);

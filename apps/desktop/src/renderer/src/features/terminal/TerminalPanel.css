@@ -11,30 +11,57 @@
   overflow-y: auto !important;
 }
 
-/* ── Tabs ── */
-.terminal-tabs {
+/* ── Sessions bar (Terminal 1, Terminal 2, …) ── */
+.terminal-sessions {
   display: flex;
-  background: var(--bg-base);
-  border-bottom: 1px solid var(--border);
+  align-items: center;
+  gap: 4px;
+  height: 30px;
+  padding: 0 10px;
+  background: #0d0d10;
   overflow-x: auto;
   flex-shrink: 0;
 }
+
+.terminal-sessions::-webkit-scrollbar { display: none; }
 
 .terminal-tab-item {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 10px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 5px;
+  font-family: var(--font-code);
   font-size: 11px;
   cursor: pointer;
-  border-right: 1px solid var(--border);
-  color: var(--text-muted);
+  color: #71717a;
   white-space: nowrap;
+  transition: background 0.12s, color 0.12s;
+}
+
+.terminal-tab-item::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #3f3f46;
+}
+
+.terminal-tab-item:hover {
+  color: #a1a1aa;
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .terminal-tab-item.active {
-  background: var(--bg-elevated);
-  color: var(--text-primary);
+  color: #e4e4e7;
+  background: rgba(124, 131, 255, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(124, 131, 255, 0.25);
+}
+
+.terminal-tab-item.active::before {
+  background: #4ade80;
+  box-shadow: 0 0 6px #4ade80;
 }
 
 .terminal-tab-close {
@@ -43,24 +70,34 @@
   color: inherit;
   cursor: pointer;
   padding: 0;
+  font-size: 10px;
+  opacity: 0;
+}
+
+.terminal-tab-item:hover .terminal-tab-close,
+.terminal-tab-item.active .terminal-tab-close {
   opacity: 0.6;
 }
 
 .terminal-tab-close:hover {
-  opacity: 1;
+  opacity: 1 !important;
 }
 
 .terminal-tab-add {
-  background: none;
+  width: 22px;
+  height: 22px;
   border: none;
-  color: var(--text-muted);
+  border-radius: 5px;
+  background: none;
+  color: #71717a;
   cursor: pointer;
-  padding: 4px 10px;
   font-size: 14px;
+  line-height: 1;
 }
 
 .terminal-tab-add:hover {
-  color: var(--text-primary);
+  color: #e4e4e7;
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .terminal-rename-input {
@@ -78,7 +115,8 @@
 .terminal-viewport {
   position: absolute;
   inset: 0;
-  padding: 4px;
+  padding: 4px 12px 6px;
+  background: #0d0d10;
   overflow: hidden;
 }
 
