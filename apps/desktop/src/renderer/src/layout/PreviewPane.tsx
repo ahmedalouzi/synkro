@@ -482,7 +482,7 @@ Please modify the selected element and its corresponding component files as foll
               {/* CSS zoom (not transform: scale): Chromium re-renders the iframe at the
                   zoomed size so the app stays sharp, while it still sees the device's
                   logical width (e.g. 393px). transform would stretch a 1x bitmap. */}
-              <div className="phone-scale-container" style={{
+              <div className={`phone-scale-container${isRunning ? ' is-running' : ''}`} style={{
                 width: device.logicalViewport.width + device.screenCutout.x * 2,
                 height: device.logicalViewport.height + device.screenCutout.y * 2,
                 zoom: scale,
