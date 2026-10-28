@@ -1,0 +1,201 @@
+/* Identity layers of the login screen: beam, giant atom, constellation, demo phone, ticker. */
+
+.login-container {
+  --px: 0;
+  --py: 0;
+}
+
+/* Parallax: background layers drift against the pointer. */
+.lx-aurora {
+  transform: translate(calc(var(--px) * -26px), calc(var(--py) * -20px));
+  transition: transform 0.6s ease-out;
+}
+
+.lx-grid {
+  translate: calc(var(--px) * -10px) calc(var(--py) * -8px);
+  transition: translate 0.6s ease-out;
+}
+
+.lx-beam {
+  position: absolute;
+  top: -20vh;
+  left: 50%;
+  width: 120vw;
+  height: 90vh;
+  translate: -50% 0;
+  pointer-events: none;
+  background: conic-gradient(from 180deg at 50% 0%, transparent 162deg, rgba(167, 139, 250, 0.16) 176deg, rgba(191, 219, 254, 0.22) 180deg, rgba(244, 114, 182, 0.14) 184deg, transparent 198deg);
+  filter: blur(18px);
+  mask-image: linear-gradient(180deg, #000 10%, transparent 85%);
+  transform-origin: 50% 0;
+  animation: lx-beam-sway 14s ease-in-out infinite alternate;
+}
+
+@keyframes lx-beam-sway {
+  from { transform: rotate(-7deg); opacity: 0.75; }
+  to { transform: rotate(7deg); opacity: 1; }
+}
+
+.lx-atom {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(118vh, 1100px);
+  aspect-ratio: 1;
+  translate: calc(-50% + var(--px) * 22px) calc(-50% + var(--py) * 18px);
+  transition: translate 0.8s ease-out;
+  pointer-events: none;
+  filter: drop-shadow(0 0 5px rgba(196, 181, 253, 0.9));
+}
+
+.lx-atom svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.lx-atom-spin {
+  animation: lx-orbit 140s linear infinite;
+}
+
+.lx-atom-core {
+  animation: lx-core-pulse 4s ease-in-out infinite;
+}
+
+@keyframes lx-core-pulse {
+  0%, 100% { transform: scale(0.85); }
+  50% { transform: scale(1.15); }
+}
+
+.lx-constellation {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  opacity: 0.9;
+}
+
+/* Beta badge next to the brand */
+.lx-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-left: 6px;
+  padding: 4px 10px 4px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #c4b5fd;
+  background: rgba(139, 92, 246, 0.12);
+  border: 1px solid rgba(167, 139, 250, 0.3);
+}
+
+.lx-badge-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #a78bfa;
+  box-shadow: 0 0 0 0 rgba(167, 139, 250, 0.7);
+  animation: lx-pulse-violet 1.8s ease-out infinite;
+}
+
+@keyframes lx-pulse-violet { to { box-shadow: 0 0 0 8px rgba(167, 139, 250, 0); } }
+
+/* ── "Built with Synkro" ticker ───────────────────────────────────── */
+
+.lx-ticker {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 26px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 0 48px;
+  pointer-events: none;
+  animation: lx-rise 0.8s 0.3s ease-out both;
+}
+
+.lx-ticker-label {
+  flex-shrink: 0;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.lx-ticker-track {
+  flex: 1;
+  overflow: hidden;
+  mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+}
+
+.lx-ticker-row {
+  display: flex;
+  gap: 34px;
+  width: max-content;
+  animation: lx-ticker 60s linear infinite;
+}
+
+@keyframes lx-ticker { to { transform: translateX(-50%); } }
+
+.lx-ticker-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 13px;
+  color: #8b93a7;
+  white-space: nowrap;
+}
+
+.lx-ticker-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #60a5fa, #f472b6);
+  box-shadow: 0 0 8px rgba(167, 139, 250, 0.8);
+}
+
+/* Big screens: scale the scene up so it fills the space. */
+@media (min-width: 1600px) and (min-height: 900px) {
+  .lx-shell {
+    zoom: 1.15;
+  }
+}
+
+@media (min-width: 2200px) and (min-height: 1200px) {
+  .lx-shell {
+    zoom: 1.35;
+  }
+}
+
+@media (max-height: 760px) {
+  .lx-ticker {
+    display: none;
+  }
+}
+
+@media (max-width: 1180px) {
+  .lx-iphone {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lx-beam,
+  .lx-atom-spin,
+  .lx-atom-core,
+  .lx-ticker-row,
+  .lx-iphone,
+  .lx-iphone-glare,
+  .lx-meteor,
+  .lx-word,
+  .lx-sk,
+  .lx-badge-dot {
+    animation: none;
+  }
+}

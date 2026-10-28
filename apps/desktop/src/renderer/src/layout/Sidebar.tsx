@@ -5,6 +5,7 @@ import { useWorkspaceStore } from '../stores/workspace-store';
 import { ExtensionsPanel } from '../features/extensions/ExtensionsPanel';
 import { GitPanel } from '../features/git/GitPanel';
 import { SearchPanel } from '../features/explorer/SearchPanel';
+import { SkyBackdrop } from '../features/shared/SkyBackdrop';
 
 
 export function Sidebar() {
@@ -60,6 +61,7 @@ export function Sidebar() {
 
   return (
     <div className="sidebar">
+      <SkyBackdrop interactive={false} />
       <div className="sidebar-header">
         <span className="sidebar-title">Explorer</span>
         <div className="sidebar-actions">

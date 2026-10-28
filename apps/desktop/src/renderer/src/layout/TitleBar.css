@@ -274,19 +274,6 @@
 
 .topbar__build:hover:not(:disabled) { background: rgba(74, 222, 128, 0.18); }
 .topbar__build:disabled { opacity: 0.55; cursor: not-allowed; }
-
-.topbar__dev {
-  margin-right: 4px;
-  padding: 1px 6px;
-  border-radius: 8px;
-  background: rgba(239, 68, 68, 0.15);
-  color: #f87171;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
 .topbar__avatar {
   width: 22px;
   height: 22px;

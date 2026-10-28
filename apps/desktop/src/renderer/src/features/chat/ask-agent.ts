@@ -10,3 +10,13 @@ export function askAgent(message: string): void {
     window.dispatchEvent(new CustomEvent('peep:trigger-agent', { detail: { message } }));
   }, wasOpen ? 0 : 50);
 }
+
+/** Cursor's Ctrl+L: attach the editor selection to the chat input and focus it. */
+export function addSelectionToChat(): void {
+  const ws = useWorkspaceStore.getState();
+  const wasOpen = ws.agentPaneOpen;
+  if (!wasOpen) ws.toggleAgentPane();
+  setTimeout(() => {
+    window.dispatchEvent(new CustomEvent('peep:chat-add-selection'));
+  }, wasOpen ? 0 : 50);
+}

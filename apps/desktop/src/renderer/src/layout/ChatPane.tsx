@@ -8,12 +8,13 @@ import { useDiagnosticsStore, usePreviewStore } from '../stores/preview-store';
 import { Virtuoso } from 'react-virtuoso';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { MentionIcon, MentionPicker, type MentionItem, type MentionPickerHandle } from '../features/chat/MentionPicker';
+import { MentionIcon, MentionPicker, selectionMention, type MentionItem, type MentionPickerHandle } from '../features/chat/MentionPicker';
 import { SlashCommandPicker, type SlashCommandResult } from '../features/chat/SlashCommandPicker';
 import { imageFilesFrom, MAX_IMAGES, readChatImage, type PendingImage } from '../features/chat/chat-images';
 import { MODELS, useCanPickModel } from '../features/chat/models';
 import { openWebPage } from '../config/web';
 import './ChatPane.css';
+import { SkyBackdrop } from '../features/shared/SkyBackdrop';
 
 interface ChatPaneProps {
   onOpenSettings: () => void;
@@ -312,6 +313,21 @@ export function ChatPane({ onOpenSettings: _onOpenSettings }: ChatPaneProps) {
     });
   };
 
+  // Ctrl+L: attach the current editor selection (if any) as a chip and focus the input.
+  useEffect(() => {
+    const onAddSelection = () => {
+      const selection = useWorkspaceStore.getState().activeSelection;
+      if (selection?.text.trim()) {
+        const item = selectionMention(selection);
+        setAttachments((prev) => (prev.some((a) => a.id === item.id) ? prev : [...prev, item]));
+      }
+      // After the key event finishes, so Monaco doesn't keep focus.
+      setTimeout(() => textareaRef.current?.focus(), 0);
+    };
+    window.addEventListener('peep:chat-add-selection', onAddSelection);
+    return () => window.removeEventListener('peep:chat-add-selection', onAddSelection);
+  }, []);
+
   /** The "@" button: starts a mention at the caret, like typing `@`. */
   const startMention = () => {
     const textarea = textareaRef.current;
@@ -528,6 +544,7 @@ export function ChatPane({ onOpenSettings: _onOpenSettings }: ChatPaneProps) {
 
   return (
     <div className="agent-panel cx">
+      <SkyBackdrop interactive={false} />
       {/* ── Tabs ── */}
       <div className="cx-tabs">
         <div className="cx-tabs__list">

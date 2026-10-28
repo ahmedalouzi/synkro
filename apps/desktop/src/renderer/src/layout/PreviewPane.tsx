@@ -5,6 +5,7 @@ import { PreviewAssembly } from '../features/preview/PreviewAssembly';
 import { DeviceType } from '../features/preview/PhoneFrame';
 import { useComposerStore } from '../stores/composer-store';
 import './PreviewPane.css';
+import { SkyBackdrop } from '../features/shared/SkyBackdrop';
 
 export type DeviceConfig = {
   id: string;
@@ -463,6 +464,7 @@ Please modify the selected element and its corresponding component files as foll
         flex: 1, position: 'relative', overflow: 'hidden',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}>
+        <SkyBackdrop />
 
         {/* ── Body ── */}
         <div className="panel-body preview-pane__body" ref={stageBodyRef}>

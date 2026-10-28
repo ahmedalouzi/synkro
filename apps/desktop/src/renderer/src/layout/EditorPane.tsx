@@ -4,6 +4,7 @@ import { DiffViewer } from '../features/chat/DiffViewer';
 import { PlanViewer } from '../features/plan/PlanViewer';
 
 import { NoFileOpenEmptyState, NoProjectEmptyState } from '../features/shared/EmptyState';
+import { SkyBackdrop } from '../features/shared/SkyBackdrop';
 import { useWorkspaceStore, type OpenFile } from '../stores/workspace-store';
 import { useWorkspace } from '../hooks/useWorkspace';
 import { confirmDiscard } from '../commands/commands';
@@ -249,6 +250,8 @@ export function EditorPane() {
       )}
 
       <div className="editor-body" style={{ flex: 1, position: 'relative' }}>
+        {/* Behind code: dimmed, static stars only. */}
+        <SkyBackdrop subtle={!!activeFile} interactive={!activeFile} />
         {!project ? (
           <NoProjectEmptyState
             onOpen={() => void openProjectFolder()}

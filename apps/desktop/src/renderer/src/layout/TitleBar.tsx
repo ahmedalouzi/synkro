@@ -54,7 +54,7 @@ function CommandButton({ id, icon, title }: { id: string; icon: string; title: s
 
 export function TitleBar() {
   const { project } = useWorkspace();
-  const { user, settings, logout } = useAuthStore();
+  const { user, logout } = useAuthStore();
   const currentBuild = useBuildStore((s) => s.currentBuild);
   // Re-render when the editor navigation history or layout changes.
   useWorkspaceStore((s) => s.activeFilePath);
@@ -123,8 +123,6 @@ export function TitleBar() {
 
       {/* ── Right: build, layout, settings, account ── */}
       <div className="topbar__right">
-        {settings?.isDevBypassActive && <span className="topbar__dev" title="Development authentication bypass is active">Dev</span>}
-
         {user && isFreePlan && (
           <button type="button" className="topbar__upgrade" title="Opens Synkro pricing" onClick={() => openWebPage('pricing')}>Upgrade to Pro</button>
         )}

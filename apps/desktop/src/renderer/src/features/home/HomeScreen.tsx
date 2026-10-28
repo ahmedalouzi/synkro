@@ -7,6 +7,7 @@ import { StatusBar } from '../../layout/StatusBar';
 import { TerminalPanel } from '../terminal/TerminalPanel';
 import { openWebPage } from '../../config/web';
 import './HomeScreen.css';
+import { SkyBackdrop } from '../shared/SkyBackdrop';
 
 /** Start page like Cursor's: brand + plan, quick actions, recent projects. */
 
@@ -35,7 +36,7 @@ const TERMINAL_MIN_HEIGHT = 120;
 const TERMINAL_DEFAULT_HEIGHT = 280;
 
 export function HomeScreen() {
-  const { user, settings } = useAuthStore();
+  const { user } = useAuthStore();
   const recentProjects = useWorkspaceStore((s) => s.recentProjects);
   const sidebarOpen = useWorkspaceStore((s) => s.homeSidebarOpen);
   const statusBarVisible = useWorkspaceStore((s) => s.statusBarVisible);
@@ -127,6 +128,7 @@ export function HomeScreen() {
 
       <div className="home__workarea">
       <main className="home__main">
+        <SkyBackdrop />
         <div className="home__content">
           <div className="home__brand">
             <svg className="home__logo" width="30" height="30" viewBox="0 0 32 32" fill="none" aria-hidden="true">
@@ -149,7 +151,6 @@ export function HomeScreen() {
                   <button type="button" className="home__link" title="Opens Synkro pricing" onClick={() => openWebPage('pricing')}>Upgrade</button>
                 </>
               )}
-              {settings?.isDevBypassActive && <span className="home__dev">Dev auth bypass</span>}
             </div>
           )}
 

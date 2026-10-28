@@ -155,7 +155,8 @@ function ProblemsTabContent({ diagnostics, loadFile, errorCount, warningCount }:
   );
 }
 
-export function BottomPanel() {
+/** `hidden` keeps the panel mounted while closed so terminal sessions and their scrollback survive (like VS Code). */
+export function BottomPanel({ hidden = false }: { hidden?: boolean }) {
   const tab = useWorkspaceStore((s) => s.bottomPanelTab);
   const setTab = useWorkspaceStore((s) => s.setBottomPanelTab);
   const currentBuild = useBuildStore((s) => s.currentBuild);
@@ -167,7 +168,7 @@ export function BottomPanel() {
   const warningCount = diagnostics.filter((d) => d.severity === 'warning').length;
 
   return (
-    <div className="terminal-area" style={{ gridRow: 2, gridColumn: '3 / 5' }}>
+    <div className="terminal-area" style={{ gridRow: 2, gridColumn: '3 / 5', display: hidden ? 'none' : undefined }}>
       <div className="terminal-tabs">
         <div className={`terminal-tab ${tab === 'terminal' ? 'active' : ''}`} onClick={() => setTab('terminal')}>
           <div className="terminal-tab-dot td-green"></div>
@@ -203,7 +204,10 @@ export function BottomPanel() {
       </div>
       
       <div className="terminal-body" style={{ padding: (tab === 'terminal' || tab === 'build') ? 0 : '12px 16px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-        {tab === 'terminal' && <TerminalPanel />}
+        {/* Hidden instead of unmounted: unmounting dropped the tabs while their shells kept running. */}
+        <div style={{ display: tab === 'terminal' ? 'flex' : 'none', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+          <TerminalPanel />
+        </div>
         {tab === 'build' && <BuildPanel />}
         
         {tab === 'logs' && <LogsTabContent logs={logs} />}

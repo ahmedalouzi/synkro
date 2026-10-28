@@ -1,4 +1,4 @@
-import { useEffect, useState, lazy, Suspense } from 'react';
+import { useCallback, useEffect, useRef, useState, lazy, Suspense } from 'react';
 import { AppShell } from './layout/AppShell';
 import { UpdateBanner } from './features/shared/UpdateBanner';
 import { usePeepEvents } from './hooks/usePeepEvents';
@@ -11,6 +11,7 @@ import { useWorkspaceStore } from './stores/workspace-store';
 import { useChatStore } from './stores/chat-store';
 import { LoginScreen } from './features/auth/LoginScreen';
 import { HomeScreen } from './features/home/HomeScreen';
+import { SignInBurst } from './features/auth/SignInBurst';
 
 const FilePicker = lazy(() => import('./features/explorer/FilePicker').then(m => ({ default: m.FilePicker })));
 const SettingsModal = lazy(() => import('./features/settings/SettingsModal').then(m => ({ default: m.SettingsModal })));
@@ -42,6 +43,18 @@ export default function App() {
   const [cloneOpen, setCloneOpen] = useState(false);
   const [sshOpen, setSshOpen] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState<boolean | null>(null);
+
+  // Warp effect only when the user just signed in on the login screen (not on a restored session).
+  const [signInBurst, setSignInBurst] = useState(false);
+  const previousAuthState = useRef(authState);
+  const justSignedIn = previousAuthState.current === 'LOGIN' && (authState === 'AUTHENTICATED_HOME' || authState === 'WORKSPACE');
+  useEffect(() => {
+    if (justSignedIn) setSignInBurst(true);
+    previousAuthState.current = authState;
+  }, [authState, justSignedIn]);
+  // Also true on the very first render after sign-in, before the effect runs, so the app never flashes first.
+  const showSignInBurst = signInBurst || justSignedIn;
+  const endSignInBurst = useCallback(() => setSignInBurst(false), []);
 
   // Check session on mount
   useEffect(() => {
@@ -145,6 +158,7 @@ export default function App() {
       <>
         <UpdateBanner />
         <HomeScreen />
+        {showSignInBurst && <SignInBurst onDone={endSignInBurst} />}
         <Suspense fallback={null}>
           {settingsOpen && <SettingsModal open={settingsOpen} initialSection={settingsSection} onClose={() => setSettingsOpen(false)} />}
           {newProjectOpen && (
@@ -175,6 +189,7 @@ export default function App() {
         onOpenSettings={() => { setSettingsSection(undefined); setSettingsOpen(true); }}
         onNewProject={() => setNewProjectOpen(true)}
       />
+      {showSignInBurst && <SignInBurst onDone={endSignInBurst} />}
 
       <Suspense fallback={null}>
         {globalPickerOpen && <FilePicker open={globalPickerOpen} onClose={() => setGlobalPickerOpen(false)} />}

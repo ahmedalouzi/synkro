@@ -196,90 +196,54 @@
     0 0.5px 0 rgba(255,255,255,0.04);
 }
 
-/* ── Status bar — flanks the Dynamic Island ── */
+/* ── Status bar — flanks the Dynamic Island ──
+   Matches the iOS 17 simulator: each side is centred in the space beside the island
+   (126pt wide), time in SF Pro Semibold 17pt, glyphs at their native point sizes. */
 .pf-status-bar {
   position: absolute;
-  top: 14px;
+  top: 12px;            /* same band as the Dynamic Island, so everything shares its centre */
   left: 0;
   right: 0;
-  height: 30px;
-  padding: 0 24px;
+  height: 34px;
   display: flex;
   justify-content: space-between;
   align-items: center;
   z-index: 25;
   pointer-events: none;
+  color: #fff;
+}
+
+.pf-status-left,
+.pf-status-right {
+  width: calc(50% - 63px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .pf-status-left {
-  display: flex;
-  align-items: center;
-  padding-left: 2px;
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", Helvetica, sans-serif;
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: -0.3px;
-  color: white;
+  padding-left: 6px;
 }
 
 .pf-status-right {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding-right: 2px;
+  gap: 6px;
+  padding-right: 4px;
 }
 
-/* Cellular bars */
-.pf-icon-cellular {
-  display: flex;
-  align-items: flex-end;
-  gap: 1.5px;
-  height: 10px;
+.pf-status-time {
+  font-family: "SF Pro Text", "SF Pro Display", -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.41px;
+  line-height: 1;
+  font-feature-settings: "tnum" 1, "cv11" 1;
+  -webkit-font-smoothing: antialiased;
 }
-.pf-icon-cellular span {
-  width: 3px;
-  background: white;
-  border-radius: 0.75px;
+
+.pf-glyph {
   display: block;
-}
-.pf-icon-cellular span:nth-child(1) { height: 4px; }
-.pf-icon-cellular span:nth-child(2) { height: 6px; }
-.pf-icon-cellular span:nth-child(3) { height: 8px; }
-.pf-icon-cellular span:nth-child(4) { height: 10px; }
-
-/* Wi-Fi */
-.pf-icon-wifi {
-  display: flex;
-  align-items: center;
-  color: white;
-}
-
-/* Battery */
-.pf-icon-battery {
-  width: 25px; height: 12px;
-  border: 1.5px solid rgba(255, 255, 255, 0.7);
-  border-radius: 3.5px;
-  padding: 1.5px;
-  position: relative;
-  display: flex;
-  box-sizing: border-box;
-}
-.pf-icon-battery::after {
-  content: '';
-  position: absolute;
-  right: -4.5px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 2.5px;
-  height: 5px;
-  background: rgba(255, 255, 255, 0.65);
-  border-radius: 0 2px 2px 0;
-}
-.pf-icon-battery-level {
-  width: 75%;
-  height: 100%;
-  background: white;
-  border-radius: 1.5px;
+  flex-shrink: 0;
+  fill: currentColor;
 }
 
 /* ── Home indicator ── */
@@ -296,8 +260,6 @@
 }
 
 /* pf-shine and pf-camera-rail removed — chassis is pure black, no decorations needed */
-
-}
 
 
 /* ════════════════════════════════════════════════════════════════════

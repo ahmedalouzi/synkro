@@ -62,16 +62,6 @@
 .home__link:hover { text-decoration: underline; }
 .home__link--muted { color: var(--text-secondary); }
 .home__link--muted:hover { color: var(--text-primary); }
-
-.home__dev {
-  margin-left: 6px;
-  padding: 1px 6px;
-  border-radius: 8px;
-  background: rgba(239, 68, 68, 0.12);
-  color: #f87171;
-  font-size: 10.5px;
-}
-
 .home__actions {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -320,4 +310,21 @@
 
 @media (max-width: 640px) {
   .home__actions { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* The night sky itself is <SkyBackdrop /> (features/shared). */
+.home__main {
+  isolation: isolate;
+}
+
+/* Glassy cards so the sky shows through. */
+.home__main .home__action {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(8px);
+}
+
+.home__main .home__action:hover {
+  background: rgba(167, 139, 250, 0.08);
+  border-color: rgba(167, 139, 250, 0.35);
 }

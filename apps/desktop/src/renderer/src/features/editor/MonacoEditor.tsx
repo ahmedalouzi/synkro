@@ -8,6 +8,7 @@ import { emmetHTML, emmetCSS, emmetJSX } from 'emmet-monaco-es';
 import { clearActiveEditor, setActiveEditor } from '../../commands/editor-registry';
 import { registerInlineCompletions } from './inline-completions';
 import { registerFixWithAI, setupInlineEdit } from './InlineEdit';
+import { addSelectionToChat } from '../chat/ask-agent';
 
 let emmetInitialized = false;
 
@@ -115,6 +116,9 @@ export function MonacoEditor({ path, value, onChange, onSave, externallyModified
       editorInstance.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
         onSave?.();
       });
+
+      // Ctrl+L: selection to chat (Cursor), replacing Monaco's expand-line-selection.
+      editorInstance.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyL, addSelectionToChat);
 
       // Ctrl+K: inline AI edit in the editor (the composer lives on Ctrl+I).
       setupInlineEdit(editorInstance, monaco);
@@ -280,7 +284,11 @@ export function MonacoEditor({ path, value, onChange, onSave, externallyModified
         'editorLineNumber.foreground':       '#4b656b',
         'editorLineNumber.activeForeground': '#34d399',
         'editor.lineHighlightBackground':    '#ffffff0a',
-        'editor.background':                 '#030409',
+        // Transparent: the editor shows the night sky (SkyBackdrop) behind the code.
+        'editor.background':                 '#00000000',
+        'editorGutter.background':           '#00000000',
+        'minimap.background':                '#00000000',
+        'editorStickyScroll.background':     '#0b0914',
         'editor.selectionBackground':        '#264f78',
         'editorCursor.foreground':           '#aeafad',
         'editorIndentGuide.background':      '#ffffff12',

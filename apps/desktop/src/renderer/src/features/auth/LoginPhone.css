@@ -1,0 +1,569 @@
+/* Login showcase: big brand, word reveal, meteors, pointer spotlight and the assembling iPhone. */
+
+/* ── Brand ────────────────────────────────────────────────────────── */
+
+.lx-showcase .lx-brand {
+  gap: 16px;
+}
+
+.lx-brand-mark {
+  position: relative;
+  isolation: isolate;
+  width: 62px;
+  height: 62px;
+  display: grid;
+  place-items: center;
+  border-radius: 19px;
+  background: radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.14), rgba(15, 15, 25, 0.92) 70%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 12px 40px -10px rgba(0, 0, 0, 0.8);
+}
+
+.lx-brand-mark svg {
+  animation: lx-orbit 18s linear infinite;
+  filter: drop-shadow(0 0 6px rgba(167, 139, 250, 0.8));
+}
+
+.lx-brand-halo {
+  position: absolute;
+  inset: -8px;
+  z-index: -1;
+  border-radius: 26px;
+  background: conic-gradient(from var(--lx-angle), #60a5fa, #a78bfa, #f472b6, #60a5fa);
+  filter: blur(16px);
+  opacity: 0.6;
+  animation: lx-spin-border 6s linear infinite;
+}
+
+.lx-brand .lx-brand-name {
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: 0.34em;
+  background: linear-gradient(100deg, #ffffff 0%, #ffffff 35%, #c4b5fd 50%, #ffffff 65%, #ffffff 100%);
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: lx-name-shine 5s ease-in-out infinite;
+}
+
+@keyframes lx-name-shine {
+  0%, 30% { background-position: 100% 0; }
+  70%, 100% { background-position: -50% 0; }
+}
+
+/* ── Headline: words rise out of a blur ───────────────────────────── */
+
+.lx-word {
+  display: inline-block;
+  white-space: pre;
+  animation: lx-word-in 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.lx-word.lx-gradient-text {
+  background-size: 300% 100%;
+  animation: lx-word-in 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.lx-word.lx-gradient-text:nth-of-type(3) { background-position: 0% 0; }
+.lx-word.lx-gradient-text:nth-of-type(4) { background-position: 45% 0; }
+.lx-word.lx-gradient-text:nth-of-type(5) { background-position: 80% 0; }
+
+@keyframes lx-word-in {
+  from {
+    opacity: 0;
+    filter: blur(14px);
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+    transform: none;
+  }
+}
+
+.lx-showcase .lx-sub {
+  max-width: 360px;
+}
+
+.lx-showcase .lx-chips {
+  max-width: 370px;
+}
+
+/* ── Meteors and pointer spotlight ────────────────────────────────── */
+
+.lx-meteors {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.lx-meteor {
+  position: absolute;
+  width: 180px;
+  height: 1.5px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0), rgba(196, 181, 253, 0.6) 70%, #fff);
+  filter: drop-shadow(0 0 6px rgba(196, 181, 253, 0.9));
+  opacity: 0;
+  animation: lx-meteor 11s linear infinite;
+}
+
+.lx-meteor-0 { top: 8%; left: 62%; animation-delay: 1.5s; }
+.lx-meteor-1 { top: 2%; left: 92%; animation-delay: 5s; animation-duration: 13s; }
+.lx-meteor-2 { top: 22%; left: 40%; animation-delay: 8.5s; animation-duration: 15s; }
+.lx-meteor-3 { top: 4%; left: 78%; animation-delay: 12s; animation-duration: 17s; }
+
+@keyframes lx-meteor {
+  0% { opacity: 0; transform: translate(0, 0) rotate(145deg); }
+  1.5% { opacity: 1; }
+  7% { opacity: 0; transform: translate(-560px, 390px) rotate(145deg); }
+  100% { opacity: 0; transform: translate(-560px, 390px) rotate(145deg); }
+}
+
+.lx-spotlight {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    650px circle at calc((var(--px) + 1) * 50%) calc((var(--py) + 1) * 50%),
+    rgba(139, 92, 246, 0.11),
+    transparent 60%
+  );
+}
+
+/* ── Stage: terminal + iPhone ─────────────────────────────────────── */
+
+.lx-showcase .lx-stage {
+  position: relative;
+  max-width: none;
+}
+
+.lx-stage .lx-terminal {
+  max-width: 430px;
+}
+
+.lx-iphone {
+  position: absolute;
+  left: 385px;
+  top: 50%;
+  width: 214px;
+  height: 438px;
+  margin-top: -189px;
+  padding: 3px;
+  border-radius: 46px;
+  /* Brushed titanium edge. */
+  background: linear-gradient(135deg, #9a9ca6 0%, #3d3f47 16%, #d4d6de 32%, #4b4d56 50%, #a7aab5 68%, #2c2e35 86%, #8c8f99 100%);
+  box-shadow:
+    0 50px 90px -20px rgba(0, 0, 0, 0.95),
+    0 0 0 1px rgba(0, 0, 0, 0.6),
+    0 0 70px -10px rgba(139, 92, 246, 0.55),
+    inset 0 0 2px rgba(255, 255, 255, 0.5);
+  transform: perspective(1400px) rotateY(calc(-16deg + var(--px) * 10deg)) rotateX(calc(5deg - var(--py) * 6deg)) rotateZ(2deg);
+  transition: transform 0.6s ease-out, box-shadow 0.8s ease;
+  animation: lx-iphone-in 1.1s 0.5s cubic-bezier(0.2, 1, 0.3, 1) both, lx-iphone-float 6s 1.6s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes lx-iphone-in {
+  from { opacity: 0; translate: 40px 60px; scale: 0.9; }
+  to { opacity: 1; translate: 0 0; scale: 1; }
+}
+
+@keyframes lx-iphone-float {
+  0%, 100% { translate: 0 0; }
+  50% { translate: 0 -10px; }
+}
+
+.lx-iphone.is-live {
+  box-shadow:
+    0 50px 90px -20px rgba(0, 0, 0, 0.95),
+    0 0 0 1px rgba(0, 0, 0, 0.6),
+    0 0 90px -6px rgba(52, 211, 153, 0.45),
+    inset 0 0 2px rgba(255, 255, 255, 0.5);
+}
+
+.lx-iphone-btn {
+  position: absolute;
+  width: 3px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #5c5f69, #c3c6cf, #5c5f69);
+}
+
+.lx-iphone-action { left: -2px; top: 88px; height: 22px; }
+.lx-iphone-vol-up { left: -2px; top: 124px; height: 38px; }
+.lx-iphone-vol-down { left: -2px; top: 170px; height: 38px; }
+.lx-iphone-power { right: -2px; top: 136px; height: 58px; }
+
+.lx-iphone-bezel {
+  width: 100%;
+  height: 100%;
+  padding: 6px;
+  border-radius: 43px;
+  background: #050505;
+}
+
+.lx-iphone-screen {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: 37px;
+  background:
+    radial-gradient(140% 60% at 50% -10%, rgba(99, 102, 241, 0.35), transparent 60%),
+    linear-gradient(180deg, #0f0e1c 0%, #0a0a12 100%);
+  color: #fff;
+}
+
+.lx-iphone-island {
+  position: absolute;
+  top: 9px;
+  left: 50%;
+  z-index: 3;
+  width: 70px;
+  height: 21px;
+  translate: -50% 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 7px 0 9px;
+  border-radius: 12px;
+  background: #000;
+  transition: width 0.5s cubic-bezier(0.3, 1.4, 0.5, 1);
+}
+
+.lx-iphone.is-live .lx-iphone-island {
+  width: 86px;
+}
+
+.lx-iphone-cam {
+  margin-left: auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #3b4a7a, #0a0d18 70%);
+}
+
+.lx-live-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 7.5px;
+  font-weight: 700;
+  color: #34d399;
+  animation: lx-line-in 0.4s 0.2s ease-out both;
+}
+
+.lx-live-pill i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #34d399;
+  box-shadow: 0 0 6px #34d399;
+}
+
+.lx-iphone-status {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  height: 38px;
+  padding: 0 16px 0 24px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+}
+
+.lx-iphone-icons {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  fill: currentColor;
+}
+
+.lx-app {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 4px 13px 0;
+}
+
+/* Placeholder shown until the agent builds that part. */
+.lx-sk {
+  border-radius: 12px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.07) 25%, rgba(167, 139, 250, 0.24) 50%, rgba(255, 255, 255, 0.07) 75%);
+  background-size: 200% 100%;
+  border: 1px dashed rgba(167, 139, 250, 0.35);
+  box-shadow: inset 0 0 18px rgba(139, 92, 246, 0.12);
+  animation: lx-shimmer 1.4s linear infinite;
+}
+
+@keyframes lx-shimmer { from { background-position: 150% 0; } to { background-position: -50% 0; } }
+
+.lx-built {
+  animation: lx-build-in 0.7s cubic-bezier(0.2, 1, 0.3, 1) both;
+}
+
+@keyframes lx-build-in {
+  0% { opacity: 0; transform: scale(0.94); filter: blur(6px) brightness(1.8); }
+  60% { filter: blur(0) brightness(1.25); }
+  100% { opacity: 1; transform: none; filter: none; }
+}
+
+.lx-app-header {
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.lx-app-header > div {
+  display: flex;
+  flex-direction: column;
+}
+
+.lx-app-hello {
+  font-size: 8.5px;
+  color: #94a3b8;
+}
+
+.lx-app-title {
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.lx-app-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #fbbf24, #f472b6);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.12);
+}
+
+.lx-app-hero {
+  height: 86px;
+  border-radius: 18px;
+}
+
+.lx-built.lx-app-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px 0 13px;
+  background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 55%, #ec4899 100%);
+  box-shadow: 0 12px 28px -10px rgba(139, 92, 246, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  border: none;
+}
+
+.lx-hero-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.lx-hero-label {
+  font-size: 7.5px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+
+.lx-hero-value {
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.lx-hero-sub {
+  font-size: 8px;
+  opacity: 0.8;
+}
+
+.lx-hero-ring {
+  position: relative;
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+}
+
+.lx-hero-ring svg {
+  position: absolute;
+  inset: 0;
+  transform: rotate(-90deg);
+}
+
+.lx-hero-ring span {
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.lx-hero-ring-track {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.25);
+  stroke-width: 5;
+}
+
+.lx-hero-ring-fill {
+  fill: none;
+  stroke: #fff;
+  stroke-width: 5;
+  stroke-linecap: round;
+  stroke-dasharray: 113.1;
+  stroke-dashoffset: 113.1;
+  animation: lx-hero-ring 1.4s 0.3s cubic-bezier(0.3, 0.9, 0.3, 1) forwards;
+}
+
+@keyframes lx-hero-ring { to { stroke-dashoffset: 28.3; } }
+
+.lx-app-week {
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 2px;
+}
+
+.lx-day {
+  width: 23px;
+  height: 23px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  font-size: 8.5px;
+  font-weight: 700;
+  color: #64748b;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.lx-day i {
+  font-style: normal;
+}
+
+.lx-day.is-done {
+  color: #fff;
+  background: linear-gradient(135deg, #6366f1, #a855f7);
+}
+
+.lx-day.is-today {
+  box-shadow: 0 0 0 2px #0b0a14, 0 0 0 3.5px #f472b6, 0 0 12px rgba(244, 114, 182, 0.7);
+}
+
+.lx-app-habits {
+  height: 130px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.lx-habit-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 39px;
+  padding: 0 9px 0 7px;
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  animation: lx-line-in 0.45s ease-out both;
+}
+
+.lx-habit-icon {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  font-size: 12px;
+}
+
+.lx-habit-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+
+.lx-habit-text b {
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.lx-habit-text small {
+  font-size: 7.5px;
+  color: #8b93a7;
+}
+
+.lx-habit-tick {
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  font-size: 9px;
+  font-weight: 800;
+  color: #0b0a14;
+  border: 1.5px solid rgba(255, 255, 255, 0.22);
+}
+
+.lx-habit-tick.is-done {
+  border: none;
+}
+
+.lx-app-tabs {
+  position: absolute;
+  left: 22px;
+  right: 22px;
+  bottom: 20px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(10px);
+}
+
+.lx-app-tabs.lx-built span {
+  width: 14px;
+  height: 14px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.lx-app-tabs.lx-built span.is-active {
+  width: 32px;
+  border-radius: 8px;
+  background: linear-gradient(90deg, #60a5fa, #a855f7);
+  box-shadow: 0 0 12px rgba(139, 92, 246, 0.8);
+}
+
+.lx-iphone-home {
+  position: absolute;
+  left: 50%;
+  bottom: 7px;
+  width: 78px;
+  height: 4px;
+  translate: -50% 0;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.75);
+}
+
+/* Glass reflection sweeping across the screen. */
+.lx-iphone-glare {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+  background: linear-gradient(115deg, transparent 35%, rgba(255, 255, 255, 0.09) 45%, rgba(255, 255, 255, 0.02) 52%, transparent 60%);
+  background-size: 250% 100%;
+  animation: lx-glare 7s ease-in-out infinite;
+}
+
+@keyframes lx-glare {
+  0%, 20% { background-position: 120% 0; }
+  60%, 100% { background-position: -40% 0; }
+}

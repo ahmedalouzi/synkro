@@ -5,6 +5,7 @@ import { useBuildStore } from '../stores/build-store';
 import { buildApi } from '../services/build-api';
 import { isAICompletionsEnabled, toggleAICompletions } from '../features/editor/inline-completions';
 import { openAgentTab, useAgentsStore } from '../features/agents/agents-store';
+import { addSelectionToChat } from '../features/chat/ask-agent';
 import {
   editorHasFocus,
   getActiveEditor,
@@ -441,6 +442,8 @@ const commandList: Command[] = [
   { id: 'peep.toggleAICompletions', category: 'AI', title: 'Tab Autocomplete (AI)', run: toggleAICompletions, checked: isAICompletionsEnabled },
   { id: 'editor.action.inlineSuggest.trigger', category: 'AI', title: 'Trigger Inline Suggestion', keybinding: 'Alt+\\', editorKeybinding: true, run: () => runEditorAction('editor.action.inlineSuggest.trigger'), enabled: hasEditor },
   { id: 'peep.toggleComposer', category: 'Chat', title: 'Toggle Composer', keybinding: 'Ctrl+I', run: () => { const c = useComposerStore.getState(); c.setOpen(!c.isOpen); } },
+  // Bound globally too, so Ctrl+L focuses the chat when the editor doesn't have focus.
+  { id: 'aichat.addSelectionToChat', category: 'Chat', title: 'Add Selection to Chat', keybinding: 'Ctrl+L', run: addSelectionToChat, enabled: hasProject },
 
   // Go
   { id: 'workbench.action.navigateBack', category: 'Go', title: 'Back', keybinding: 'Alt+Left', run: () => navigate(history.back, history.forward), enabled: () => history.back.length > 0 },

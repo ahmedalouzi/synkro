@@ -1,0 +1,103 @@
+/* Sign-in warp overlay (SignInBurst.tsx). Total length: 1.1s. */
+
+.sib {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  pointer-events: none;
+  background: radial-gradient(circle at 50% 50%, #1b1433 0%, #0b0915 55%, #050408 100%);
+  animation: sib-fade 1.1s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+@keyframes sib-fade {
+  0%, 45% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* Speed lines radiating from the centre. */
+.sib-warp {
+  position: absolute;
+  inset: -50%;
+  background: repeating-conic-gradient(
+    from 0deg,
+    rgba(196, 181, 253, 0) 0deg 4deg,
+    rgba(196, 181, 253, 0.35) 4.3deg,
+    rgba(196, 181, 253, 0) 4.6deg 9deg
+  );
+  mask-image: radial-gradient(circle, transparent 6%, #000 22%, transparent 62%);
+  animation: sib-warp 0.9s cubic-bezier(0.5, 0, 0.75, 0) forwards;
+}
+
+@keyframes sib-warp {
+  from { transform: scale(0.3) rotate(0deg); opacity: 0; }
+  30% { opacity: 1; }
+  to { transform: scale(2.4) rotate(12deg); opacity: 0; }
+}
+
+/* Shockwaves. */
+.sib-ring {
+  position: absolute;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  border: 2px solid rgba(167, 139, 250, 0.9);
+  box-shadow: 0 0 40px rgba(139, 92, 246, 0.8), inset 0 0 30px rgba(96, 165, 250, 0.6);
+  animation: sib-ring 0.8s 0.12s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+.sib-ring-2 {
+  border-color: rgba(244, 114, 182, 0.8);
+  box-shadow: 0 0 40px rgba(236, 72, 153, 0.7);
+  animation-delay: 0.24s;
+}
+
+@keyframes sib-ring {
+  from { transform: scale(0.2); opacity: 1; }
+  to { transform: scale(14); opacity: 0; }
+}
+
+/* The atom rushes toward the viewer while spinning. */
+.sib-atom {
+  position: absolute;
+  width: 120px;
+  height: 120px;
+  filter: drop-shadow(0 0 18px rgba(167, 139, 250, 0.95));
+  animation: sib-atom 0.95s cubic-bezier(0.6, 0, 0.8, 0.4) forwards;
+}
+
+@keyframes sib-atom {
+  0% { transform: scale(0.6) rotate(0deg); opacity: 0; }
+  20% { transform: scale(1) rotate(60deg); opacity: 1; }
+  100% { transform: scale(16) rotate(200deg); opacity: 0; }
+}
+
+/* White-violet flash at the moment of the jump. */
+.sib-flash {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 50%, rgba(237, 233, 254, 0.9), rgba(167, 139, 250, 0.25) 35%, transparent 65%);
+  opacity: 0;
+  animation: sib-flash 0.7s 0.35s ease-out forwards;
+}
+
+@keyframes sib-flash {
+  0% { opacity: 0; }
+  25% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sib-warp,
+  .sib-ring,
+  .sib-atom,
+  .sib-flash {
+    display: none;
+  }
+
+  .sib {
+    animation-duration: 0.4s;
+  }
+}

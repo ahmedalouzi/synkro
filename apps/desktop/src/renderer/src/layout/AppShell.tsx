@@ -164,23 +164,21 @@ export function AppShell({ onOpenSettings }: AppShellProps) {
             )}
             
             {bottomPanelOpen && (
-              <>
-                <div 
-                  onMouseDown={startResizing}
-                  style={{
-                    gridRow: 2, 
-                    gridColumn: '3 / 6', 
-                    height: '4px', 
-                    marginTop: '-2px',
-                    cursor: 'row-resize',
-                    zIndex: 50,
-                    background: isResizing ? 'var(--accent)' : 'transparent',
-                    opacity: isResizing ? 0.5 : 1
-                  }}
-                />
-                <BottomPanel />
-              </>
+              <div
+                onMouseDown={startResizing}
+                style={{
+                  gridRow: 2, 
+                  gridColumn: '3 / 6', 
+                  height: '4px', 
+                  marginTop: '-2px',
+                  cursor: 'row-resize',
+                  zIndex: 50,
+                  background: isResizing ? 'var(--accent)' : 'transparent',
+                  opacity: isResizing ? 0.5 : 1
+                }}
+              />
             )}
+            <BottomPanel hidden={!bottomPanelOpen} />
           </>
         ) : (
           <div style={{ gridColumn: '1 / 6', gridRow: '1 / 3', display: 'flex', flexDirection: 'column' }}>

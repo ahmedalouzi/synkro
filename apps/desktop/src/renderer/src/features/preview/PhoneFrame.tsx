@@ -10,11 +10,11 @@ export type DeviceType =
   | 'pixel-fold'
   | 'galaxy-s24';
 
-/** Live clock — system time */
+/** Live clock in iOS status-bar format: 12-hour, no leading zero, no AM/PM ("2:56"). */
 function useClock() {
   const fmt = () => {
     const now = new Date();
-    const h = now.getHours();
+    const h = now.getHours() % 12 || 12;
     const m = now.getMinutes().toString().padStart(2, '0');
     return `${h}:${m}`;
   };
@@ -37,35 +37,44 @@ export function FrameBackground({ device }: { device: DeviceConfig }) {
   );
 }
 
-/** Status-bar icons */
-function BatteryIcon() {
+/* ── Status-bar glyphs, drawn at iOS 17's point sizes ─────────────────── */
+
+/** A ring sector of the Wi-Fi fan, opening upward from (8, 11.6). */
+function wifiBand(inner: number, outer: number): string {
+  const cx = 8, cy = 11.6, a0 = (-135 * Math.PI) / 180, a1 = (-45 * Math.PI) / 180;
+  const pt = (r: number, a: number) => `${(cx + r * Math.cos(a)).toFixed(2)} ${(cy + r * Math.sin(a)).toFixed(2)}`;
+  if (inner === 0) return `M${cx} ${cy}L${pt(outer, a0)}A${outer} ${outer} 0 0 1 ${pt(outer, a1)}Z`;
+  return `M${pt(inner, a0)}L${pt(outer, a0)}A${outer} ${outer} 0 0 1 ${pt(outer, a1)}L${pt(inner, a1)}A${inner} ${inner} 0 0 0 ${pt(inner, a0)}Z`;
+}
+const WIFI_BANDS = [wifiBand(0, 3.7), wifiBand(5.2, 7.9), wifiBand(9.4, 11.6)];
+
+function CellularIcon() {
   return (
-    <div className="pf-icon-battery">
-      <div className="pf-icon-battery-level" />
-    </div>
+    <svg className="pf-glyph" viewBox="0 0 18 12" width="18" height="12" aria-hidden="true">
+      <rect x="0" y="7.5" width="3" height="4.5" rx="1" />
+      <rect x="5" y="5.3" width="3" height="6.7" rx="1" />
+      <rect x="10" y="2.8" width="3" height="9.2" rx="1" />
+      <rect x="15" y="0" width="3" height="12" rx="1" />
+    </svg>
   );
 }
 
 function WifiIcon() {
   return (
-    <svg
-      viewBox="0 0 24 18"
-      fill="white"
-      style={{ width: '16px', height: '12px' }}
-    >
-      {/* Three arcs + dot, same shape as iOS */}
-      <path d="M12 14.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3z" />
-      <path d="M12 10a6 6 0 0 1 4.24 1.76l1.42-1.42A8 8 0 0 0 4.34 10.34l1.42 1.42A6 6 0 0 1 12 10z" />
-      <path d="M12 5.5a10.5 10.5 0 0 1 7.42 3.08l1.41-1.41A12.5 12.5 0 0 0 12 3a12.5 12.5 0 0 0-8.83 4.17l1.41 1.41A10.5 10.5 0 0 1 12 5.5z" />
+    <svg className="pf-glyph" viewBox="0 0 16 12" width="16" height="12" aria-hidden="true">
+      {/* Rounded joins soften the sector corners like Apple's glyph. */}
+      {WIFI_BANDS.map((d) => <path key={d} d={d} stroke="currentColor" strokeWidth="0.9" strokeLinejoin="round" />)}
     </svg>
   );
 }
 
-function CellularIcon() {
+function BatteryIcon({ level = 0.8 }: { level?: number }) {
   return (
-    <div className="pf-icon-cellular">
-      <span /><span /><span /><span />
-    </div>
+    <svg className="pf-glyph" viewBox="0 0 27.5 13" width="27.5" height="13" aria-hidden="true">
+      <rect x="0.5" y="0.5" width="24" height="12" rx="3.8" fill="none" stroke="currentColor" strokeOpacity="0.35" />
+      <rect x="2" y="2" width={Math.max(1, 21 * level)} height="9" rx="2.3" />
+      <path d="M26 4.4v4.2a2.2 2.2 0 0 0 1.3-2.1 2.2 2.2 0 0 0-1.3-2.1Z" fillOpacity="0.4" />
+    </svg>
   );
 }
 
@@ -96,7 +105,7 @@ export function FrameForeground({ device }: { device: DeviceConfig }) {
           {/* Status bar — time left, icons right, Dynamic Island centred */}
           <div className="pf-status-bar">
             <div className="pf-status-left">
-              <span>{time}</span>
+              <span className="pf-status-time">{time}</span>
             </div>
             <div className="pf-status-right">
               <CellularIcon />

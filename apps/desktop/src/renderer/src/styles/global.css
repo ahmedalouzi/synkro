@@ -179,6 +179,8 @@ html[data-window-type="preview"] body {
 .sidebar {
   grid-column: 2 / 3;
   grid-row: 1 / 3;
+  position: relative;
+  isolation: isolate; /* SkyBackdrop */
   background: var(--bg-panel);
   border-right: 1px solid var(--border);
   display: flex;
@@ -408,6 +410,8 @@ html[data-window-type="preview"] body {
   display: flex;
   overflow: hidden;
   background: var(--bg-base);
+  /* Keeps SkyBackdrop's negative z-index inside the editor. */
+  isolation: isolate;
 }
 
 
@@ -484,6 +488,7 @@ html[data-window-type="preview"] body {
   align-items: center;
   justify-content: center;
   background: var(--bg-base);
+  isolation: isolate;
   padding: 20px;
   gap: 12px;
   overflow: hidden;
@@ -590,6 +595,8 @@ html[data-window-type="preview"] body {
 .agent-panel {
   grid-column: 5 / 6;
   grid-row: 1 / 3;
+  position: relative;
+  isolation: isolate; /* SkyBackdrop */
   background: var(--bg-panel);
   border-left: 1px solid var(--border);
   display: flex;
@@ -921,28 +928,6 @@ html[data-window-type="preview"] body {
 .status-indicator { width: 6px; height: 6px; border-radius: 50%; }
 .si-green { background: var(--green); box-shadow: 0 0 5px var(--green); }
 .si-gold  { background: var(--gold);  box-shadow: 0 0 5px var(--gold); }
-
-/* ── MINIMAP ── */
-.minimap {
-  width: 6px;
-  background: linear-gradient(180deg,
-    var(--syntax-key) 0%, var(--syntax-key) 5%,
-    transparent 5%, transparent 8%,
-    var(--syntax-prop) 8%, var(--syntax-prop) 12%,
-    transparent 12%, transparent 16%,
-    var(--syntax-str) 16%, var(--syntax-str) 22%,
-    transparent 22%, transparent 26%,
-    var(--syntax-key) 26%, var(--syntax-key) 30%,
-    transparent 30%, transparent 35%,
-    var(--syntax-bool) 35%, var(--syntax-bool) 38%,
-    transparent 38%, transparent 42%,
-    var(--syntax-prop) 42%, var(--syntax-prop) 48%,
-    transparent 48%
-  );
-  opacity: 0.35;
-  border-left: 1px solid var(--border);
-  flex-shrink: 0;
-}
 
 .editor-gutter {
   display: flex;
