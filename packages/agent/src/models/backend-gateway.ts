@@ -379,17 +379,14 @@ export class BackendAIGateway {
     };
 
     // Kill switch check
-    const isDevBypass = process.env.NODE_ENV !== 'production' && process.env.SYNKRO_DEV_AUTH_BYPASS === 'true';
-    if (!isDevBypass) {
-      const { db } = await import('./db');
-      try {
-        const ksRes = await db.query("SELECT value FROM system_config WHERE key = 'global_kill_switch'");
-        if (ksRes.rows.length > 0 && ksRes.rows[0].value.is_active) {
-          return { status: 503, headers: responseHeaders, body: { code: 'SERVICE_UNAVAILABLE', message: 'System is currently disabled by global kill switch.' } };
-        }
-      } catch (e) {
-        console.error('[KillSwitch] Error checking kill switch:', e);
+    const { db } = await import('./db');
+    try {
+      const ksRes = await db.query("SELECT value FROM system_config WHERE key = 'global_kill_switch'");
+      if (ksRes.rows.length > 0 && ksRes.rows[0].value.is_active) {
+        return { status: 503, headers: responseHeaders, body: { code: 'SERVICE_UNAVAILABLE', message: 'System is currently disabled by global kill switch.' } };
       }
+    } catch (e) {
+      console.error('[KillSwitch] Error checking kill switch:', e);
     }
 
     // --- Unauthenticated Auth Routes ---
@@ -478,15 +475,11 @@ export class BackendAIGateway {
         return { status: 400, headers: responseHeaders, body: valErr };
       }
 
-      const isDevBypass = process.env.NODE_ENV !== 'production' && process.env.SYNKRO_DEV_AUTH_BYPASS === 'true';
-
       let purpose: RequestPurpose = requestData.purpose === 'completion' ? 'completion' : 'chat';
-      if (!isDevBypass) {
-        const policyResult = await this.applyUsagePolicy(session, requestData, responseHeaders);
-        if ('response' in policyResult) return policyResult.response;
-        requestData = policyResult.request;
-        purpose = policyResult.purpose;
-      }
+      const policyResult = await this.applyUsagePolicy(session, requestData, responseHeaders);
+      if ('response' in policyResult) return policyResult.response;
+      requestData = policyResult.request;
+      purpose = policyResult.purpose;
 
       let config: any;
       try {
@@ -518,39 +511,35 @@ export class BackendAIGateway {
         // Build the Latency Header
         responseHeaders['x-synkro-latency'] = `Transit: ${transitTime}ms | Auth: ${authDuration}ms | Route: ${routingDuration}ms | Resolve: ${latencyOut.listModelsDuration}ms | GeminiAPI: ${latencyOut.geminiCallDuration}ms | AdapterTotal: ${adapterDuration}ms | BackendTotal: ${serverDuration}ms`;
 
-        if (!isDevBypass) {
-          const inputTokens = result.usage?.inputTokens || Math.ceil(JSON.stringify(requestData.messages).length / 4);
-          const outputTokens = result.usage?.outputTokens || Math.ceil((result.content?.length ?? 0) / 4);
-          await this.usageStore.recordUsage({
-            userId: session.userId,
-            requestId,
-            modelTier: requestData.tier,
-            resolvedModel: config.modelId,
-            inputTokens,
-            outputTokens,
-            totalTokens: result.usage?.totalTokens || inputTokens + outputTokens,
-            estimatedCost: result.cost?.cost || tokenCost(config, inputTokens, outputTokens),
-            status: 'success',
-            purpose,
-          });
-        }
+        const inputTokens = result.usage?.inputTokens || Math.ceil(JSON.stringify(requestData.messages).length / 4);
+        const outputTokens = result.usage?.outputTokens || Math.ceil((result.content?.length ?? 0) / 4);
+        await this.usageStore.recordUsage({
+          userId: session.userId,
+          requestId,
+          modelTier: requestData.tier,
+          resolvedModel: config.modelId,
+          inputTokens,
+          outputTokens,
+          totalTokens: result.usage?.totalTokens || inputTokens + outputTokens,
+          estimatedCost: result.cost?.cost || tokenCost(config, inputTokens, outputTokens),
+          status: 'success',
+          purpose,
+        });
 
         return { status: 200, headers: responseHeaders, body: result };
       } catch (e: any) {
-        if (!isDevBypass) {
-          await this.usageStore.recordUsage({
-            userId: session.userId,
-            requestId,
-            modelTier: requestData.tier,
-            resolvedModel: config?.modelId || 'unknown',
-            inputTokens: 0,
-            outputTokens: 0,
-            totalTokens: 0,
-            estimatedCost: 0,
-            status: options?.signal?.aborted ? 'cancelled' : 'failed',
-            purpose,
-          });
-        }
+        await this.usageStore.recordUsage({
+          userId: session.userId,
+          requestId,
+          modelTier: requestData.tier,
+          resolvedModel: config?.modelId || 'unknown',
+          inputTokens: 0,
+          outputTokens: 0,
+          totalTokens: 0,
+          estimatedCost: 0,
+          status: options?.signal?.aborted ? 'cancelled' : 'failed',
+          purpose,
+        });
         return { status: 502, headers: responseHeaders, body: this.mapError(e) };
       }
     }
@@ -562,15 +551,11 @@ export class BackendAIGateway {
         return { status: 400, headers: responseHeaders, body: valErr };
       }
 
-      const isDevBypass = process.env.NODE_ENV !== 'production' && process.env.SYNKRO_DEV_AUTH_BYPASS === 'true';
-
       let purpose: RequestPurpose = requestData.purpose === 'completion' ? 'completion' : 'chat';
-      if (!isDevBypass) {
-        const policyResult = await this.applyUsagePolicy(session, requestData, responseHeaders);
-        if ('response' in policyResult) return policyResult.response;
-        requestData = policyResult.request;
-        purpose = policyResult.purpose;
-      }
+      const policyResult = await this.applyUsagePolicy(session, requestData, responseHeaders);
+      if ('response' in policyResult) return policyResult.response;
+      requestData = policyResult.request;
+      purpose = policyResult.purpose;
 
       let config: any;
       try {
@@ -638,30 +623,28 @@ export class BackendAIGateway {
               }
               throw err;
             } finally {
-              if (!isDevBypass) {
-                const msgStr = JSON.stringify(requestData.messages || (requestData as any).prompt || '');
-                const fallbackInputTokens = Math.ceil(msgStr.length / 4);
-                const fallbackOutputTokens = accumulatedOutputChars > 0 ? Math.ceil(accumulatedOutputChars / 4) : 1;
-                const iTokens = finalUsage?.inputTokens || finalUsage?.prompt_tokens || fallbackInputTokens;
-                const oTokens = finalUsage?.outputTokens || finalUsage?.completion_tokens || fallbackOutputTokens;
-                
-                await self.usageStore.recordUsage({
-                  userId: session.userId,
-                  requestId,
-                  modelTier: requestData.tier,
-                  resolvedModel: finalModelId || config.modelId,
-                  inputTokens: iTokens,
-                  outputTokens: oTokens,
-                  totalTokens: finalUsage?.totalTokens || finalUsage?.total_tokens || (iTokens + oTokens),
-                  estimatedCost: tokenCost(config, iTokens, oTokens),
-                  status: options?.signal?.aborted ? 'cancelled' : finalStatus,
-                  purpose,
-                }).catch(async (usageErr: any) => {
-                  self.logger.error('Failed to record streaming usage — financial data loss risk', { requestId, error: usageErr?.message });
-                  await ensureSentryLoaded();
-                  if (Sentry?.captureException) Sentry.captureException(usageErr, { tags: { requestId, path: '/v1/ai/stream' } });
-                });
-              }
+              const msgStr = JSON.stringify(requestData.messages || (requestData as any).prompt || '');
+              const fallbackInputTokens = Math.ceil(msgStr.length / 4);
+              const fallbackOutputTokens = accumulatedOutputChars > 0 ? Math.ceil(accumulatedOutputChars / 4) : 1;
+              const iTokens = finalUsage?.inputTokens || finalUsage?.prompt_tokens || fallbackInputTokens;
+              const oTokens = finalUsage?.outputTokens || finalUsage?.completion_tokens || fallbackOutputTokens;
+              
+              await self.usageStore.recordUsage({
+                userId: session.userId,
+                requestId,
+                modelTier: requestData.tier,
+                resolvedModel: finalModelId || config.modelId,
+                inputTokens: iTokens,
+                outputTokens: oTokens,
+                totalTokens: finalUsage?.totalTokens || finalUsage?.total_tokens || (iTokens + oTokens),
+                estimatedCost: tokenCost(config, iTokens, oTokens),
+                status: options?.signal?.aborted ? 'cancelled' : finalStatus,
+                purpose,
+              }).catch(async (usageErr: any) => {
+                self.logger.error('Failed to record streaming usage — financial data loss risk', { requestId, error: usageErr?.message });
+                await ensureSentryLoaded();
+                if (Sentry?.captureException) Sentry.captureException(usageErr, { tags: { requestId, path: '/v1/ai/stream' } });
+              });
             }
           }
         };
@@ -669,24 +652,22 @@ export class BackendAIGateway {
         return { status: 200, headers: responseHeaders, body: wrappedStream };
       } catch (e: any) {
         console.error(`[BackendAIGateway] [${requestId}] Request failed with error:`, e);
-        if (!isDevBypass) {
-          this.usageStore.recordUsage({
-            userId: session.userId,
-            requestId,
-            modelTier: requestData.tier,
-            resolvedModel: config?.modelId || 'unknown',
-            inputTokens: 0,
-            outputTokens: 0,
-            totalTokens: 0,
-            estimatedCost: 0,
-            status: options?.signal?.aborted ? 'cancelled' : 'failed',
-            purpose,
-          }).catch(async (usageErr: any) => {
-            this.logger.error('Failed to record stream error usage — financial data loss risk', { requestId, error: usageErr?.message });
-            await ensureSentryLoaded();
-            if (Sentry?.captureException) Sentry.captureException(usageErr, { tags: { requestId, path: '/v1/ai/stream' } });
-          });
-        }
+        this.usageStore.recordUsage({
+          userId: session.userId,
+          requestId,
+          modelTier: requestData.tier,
+          resolvedModel: config?.modelId || 'unknown',
+          inputTokens: 0,
+          outputTokens: 0,
+          totalTokens: 0,
+          estimatedCost: 0,
+          status: options?.signal?.aborted ? 'cancelled' : 'failed',
+          purpose,
+        }).catch(async (usageErr: any) => {
+          this.logger.error('Failed to record stream error usage — financial data loss risk', { requestId, error: usageErr?.message });
+          await ensureSentryLoaded();
+          if (Sentry?.captureException) Sentry.captureException(usageErr, { tags: { requestId, path: '/v1/ai/stream' } });
+        });
         return { status: 502, headers: responseHeaders, body: this.mapError(e) };
       }
     }

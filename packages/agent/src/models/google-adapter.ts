@@ -257,7 +257,6 @@ export class GoogleGeminiAdapter implements ProviderAdapter {
     }
 
     const data = await response.json();
-    console.log('[DEBUG_GEMINI_RESPONSE]', JSON.stringify(data, null, 2));
     
     const result: AIResponse = { content: '' };
     

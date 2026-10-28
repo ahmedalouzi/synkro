@@ -1031,7 +1031,7 @@ export class AgentService {
             capabilityTier: settings.capabilityTier || 'fast',
             manualModel: settings.apiModel,
             gateway: selectedGw,
-            sessionToken: settings.sessionToken || (process.env.SYNKRO_DEV_AUTH_BYPASS === 'true' ? 'dev_test_session' : ''),
+            sessionToken: settings.sessionToken || '',
             threadId: options.threadId,
             logger: agentLogger,
           },

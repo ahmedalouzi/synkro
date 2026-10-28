@@ -5,10 +5,10 @@ import { cleanupServices, registerIpcHandlers, setMainWindow } from './ipc';
 import { config } from 'dotenv';
 import * as Sentry from '@sentry/electron/main';
 import log from 'electron-log/main';
+import { resolveSentryDsn } from './build-config';
 
 if (app.isPackaged) {
-  // Release builds never read a .env and can't be switched into dev auth bypass from the environment.
-  delete process.env.SYNKRO_DEV_AUTH_BYPASS;
+  // Release builds never read a .env and can't be switched into test mode from the environment.
   delete process.env.E2E_TESTING;
 } else {
   config(); // Load .env from root
@@ -23,7 +23,7 @@ let sentryInitialized = false;
 export function syncSentryOptIn(enabled: boolean) {
   if (enabled && !sentryInitialized) {
     Sentry.init({
-      dsn: process.env.SENTRY_DSN || '',
+      dsn: resolveSentryDsn(),
       beforeSend(event: any) {
         if (event.request && event.request.data) {
           delete event.request.data;
@@ -91,6 +91,8 @@ function createWindow(): void {
     minHeight: 640,
     show: false,
     title: 'Synkro',
+    // Taskbar/window icon; in dev this replaces Electron's default. Packaged via electron-builder `files`.
+    icon: join(__dirname, '../../resources/icons/icon.png'),
     backgroundColor: '#0d1117',
     autoHideMenuBar: true,
     // The renderer draws the title bar (menus, search, layout buttons) like Cursor/VS Code.

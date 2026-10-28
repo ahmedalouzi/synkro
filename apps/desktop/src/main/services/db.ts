@@ -100,17 +100,13 @@ export class DatabaseService {
   getSettings(): Settings {
     // SECURITY: Strip all secrets before returning to renderer via IPC.
     const settings = { ...this.data.settings };
-    // Both variables are stripped at startup in packaged builds (see main/index.ts).
-    const isDevBypass = process.env.SYNKRO_DEV_AUTH_BYPASS === 'true' || process.env.E2E_TESTING === '1';
     return {
       ...settings,
       sessionToken: undefined,
       refreshToken: undefined,
-      // Bypass mode no longer signs anyone in implicitly: the login screen shows and offers the bypass button.
       sessionConfigured: Boolean(this.data.settings.sessionToken),
       aiProviderApiKey: undefined,
       aiProviderApiKeyConfigured: !!this.data.settings.aiProviderApiKey,
-      isDevBypassActive: isDevBypass,
     } as Settings;
   }
 

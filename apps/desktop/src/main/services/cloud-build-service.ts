@@ -5,6 +5,7 @@ import * as fs from 'node:fs/promises';
 import type { DatabaseService } from './db';
 import { BrowserWindow } from 'electron';
 import { IPC_EVENTS } from '@peep/shared';
+import { resolveGatewayUrl } from '../build-config';
 
 
 const execAsync = promisify(exec);
@@ -14,7 +15,7 @@ export class CloudBuildService {
 
   private getGatewayUrl() {
     const settings = this.db.getSettingsRaw();
-    return settings.gatewayUrl || process.env.SYNKRO_GATEWAY_URL || 'https://api.synkro.com';
+    return resolveGatewayUrl(settings.gatewayUrl);
   }
 
   private async getAuthHeaders(): Promise<Record<string, string>> {

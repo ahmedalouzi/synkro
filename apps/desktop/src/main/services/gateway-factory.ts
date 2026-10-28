@@ -1,6 +1,7 @@
 import { ProductionAIGateway, MockAIGateway, GoogleGeminiAdapter } from '@peep/agent';
 import type { AIGateway, Settings } from '@peep/shared';
 import type { DatabaseService } from './db';
+import { resolveGatewayUrl } from '../build-config';
 
 export type GatewayResolution =
   | { gateway: AIGateway; baseUrl: string }
@@ -18,7 +19,7 @@ interface GatewayOptions {
  * `settings` is mutated when tokens are refreshed, matching the agent's previous behavior.
  */
 export function createAIGateway(db: DatabaseService, settings: Settings, options: GatewayOptions = {}): GatewayResolution {
-  const baseUrl = settings.gatewayUrl || process.env.SYNKRO_GATEWAY_URL || 'https://api.synkro.com';
+  const baseUrl = resolveGatewayUrl(settings.gatewayUrl);
 
   if (process.env.SYNKRO_USE_MOCK_GATEWAY === 'true') {
     return { gateway: new MockAIGateway() as unknown as AIGateway, baseUrl };

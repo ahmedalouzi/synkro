@@ -250,7 +250,6 @@ export interface Settings {
   /** Secret API Key for the Local AI Provider. */
   aiProviderApiKey?: string;
   aiProviderApiKeyConfigured?: boolean;
-  isDevBypassActive?: boolean;
   /** Developer Mode enables advanced or experimental settings, like Local AI. */
   developerMode?: boolean;
 }

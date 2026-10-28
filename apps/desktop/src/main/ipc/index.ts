@@ -73,6 +73,7 @@ export function setMainWindow(window: BrowserWindow | null): void {
 }
 
 import { globalIpcBatcher } from '../utils/ipc-batcher';
+import { resolveGatewayUrl } from '../build-config';
 
 function notifyGitChanged(): void {
   globalIpcBatcher.throttle(IPC_EVENTS.GIT_CHANGED, 500, () => {
@@ -144,9 +145,6 @@ async function onProjectOpened(
 interface IpcDependencies {
   syncSentryOptIn: (enabled: boolean) => void;
 }
-
-/** Account used by the login screen's dev bypass button. */
-const DEV_BYPASS_EMAIL = 'dev@synkro.local';
 
 export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies): Promise<{
   db: DatabaseService;
@@ -476,7 +474,7 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
 
   ipcMain.handle(IPC_CHANNELS.CHAT_LIST_THREADS, async (_event, projectPath?: string) => {
     const settings = db!.getSettingsRaw();
-    const gatewayUrl = settings.gatewayUrl || process.env.SYNKRO_GATEWAY_URL || 'https://api.synkro.com';
+    const gatewayUrl = resolveGatewayUrl(settings.gatewayUrl);
     try {
       const res = await fetch(`${gatewayUrl}/v1/threads`, {
         headers: { Authorization: `Bearer ${settings.sessionToken}` }
@@ -497,7 +495,7 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
 
   ipcMain.handle(IPC_CHANNELS.CHAT_LOAD_THREAD, async (_event, threadId: string) => {
     const settings = db!.getSettingsRaw();
-    const gatewayUrl = settings.gatewayUrl || process.env.SYNKRO_GATEWAY_URL || 'https://api.synkro.com';
+    const gatewayUrl = resolveGatewayUrl(settings.gatewayUrl);
     try {
       const res = await fetch(`${gatewayUrl}/v1/threads/${threadId}`, {
         headers: { Authorization: `Bearer ${settings.sessionToken}` }
@@ -512,7 +510,7 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
 
   ipcMain.handle(IPC_CHANNELS.CHAT_SAVE_THREAD, async (_event, threadId: string, messages: any[], title: string, runs?: any[]) => {
     const settings = db!.getSettingsRaw();
-    const gatewayUrl = settings.gatewayUrl || process.env.SYNKRO_GATEWAY_URL || 'https://api.synkro.com';
+    const gatewayUrl = resolveGatewayUrl(settings.gatewayUrl);
     try {
       const res = await fetch(`${gatewayUrl}/v1/threads/${threadId}`, {
         method: 'POST',
@@ -535,7 +533,7 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
 
   ipcMain.handle(IPC_CHANNELS.CHAT_DELETE_THREAD, async (_event, threadId: string) => {
     const settings = db!.getSettingsRaw();
-    const gatewayUrl = settings.gatewayUrl || process.env.SYNKRO_GATEWAY_URL || 'https://api.synkro.com';
+    const gatewayUrl = resolveGatewayUrl(settings.gatewayUrl);
     try {
       const res = await fetch(`${gatewayUrl}/v1/threads/${threadId}`, {
         method: 'DELETE',
@@ -1001,17 +999,8 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
   // ── Auth ─────────────────────────────────────────────────────────────
 
   ipcMain.handle(IPC_CHANNELS.AUTH_SIGN_IN, async (_event, email, password) => {
-    // Only the login screen's "Bypass and Log In" button (the dev account) skips the server;
-    // any real account always signs in for real.
-    if (process.env.NODE_ENV !== 'production' && process.env.SYNKRO_DEV_AUTH_BYPASS === 'true' && email === DEV_BYPASS_EMAIL) {
-      await db!.setSettings({
-        sessionToken: 'dev_test_session',
-        refreshToken: 'dev_test_refresh'
-      });
-      return { success: true };
-    }
     const settings = db!.getSettingsRaw();
-    const gatewayUrl = settings.gatewayUrl || process.env.SYNKRO_GATEWAY_URL || 'https://api.synkro.com';
+    const gatewayUrl = resolveGatewayUrl(settings.gatewayUrl);
     try {
       const res = await fetch(`${gatewayUrl}/v1/auth/signin`, {
         method: 'POST',
@@ -1038,17 +1027,8 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
   });
 
   ipcMain.handle(IPC_CHANNELS.AUTH_SIGN_UP, async (_event, email, password) => {
-    // Only the login screen's "Bypass and Log In" button (the dev account) skips the server;
-    // any real account always signs in for real.
-    if (process.env.NODE_ENV !== 'production' && process.env.SYNKRO_DEV_AUTH_BYPASS === 'true' && email === DEV_BYPASS_EMAIL) {
-      await db!.setSettings({
-        sessionToken: 'dev_test_session',
-        refreshToken: 'dev_test_refresh'
-      });
-      return { success: true };
-    }
     const settings = db!.getSettingsRaw();
-    const gatewayUrl = settings.gatewayUrl || process.env.SYNKRO_GATEWAY_URL || 'https://api.synkro.com';
+    const gatewayUrl = resolveGatewayUrl(settings.gatewayUrl);
     try {
       const res = await fetch(`${gatewayUrl}/v1/auth/signup`, {
         method: 'POST',
@@ -1076,7 +1056,7 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
 
   ipcMain.handle(IPC_CHANNELS.AUTH_LOGOUT, async () => {
     const settings = db!.getSettingsRaw();
-    const gatewayUrl = settings.gatewayUrl || process.env.SYNKRO_GATEWAY_URL || 'https://api.synkro.com';
+    const gatewayUrl = resolveGatewayUrl(settings.gatewayUrl);
     try {
       if (settings.sessionToken) {
         await fetch(`${gatewayUrl}/v1/auth/logout`, {
@@ -1097,24 +1077,8 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
 
   ipcMain.handle(IPC_CHANNELS.AUTH_GET_ACCOUNT, async () => {
     const settings = db!.getSettingsRaw();
-    if (process.env.NODE_ENV !== 'production' && process.env.SYNKRO_DEV_AUTH_BYPASS === 'true') {
-      if (settings.sessionToken === 'dev_test_session') {
-        return {
-          email: 'dev@synkro.local',
-          tier: 'premium',
-          plan: 'Developer Bypass Plan',
-          usage: 0.125,
-          limit: 100.0,
-          usedCost: 0.125,
-          budgetCost: 100.0,
-          usedTokens: 12500,
-          budgetTokens: 10000000,
-          gatewayConnected: true
-        };
-      }
-    }
     if (!settings.sessionToken) return null;
-    const gatewayUrl = settings.gatewayUrl || process.env.SYNKRO_GATEWAY_URL || 'https://api.synkro.com';
+    const gatewayUrl = resolveGatewayUrl(settings.gatewayUrl);
     try {
       const res = await fetch(`${gatewayUrl}/v1/account/status`, {
         method: 'GET',

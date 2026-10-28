@@ -37,7 +37,6 @@ try {
 }
 
 config({ path: resolve(__dirname, '../../../.env') });
-process.env.SYNKRO_DEV_AUTH_BYPASS = 'false';
 process.env.NODE_ENV = 'test';
 
 async function main() {

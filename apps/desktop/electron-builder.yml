@@ -4,6 +4,8 @@ directories:
   output: release
 files:
   - out/**/*
+  # Window icon loaded at runtime (src/main/index.ts); the exe/installer icons come from `icon` below.
+  - resources/icons/icon.png
 # node-pty's native binaries (.node, conpty.dll, OpenConsole.exe) can't be loaded from inside the asar.
 asarUnpack:
   - "**/node_modules/@lydell/node-pty*/**"
