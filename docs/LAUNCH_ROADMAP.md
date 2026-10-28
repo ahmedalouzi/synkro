@@ -6,8 +6,8 @@ Status: ⬜ todo · 🔄 in progress · ✅ done · ⏸ waiting on a decision/ac
 
 | # | Task | Status |
 |---|------|--------|
-| 0 | Dev auth bypass must never be active in packaged builds (`isDevBypass = true` was hard-coded, skipping login for everyone) | ✅ |
-| 1 | Rebrand Peep → Synkro (appId, productName, window titles, dialogs; userData migrated on first launch). GitHub repo rename to `synkro`: config updated, **rename on GitHub pending** | 🔄 |
+| 0 | Dev auth bypass removed entirely (login button, desktop sign-in shortcut, server dev provider; it also skipped usage limits and the kill switch for every user when the server ran outside `NODE_ENV=production`) | ✅ |
+| 1 | Rebrand Peep → Synkro (appId, productName, window titles, dialogs; userData migrated on first launch). GitHub repo renamed to `synkro` (old `peep` URL redirects) | ✅ |
 | 2 | Hide all dev-only UI (bypass badges, dev buttons) in packaged builds | ✅ |
 | 3 | Tab-completion cost control in the app: debounce, cache, reuse of typed-through suggestions, 1 req/s, error backoff, smaller prompt (quotas are server-side, item 4) | ✅ |
 
@@ -15,9 +15,9 @@ Status: ⬜ todo · 🔄 in progress · ✅ done · ⏸ waiting on a decision/ac
 
 | # | Task | Status |
 |---|------|--------|
-| A1 | Installed builds don't read `.env`: `SYNKRO_GATEWAY_URL` falls back to the hard-coded `https://api.synkro.com` (10 places) and `SENTRY_DSN` is empty. Bake production values in at build time and confirm the domain | ⬜ |
+| A1 | Installed builds don't read `.env`: `SYNKRO_GATEWAY_URL` falls back to the hard-coded `https://api.synkro.com` (10 places) and `SENTRY_DSN` is empty. Now one resolver (`src/main/build-config.ts`) with values baked in by `electron-vite build` from `SYNKRO_GATEWAY_URL` / `SENTRY_DSN` (CI env or `apps/desktop/.env.production`). **Pending:** the final server URL (B1) and a test on an installed build | 🔄 |
 | A2 | 102 changed files not committed since 2026-10-23 — commit in logical steps | ⬜ |
-| A3 | Repo root clutter: old reports, test scripts, `pgsql.zip`, `old_*.tsx`, Arabic plan docs — move to `docs/archive` or delete | ⬜ |
+| A3 | Repo root clutter: old reports, test scripts, `pgsql.zip`, `old_*.tsx`, Arabic plan docs — moved reports and plans to `docs/archive`, deleted scratch scripts, generated test workspaces ignored | ✅ |
 | A4 | Real cloud build: the app uses MockBuildApi (`VITE_USE_REAL_BUILD_API` not set) | ⬜ |
 | A5 | 3 test suites need the `peep` database / running server (build-api-isolation, p314-e2e, streaming-usage) | ⬜ |
 | A6 | Upgrade/account/billing/docs links go through `config/web.ts` (`VITE_SYNKRO_WEB_URL`); the website must serve `/pricing`, `/account`, `/account/billing`, `/docs` | ✅ (app side) |

@@ -25,7 +25,7 @@ import * as fs from 'fs';
 async function run() {
   console.log('=== AUTONOMOUS LLM E2E READINESS TEST ===\n');
 
-  const wsPath = 'c:\\Users\\Administrator\\Desktop\\peep\\test-autonomous-workspace';
+  const wsPath = path.join(__dirname, '..', 'test-autonomous-workspace');
   if (fs.existsSync(wsPath)) {
     fs.rmSync(wsPath, { recursive: true, force: true });
   }
