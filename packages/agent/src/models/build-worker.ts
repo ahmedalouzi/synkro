@@ -208,17 +208,75 @@ export function stopBuildWorker() {
 }
 
 // ---------------------------------------------------------------------------
-// Reaper: Force kills orphaned containers older than 15 minutes
+// Reaper: removes leftover sandbox containers
 // ---------------------------------------------------------------------------
-async function reapOrphanedContainers() {
-  const { exec } = await import('node:child_process');
-  exec('docker ps -aq --filter name=build_sandbox_', (err, stdout) => {
-    if (err) return;
-    const containers = stdout.split('\\n').filter(Boolean);
-    if (containers.length > 0) {
-      exec('docker rm -f $(docker ps -aq --filter name=build_sandbox_ --filter "status=exited")', () => {});
+const SANDBOX_PREFIX = 'build_sandbox_';
+const JOB_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const FINAL_STATUSES = new Set(['success', 'failed', 'cancelled']);
+
+export interface SandboxContainer {
+  name: string;
+  createdAt: Date;
+  running: boolean;
+}
+
+/**
+ * Picks the sandbox containers that are safe to remove. A successful build leaves its container stopped
+ * while the APK is copied out of it, and the job stays 'running' until that is done.
+ * - Stopped container: removed when its job has finished.
+ * - Running container: removed only when its job was cancelled.
+ * - Either: removed when older than any build may run (an orphan: the worker crashed, or the job is unknown).
+ */
+export function selectContainersToReap(
+  containers: SandboxContainer[],
+  statusByJobId: Map<string, string>,
+  now: number = Date.now(),
+): string[] {
+  return containers
+    .filter(({ name, createdAt, running }) => {
+      if (now - createdAt.getTime() > BUILD_TIMEOUT_MS + GRACE_PERIOD_MS) return true;
+      const status = statusByJobId.get(name.slice(SANDBOX_PREFIX.length));
+      return running ? status === 'cancelled' : !!status && FINAL_STATUSES.has(status);
+    })
+    .map(({ name }) => name);
+}
+
+export async function reapOrphanedContainers(): Promise<void> {
+  try {
+    const { execFile } = await import('node:child_process');
+    const { promisify } = await import('node:util');
+    const execFileAsync = promisify(execFile);
+
+    const { stdout: ids } = await execFileAsync('docker', ['ps', '-aq', '--filter', `name=${SANDBOX_PREFIX}`]);
+    const idList = ids.split('\n').map((id) => id.trim()).filter(Boolean);
+    if (idList.length === 0) return;
+
+    const { stdout } = await execFileAsync('docker', ['inspect', '--format', '{{.Name}}|{{.Created}}|{{.State.Running}}', ...idList]);
+    const containers: SandboxContainer[] = stdout.split('\n').filter(Boolean).flatMap((line) => {
+      const [rawName, created, running] = line.split('|');
+      const name = rawName.replace(/^\//, '');
+      // Docker prints nanoseconds; keep milliseconds so Date can parse it.
+      const createdAt = new Date(created.replace(/(\.\d{3})\d*/, '$1'));
+      return name.startsWith(SANDBOX_PREFIX) && !isNaN(createdAt.getTime()) ? [{ name, createdAt, running: running === 'true' }] : [];
+    });
+
+    const jobIds = containers.map((c) => c.name.slice(SANDBOX_PREFIX.length)).filter((id) => JOB_ID_RE.test(id));
+    const statusByJobId = new Map<string, string>();
+    if (jobIds.length > 0) {
+      const res = await withWorkerRole(async (c) => c.query(
+        `SELECT id::text AS id, status::text AS status FROM build_jobs WHERE id = ANY($1::uuid[])`, [jobIds]
+      ));
+      for (const row of res.rows) statusByJobId.set(row.id, row.status);
     }
-  });
+
+    const toRemove = selectContainersToReap(containers, statusByJobId);
+    if (toRemove.length > 0) {
+      await execFileAsync('docker', ['rm', '-f', ...toRemove]);
+      console.log(`[REAPER] Removed ${toRemove.length} sandbox container(s): ${toRemove.join(', ')}`);
+    }
+  } catch (err) {
+    console.error('[REAPER] Error:', err);
+  }
 }
 
 // ---------------------------------------------------------------------------
