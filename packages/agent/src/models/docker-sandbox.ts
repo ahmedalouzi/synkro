@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { promisify } from 'node:util';
-import { setupBuildNetwork, BUILD_NETWORK, RESOLVER_IP } from './network-setup.js';
+import { setupBuildNetwork, verifyBuildNetwork, BUILD_NETWORK, RESOLVER_IP } from './network-setup.js';
 
 export type BuildFramework = 'flutter' | 'react-native';
 
@@ -199,6 +199,18 @@ export class DockerSandbox {
   }
 
   private async setupNetwork(onLog: (chunk: string) => void): Promise<string | false> {
+    // In production the worker runs as the unprivileged synkro user. The firewall (iptables, ipset, dnsmasq) is
+    // then set up by root at boot (synkro-build-network.service, see scripts/setup-production-server.sh), and the
+    // build only starts once it is confirmed to be in place.
+    if (process.platform === 'linux' && process.getuid?.() !== 0) {
+      try {
+        await verifyBuildNetwork();
+        return BUILD_NETWORK;
+      } catch (e: any) {
+        onLog(`[SYSTEM] Build network is not ready: ${e.message}. Run: sudo systemctl restart synkro-build-network\n`);
+        return false;
+      }
+    }
     try {
       await setupBuildNetwork();
     } catch (e: any) {

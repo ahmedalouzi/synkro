@@ -153,18 +153,98 @@ systemctl restart caddy
 echo "[+] Configuring PM2 systemd daemon unit for ${SYNKRO_USER}..."
 env PATH="$PATH:/usr/bin:/usr/local/bin" pm2 startup systemd -u "${SYNKRO_USER}" --hp "/home/${SYNKRO_USER}" || true
 
-# 10. Pre-build Cloud Build Sandbox Docker Images
-echo "[+] Checking Cloud Build sandbox Docker images..."
-if [ -d "${SYNKRO_HOME}/infra/docker" ]; then
-  echo "    Building synkro/flutter-sandbox:2..."
-  docker build -t synkro/flutter-sandbox:2 -f "${SYNKRO_HOME}/infra/docker/Dockerfile.flutter-sandbox" "${SYNKRO_HOME}/infra/docker"
-
-  echo "    Building synkro/rn-sandbox:1..."
-  docker build -t synkro/rn-sandbox:1 -f "${SYNKRO_HOME}/infra/docker/Dockerfile.rn-sandbox" "${SYNKRO_HOME}/infra/docker"
-  echo "[+] Cloud Build sandbox images built and tagged successfully."
-else
-  echo "[!] INFO: ${SYNKRO_HOME}/infra/docker not found yet. Sandbox images will be built during first deploy."
+# ==============================================================================
+# Cloud Build sandbox (sections 10-13)
+# The build worker runs as '${SYNKRO_USER}' (in the docker group) without root. The parts that need root
+# (iptables, ipset, dnsmasq) are set up here and by synkro-build-network.service at every boot, because
+# iptables/ipset rules do not survive a reboot.
+# Sections 11 and 12 need the repo in ${SYNKRO_HOME}: on a fresh server, clone it and run this script again.
+# ==============================================================================
+TSX_VERSION="4.22.4"
+BUILD_NETWORK_LIB="/usr/local/lib/synkro-build-network"
+REPO_READY="false"
+if [[ -f "${SYNKRO_HOME}/packages/agent/src/models/network-setup.ts" ]]; then
+  REPO_READY="true"
 fi
+
+# 10. Firewall packages for the build sandbox
+echo "[+] Installing ipset, iptables and dnsmasq for the build sandbox firewall..."
+# Do not let apt start dnsmasq: with its default config it binds port 53 on every interface, which clashes
+# with systemd-resolved. It is configured and started by synkro-build-network.service (section 12).
+printf '#!/bin/sh\nexit 101\n' > /usr/sbin/policy-rc.d
+chmod +x /usr/sbin/policy-rc.d
+apt-get install -y --no-install-recommends ipset iptables dnsmasq
+rm -f /usr/sbin/policy-rc.d
+systemctl enable dnsmasq
+# tsx for root, so the root service never runs code from node_modules that '${SYNKRO_USER}' can modify.
+npm install -g "tsx@${TSX_VERSION}"
+
+# 11. Sandbox images (our own, not on any registry, so they are built here)
+if [[ "${REPO_READY}" == "true" ]]; then
+  # Read the image names from the code so they cannot drift apart; each one is built from
+  # infra/docker/Dockerfile.<name>, e.g. synkro/rn-sandbox:1 from Dockerfile.rn-sandbox.
+  # Set SYNKRO_REBUILD_IMAGES=1 to rebuild after changing a Dockerfile.
+  for IMAGE in $(grep -oE "synkro/[a-z-]+-sandbox:[0-9]+" "${SYNKRO_HOME}/packages/agent/src/models/docker-sandbox.ts" | sort -u); do
+    DOCKERFILE="${SYNKRO_HOME}/infra/docker/Dockerfile.$(echo "${IMAGE}" | sed -E 's#^synkro/([a-z-]+):.*#\1#')"
+    if [[ "${SYNKRO_REBUILD_IMAGES:-0}" == "1" ]] || ! docker image inspect "${IMAGE}" >/dev/null 2>&1; then
+      echo "[+] Building ${IMAGE} from ${DOCKERFILE#"${SYNKRO_HOME}"/} (takes a while)..."
+      docker build -t "${IMAGE}" -f "${DOCKERFILE}" "${SYNKRO_HOME}/infra/docker"
+    else
+      echo "[+] ${IMAGE} already built (SYNKRO_REBUILD_IMAGES=1 to rebuild)."
+    fi
+  done
+else
+  echo "[!] ${SYNKRO_HOME} has no repo yet: skipping sandbox images (re-run this script after cloning)."
+fi
+
+# 12. Build sandbox firewall service (root, at every boot)
+if [[ "${REPO_READY}" == "true" ]]; then
+  echo "[+] Installing synkro-build-network.service..."
+  # Root-owned copy of the two files it needs (network-setup.ts only imports Node built-ins).
+  # Re-run this script after changing the allowlist in network-setup.ts.
+  install -d -m 0755 -o root -g root \
+    "${BUILD_NETWORK_LIB}/scripts" \
+    "${BUILD_NETWORK_LIB}/packages/agent/src/models"
+  install -m 0644 -o root -g root "${SYNKRO_HOME}/scripts/setup-build-network.ts" "${BUILD_NETWORK_LIB}/scripts/"
+  install -m 0644 -o root -g root "${SYNKRO_HOME}/packages/agent/src/models/network-setup.ts" "${BUILD_NETWORK_LIB}/packages/agent/src/models/"
+
+  cat <<UNIT > /etc/systemd/system/synkro-build-network.service
+[Unit]
+Description=Synkro Cloud Build sandbox firewall (build0 network, ipset, iptables, dnsmasq allowlist)
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+Before=pm2-${SYNKRO_USER}.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/env tsx ${BUILD_NETWORK_LIB}/scripts/setup-build-network.ts
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+  systemctl daemon-reload
+  systemctl enable synkro-build-network.service
+  systemctl restart synkro-build-network.service
+  echo "[+] Build network ready (example.com is NXDOMAIN inside the sandbox)."
+else
+  echo "[!] Skipping synkro-build-network.service until the repo is in ${SYNKRO_HOME}."
+fi
+
+# 13. Signing key warning
+cat <<'WARNING'
+==============================================================================
+[!] SYNKRO_SIGNING_ENC_KEY (in the server .env) encrypts every app signing key.
+    - Keep a copy OFF this server (e.g. the team password manager). If this
+      server is lost and the key is gone, every user's signing key is gone
+      too, and their apps can no longer be updated on Google Play.
+    - Do not change it on a running system: a new key needs a re-encrypt
+      step for every stored signing key first.
+==============================================================================
+WARNING
+
 
 echo "=============================================================================="
 echo "[+] Synkro production server provisioning complete!"

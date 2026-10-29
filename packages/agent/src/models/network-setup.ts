@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { writeFile, readFile } from 'node:fs/promises';
+import { Resolver } from 'node:dns/promises';
 
 const execFileAsync = promisify(execFile);
 
@@ -193,6 +194,40 @@ export async function setupBuildNetwork(): Promise<void> {
   }
 
   await writeDnsmasqConfig();
+}
+
+/**
+ * Checks that the sandbox resolver answers an allowlisted name and refuses (NXDOMAIN) one outside the allowlist.
+ * Throws with the reason when it does not.
+ */
+export async function verifySandboxDns(resolverIp = RESOLVER_IP): Promise<void> {
+  const resolver = new Resolver({ timeout: 3000, tries: 1 });
+  resolver.setServers([resolverIp]);
+  try {
+    await resolver.resolve4('registry.npmjs.org');
+  } catch (err: any) {
+    throw new Error(`sandbox DNS at ${resolverIp} does not answer (${err.code || err.message})`);
+  }
+  try {
+    await resolver.resolve4('example.com');
+  } catch (err: any) {
+    if (err.code === 'ENOTFOUND') return;
+    throw new Error(`sandbox DNS check for a blocked name failed (${err.code || err.message})`);
+  }
+  throw new Error('sandbox DNS resolves names outside the allowlist');
+}
+
+/**
+ * Checks, without root, that the firewall set up by setupBuildNetwork() is in place: the Docker network exists
+ * and the sandbox resolver blocks names outside the allowlist. (The iptables rules need root to read.)
+ */
+export async function verifyBuildNetwork(): Promise<void> {
+  try {
+    await execFileAsync('docker', ['network', 'inspect', BUILD_NETWORK]);
+  } catch {
+    throw new Error(`Docker network ${BUILD_NETWORK} does not exist`);
+  }
+  await verifySandboxDns();
 }
 
 export function getDnsmasqConfigForAudit(): string {
