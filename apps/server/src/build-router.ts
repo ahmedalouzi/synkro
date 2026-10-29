@@ -1,6 +1,6 @@
 import express, { Router } from 'express';
 import multer from 'multer';
-import { db as client } from '@peep/agent/server';
+import { db as client, validateZipBuffer, AuthenticationRouter } from '@peep/agent/server';
 
 export const buildRouter: Router = express.Router();
 
@@ -11,8 +11,6 @@ const upload = multer({
     fileSize: 50 * 1024 * 1024, // 50MB
   },
 });
-
-import { AuthenticationRouter } from '@peep/agent/server';
 
 const authService = new AuthenticationRouter();
 
@@ -73,19 +71,38 @@ const buildRateLimiter = async (req: express.Request, res: express.Response, nex
 buildRouter.post('/upload', requireAuth, buildRateLimiter, upload.single('project'), async (req, res) => {
   try {
     const userId = (req as any).user.userId;
-    const projectId = req.body.projectId || 'unknown';
+    const projectId = String(req.body.projectId || 'unknown').trim().slice(0, 128);
     const framework = req.body.framework || 'flutter';
     const target = req.body.target || 'apk';
+
+    const ALLOWED_FRAMEWORKS = new Set(['flutter', 'react-native']);
+    const ALLOWED_TARGETS = new Set(['apk', 'aab']);
+
+    if (!ALLOWED_FRAMEWORKS.has(framework)) {
+      res.status(400).json({ error: `Invalid framework "${framework}". Must be "flutter" or "react-native".` });
+      return;
+    }
+
+    if (!ALLOWED_TARGETS.has(target)) {
+      res.status(400).json({ error: `Invalid target "${target}". Must be "apk" or "aab".` });
+      return;
+    }
 
     if (!req.file) {
       res.status(400).json({ error: 'No project file uploaded' });
       return;
     }
 
-    // In a real app, save req.file.buffer to S3 or local disk.
-    // For this MVP, we mock saving it locally and generate a path.
+    const zipCheck = validateZipBuffer(req.file.buffer);
+    if (!zipCheck.valid) {
+      res.status(400).json({ error: zipCheck.error || 'Invalid ZIP archive' });
+      return;
+    }
+
+    // Save validated archive to local temp build directory
     const artifactPath = `/tmp/builds/${Date.now()}_${userId}.zip`;
     const fs = await import('node:fs/promises');
+    await fs.mkdir('/tmp/builds', { recursive: true });
     await fs.writeFile(artifactPath, req.file.buffer);
     
     const dbClient = await client.connect();
@@ -106,6 +123,7 @@ buildRouter.post('/upload', requireAuth, buildRateLimiter, upload.single('projec
       await dbClient.query('COMMIT');
     } catch (e) {
       await dbClient.query('ROLLBACK');
+      await fs.unlink(artifactPath).catch(() => {});
       throw e;
     } finally {
       dbClient.release();

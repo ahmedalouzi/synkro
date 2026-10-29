@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Privacy Policy — Synkro</title>
+  <meta name="description" content="How Synkro handles your local source code, AI prompt context, Cloud Build uploads, account data, and opt-in telemetry." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+
+  <nav class="nav">
+    <div class="nav__inner container">
+      <a class="nav__logo" href="/">
+        <span class="nav__logo-icon">⚡</span>
+        <span>Synkro</span>
+      </a>
+      <div class="nav__links">
+        <a href="/#features">Features</a>
+        <a href="/pricing">Pricing</a>
+        <a href="/docs">Docs</a>
+        <a href="/account">Account</a>
+        <a href="https://github.com/ahmedalouzi/synkro/releases/latest" class="btn btn--ghost" target="_blank" rel="noopener">Download App</a>
+      </div>
+    </div>
+  </nav>
+
+  <header class="page-hero">
+    <div class="container">
+      <div class="section-badge">Legal</div>
+      <h1>Privacy Policy</h1>
+      <p>Effective Date: October 28, 2026 • Last Updated: October 28, 2026</p>
+    </div>
+  </header>
+
+  <main class="prose">
+    <p>Synkro ("we", "our", or "us") builds a local-first AI desktop IDE for Flutter and React Native developers. This Privacy Policy explains precisely what data stays on your computer, what data is transmitted when you use cloud features, and how you can control or delete your information.</p>
+
+    <h2>1. Local-First Workspace &amp; Source Code Storage</h2>
+    <p>By default, your project files, Git repositories, local SQLite settings database, and build outputs remain on your local machine:</p>
+    <ul>
+      <li>Synkro does <strong>not</strong> continuously upload or index your entire hard drive to our servers.</li>
+      <li>When you edit files, run local previews, or use the built-in Git UI and terminal, operations execute directly on your device.</li>
+    </ul>
+
+    <h2>2. Account &amp; Billing Data We Collect</h2>
+    <p>When you create a Synkro account or subscribe to Synkro Pro, we store:</p>
+    <ul>
+      <li><strong>Account credentials:</strong> Your email address, salted password hash, and rotating session/refresh tokens.</li>
+      <li><strong>Subscription &amp; usage records:</strong> Your current plan tier (<code>free</code> or <code>pro</code>), payment provider customer/subscription identifiers (via Lemon Squeezy or Stripe), and token/cost accounting in our PostgreSQL ledger to enforce weekly plan pools. Payment card numbers are processed directly by our Merchant of Record and never touch Synkro servers.</li>
+      <li><strong>Cloud-synced chat threads:</strong> If you are signed in, conversation threads and run metadata saved via <code>/v1/threads</code> are stored in your account so you can resume threads across sessions.</li>
+    </ul>
+
+    <h2>3. AI Prompts, Code Context &amp; Third-Party Model Providers</h2>
+    <p>When you trigger an AI feature (Agent chat, inline <code>Ctrl+K</code> edits, or ghost-text Tab completions):</p>
+    <ul>
+      <li>Synkro sends the relevant prompt, selected code snippets, open file context, and project rules (<code>.synkro/rules.md</code>) to the Synkro AI Gateway (or directly to your configured provider in local development).</li>
+      <li>Our gateway forwards the request to the selected upstream LLM provider — <strong>Google Gemini</strong>, <strong>OpenAI</strong>, or <strong>Anthropic</strong> — using zero-data-retention API configurations where available so your code is not used to train foundation models.</li>
+    </ul>
+
+    <h2>4. Cloud Build Source Uploads &amp; Automatic Temp Cleanup</h2>
+    <p>When you explicitly trigger a <strong>Cloud Build</strong> to compile an Android APK/AAB:</p>
+    <ul>
+      <li>The desktop app archives your project workspace (excluding <code>node_modules</code>, <code>.git</code>, and local build folders) into a ZIP archive and uploads it over HTTPS to <code>/api/build/upload</code>.</li>
+      <li>Our server validates the archive for safety, extracts it into an isolated ephemeral directory (<code>/tmp/builds/&lt;jobId&gt;_extracted</code>), and runs the build inside a network-restricted, non-root Docker container.</li>
+      <li><strong>Immediate Cleanup:</strong> In a mandatory <code>finally</code> block immediately after the build succeeds, fails, or is cancelled, the uploaded source ZIP, the extracted source directory, and temporary local build files are permanently deleted from the build server disk. Compiled APK artifacts are stored in private object storage solely for your authenticated download.</li>
+    </ul>
+
+    <h2>5. Opt-In Telemetry &amp; Crash Reporting (Sentry)</h2>
+    <p>Telemetry and crash reporting in Synkro are <strong>strictly opt-in</strong>:</p>
+    <ul>
+      <li>Sentry crash reporting is disabled unless you explicitly enable telemetry in Settings.</li>
+      <li>Before any crash report or breadcrumb leaves your device or server, our automated scrubber (<code>sentry-scrubber</code>) redacts <code>Bearer</code> tokens, <code>session_token</code> cookies, Google (<code>AIza…</code>), OpenAI (<code>sk-…</code>), and Anthropic (<code>sk-ant-…</code>) API keys, and strips local Windows/macOS/Linux user file paths.</li>
+    </ul>
+
+    <h2>6. Data Retention, Access &amp; Deletion</h2>
+    <p>You may sign out, delete saved chat threads from the IDE at any time, or request complete deletion of your Synkro account and all associated database records by emailing <a href="mailto:privacy@synkro.com" style="color: var(--accent-2);">privacy@synkro.com</a>. Verified account deletion requests are completed within 14 days.</p>
+
+    <h2>7. Contact Us</h2>
+    <p>For privacy questions, data export requests, or security disclosures, contact us at <a href="mailto:privacy@synkro.com" style="color: var(--accent-2);">privacy@synkro.com</a>.</p>
+  </main>
+
+  <footer class="footer">
+    <div class="container footer__inner">
+      <div class="footer__brand">
+        <a class="nav__logo" href="/">
+          <span class="nav__logo-icon">⚡</span>
+          <span>Synkro</span>
+        </a>
+        <p>The AI desktop IDE for Flutter &amp; React Native developers.</p>
+      </div>
+      <div class="footer__links">
+        <div>
+          <strong>Product</strong>
+          <a href="/#features">Features</a>
+          <a href="/pricing">Pricing</a>
+          <a href="/docs">Documentation</a>
+        </div>
+        <div>
+          <strong>Account &amp; Legal</strong>
+          <a href="/account">Account</a>
+          <a href="/account/billing">Billing</a>
+          <a href="/privacy">Privacy Policy</a>
+          <a href="/terms">Terms of Service</a>
+        </div>
+        <div>
+          <strong>Community</strong>
+          <a href="mailto:support@synkro.com">Support</a>
+          <a href="https://github.com/ahmedalouzi/synkro" target="_blank" rel="noopener">GitHub</a>
+        </div>
+      </div>
+    </div>
+    <div class="container footer__bottom">
+      <span>© 2026 Synkro. All rights reserved.</span>
+      <span>Built for Flutter &amp; React Native engineers</span>
+    </div>
+  </footer>
+
+  <script src="../main.js"></script>
+</body>
+</html>

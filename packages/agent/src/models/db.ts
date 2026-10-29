@@ -3,15 +3,17 @@ import { Pool } from 'pg';
 let poolInstance: Pool | null = null;
 
 function getPool(): Pool {
+  if ((globalThis as any).__PEEP_DB_POOL__) return (globalThis as any).__PEEP_DB_POOL__;
   if (!poolInstance) {
     poolInstance = new Pool({
-      connectionString: process.env.DATABASE_URL
+      connectionString: process.env.DATABASE_URL || 'postgres://postgres:postgres@localhost:5432/peep_test'
     });
   }
   return poolInstance;
 }
 
-export function setDbPool(pool: Pool) {
+export function setDbPool(pool: Pool | null) {
+  (globalThis as any).__PEEP_DB_POOL__ = pool;
   poolInstance = pool;
 }
 
@@ -43,6 +45,11 @@ export async function initDbSchema() {
     
     // Migration for existing tables
     await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS plan VARCHAR(50) DEFAULT 'free';`);
+    await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS billing_customer_id VARCHAR(255);`);
+    await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS billing_subscription_id VARCHAR(255);`);
+    await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS billing_status VARCHAR(50) DEFAULT 'inactive';`);
+    await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS plan_updated_at TIMESTAMPTZ DEFAULT NOW();`);
+    await client.query(`CREATE TABLE IF NOT EXISTS billing_webhook_events (event_id VARCHAR(255) PRIMARY KEY, provider VARCHAR(50) NOT NULL, event_type VARCHAR(100) NOT NULL, user_id UUID REFERENCES users(id) ON DELETE SET NULL, processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW());`);
     
     await client.query(`
       CREATE TABLE IF NOT EXISTS sessions (

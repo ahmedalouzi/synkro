@@ -30,6 +30,7 @@ export default async function run() {
   }
 
   // MOCK fetch
+  const originalFetch = (global as any).fetch;
   const mockSavedThreads: any[] = [];
   let fetchError = false;
   
@@ -142,6 +143,7 @@ export default async function run() {
     console.error('Test error:', err);
     failed++;
   } finally {
+    (global as any).fetch = originalFetch;
     await rm(testDir, { recursive: true, force: true }).catch(() => {});
   }
 

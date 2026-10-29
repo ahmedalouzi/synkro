@@ -21,3 +21,4 @@ export * from './intelligence/index';
 export * from './memory/index';
 export * from './models/index';
 export * from './error-recovery/diagnostics';
+export * from './models/zip-validator';

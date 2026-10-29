@@ -16,6 +16,7 @@ import { fetchProductionSecrets } from './secrets';
 import { execSync } from 'node:child_process';
 import { buildRouter } from './build-router';
 import { threadsRouter } from './threads-router';
+import { billingRouter } from './billing-router';
 
 async function bootstrap() {
   if (process.env.SENTRY_DSN) {
@@ -42,6 +43,8 @@ async function bootstrap() {
   if (secrets.GOOGLE_API_KEY) process.env.GOOGLE_API_KEY = secrets.GOOGLE_API_KEY;
   if (secrets.OPENAI_API_KEY) process.env.OPENAI_API_KEY = secrets.OPENAI_API_KEY;
   if (secrets.ANTHROPIC_API_KEY) process.env.ANTHROPIC_API_KEY = secrets.ANTHROPIC_API_KEY;
+  if (secrets.LEMONSQUEEZY_WEBHOOK_SECRET) process.env.LEMONSQUEEZY_WEBHOOK_SECRET = secrets.LEMONSQUEEZY_WEBHOOK_SECRET;
+  if (secrets.STRIPE_WEBHOOK_SECRET) process.env.STRIPE_WEBHOOK_SECRET = secrets.STRIPE_WEBHOOK_SECRET;
 
   // Initialize the database schema (tables, indexes)
   console.log('[DATABASE_BOOT] Initializing database schema...');
@@ -106,7 +109,23 @@ async function bootstrap() {
     _res.setHeader('X-Synkro-Server-Version', commitHash);
     next();
   });
-  app.use(express.json({ limit: '50mb' }));
+  app.use((req, res, next) => {
+    const origin = req.headers.origin || '*';
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Session, X-Request-Id, X-Synkro-Client-Start');
+    if (req.method === 'OPTIONS') {
+      res.status(204).end();
+      return;
+    }
+    next();
+  });
+  app.use(express.json({
+    limit: '50mb',
+    verify: (req: any, _res, buf) => {
+      req.rawBody = buf;
+    },
+  }));
   app.use(ipRateLimiter());
 
   // Healthcheck endpoint for AWS ECS Load Balancer
@@ -119,6 +138,8 @@ async function bootstrap() {
 
   // Attach Chat Threads Router
   app.use('/v1/threads', threadsRouter);
+  app.use('/v1/billing', billingRouter);
+  app.use('/api/billing', billingRouter);
 
   // Signup Endpoint
   app.post('/v1/auth/signup', async (req, res) => {

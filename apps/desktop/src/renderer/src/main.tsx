@@ -14,7 +14,7 @@ window.peep.getTelemetryEnabled().then((enabled: unknown) => {
           delete event.request.data;
         }
         const tokenRegex = /(Bearer\s+|session_token=)([a-zA-Z0-9\-_]+)/g;
-        const apiKeyRegex = /AIza[0-9A-Za-z\-_]{35}|sk-[a-zA-Z0-9]{48}/g;
+        const apiKeyRegex = /AIza[0-9A-Za-z\-_]{35}|sk-[a-zA-Z0-9]{48}|sk-ant-[a-zA-Z0-9\-_]{90,}/g;
 
         const scrubString = (str: string) => {
           if (!str) return str;

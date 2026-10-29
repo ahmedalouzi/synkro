@@ -13,6 +13,8 @@ export const WEB_PAGES = {
   account: '/account',
   billing: '/account/billing',
   docs: '/docs',
+  privacy: '/privacy',
+  terms: '/terms',
 } as const;
 
 export type WebPage = keyof typeof WEB_PAGES;

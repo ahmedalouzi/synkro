@@ -3,9 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Peep — The AI Desktop IDE for Mobile Developers</title>
-  <meta name="description" content="Peep unifies your Flutter and React Native workflow: live phone-frame preview, AI that reads and writes your code, Monaco editor, Git, and terminal — all in one app." />
-  <meta property="og:title" content="Peep — AI IDE for Flutter & React Native" />
+  <title>Synkro — The AI Desktop IDE for Mobile Developers</title>
+  <meta name="description" content="Synkro unifies your Flutter and React Native workflow: live phone-frame preview, AI that reads and writes your code, Monaco editor, Git, and terminal — all in one app." />
+  <meta property="og:title" content="Synkro — AI IDE for Flutter & React Native" />
   <meta property="og:description" content="Build mobile apps 10x faster with an AI that actually sees your app running in a phone frame." />
   <meta property="og:type" content="website" />
   <meta name="twitter:card" content="summary_large_image" />
@@ -20,15 +20,17 @@
   <!-- ── NAV ──────────────────────────────────────────────────────────── -->
   <nav class="nav">
     <div class="nav__inner container">
-      <a class="nav__logo" href="#">
-        <span class="nav__logo-icon">👁</span>
-        <span>Peep</span>
+      <a class="nav__logo" href="/">
+        <span class="nav__logo-icon">⚡</span>
+        <span>Synkro</span>
       </a>
       <div class="nav__links">
         <a href="#features">Features</a>
         <a href="#how">How it works</a>
-        <a href="#pricing">Pricing</a>
-        <a href="https://github.com/ahmedalouzi/synkro/releases/latest" class="btn btn--ghost" target="_blank">Download App</a>
+        <a href="/pricing">Pricing</a>
+        <a href="/docs">Docs</a>
+        <a href="/account">Account</a>
+        <a href="https://github.com/ahmedalouzi/synkro/releases/latest" class="btn btn--ghost" target="_blank" rel="noopener">Download App</a>
       </div>
     </div>
   </nav>
@@ -36,19 +38,19 @@
   <!-- ── HERO ─────────────────────────────────────────────────────────── -->
   <section class="hero">
     <div class="container hero__inner">
-      <div class="hero__badge">🚀 v0.1.0 is now available!</div>
+      <div class="hero__badge">🚀 Synkro v1.0 is now available!</div>
       <h1 class="hero__title">
         The AI IDE that<br />
         <span class="gradient-text">sees your app</span> as you code
       </h1>
       <p class="hero__subtitle">
-        Peep unifies Flutter &amp; React Native development: live phone-frame preview,
-        an AI agent that reads, writes &amp; fixes your code, Monaco editor, Git, and
+        Synkro unifies Flutter &amp; React Native development: live phone-frame preview,
+        an AI agent that reads, writes &amp; fixes your code, Monaco editor, Git, Cloud Build, and
         terminal — all in one local-first desktop app.
       </p>
       <div class="hero__cta">
-        <a href="https://github.com/ahmedalouzi/synkro/releases/latest" class="btn btn--primary btn--lg" target="_blank">Download for Windows / Mac →</a>
-        <a href="#how" class="btn btn--ghost btn--lg">See how it works</a>
+        <a href="https://github.com/ahmedalouzi/synkro/releases/latest" class="btn btn--primary btn--lg" target="_blank" rel="noopener">Download for Windows / Mac →</a>
+        <a href="/docs" class="btn btn--ghost btn--lg">Read the Docs</a>
       </div>
 
       <!-- Pill badges -->
@@ -57,6 +59,7 @@
         <span class="pill">⚛️ React Native</span>
         <span class="pill">🤖 AI Agent</span>
         <span class="pill">📱 Live Preview</span>
+        <span class="pill">☁️ Cloud Build</span>
         <span class="pill">🔒 Local-first</span>
       </div>
     </div>
@@ -68,7 +71,7 @@
           <span class="dot dot--red"></span>
           <span class="dot dot--yellow"></span>
           <span class="dot dot--green"></span>
-          <span class="app-mockup__title">Peep — my_flutter_app</span>
+          <span class="app-mockup__title">Synkro — my_flutter_app</span>
         </div>
         <div class="app-mockup__body">
           <div class="app-mockup__sidebar">
@@ -132,8 +135,9 @@
         <span>Flutter SDK</span>
         <span>Expo</span>
         <span>React Native</span>
+        <span>Google Gemini</span>
         <span>OpenAI</span>
-        <span>Anthropic</span>
+        <span>Anthropic Claude</span>
         <span>Monaco Editor</span>
       </div>
     </div>
@@ -145,7 +149,7 @@
       <div class="section-header">
         <div class="section-badge">Features</div>
         <h2>Everything in one window</h2>
-        <p>Stop switching between 4 tools. Peep brings them together.</p>
+        <p>Stop switching between 4 tools. Synkro brings them together.</p>
       </div>
 
       <div class="features__grid">
@@ -164,31 +168,31 @@
         <div class="feature-card">
           <div class="feature-card__icon">🤖</div>
           <h3>Platform-Aware AI Agent</h3>
-          <p>The agent knows Flutter widget trees <em>and</em> React Native component hierarchies. It reads your code, proposes diffs, and never applies changes without your approval.</p>
+          <p>The agent knows Flutter widget trees <em>and</em> React Native component hierarchies. It reads your code, proposes diffs, and verifies changes automatically.</p>
         </div>
 
         <div class="feature-card">
           <div class="feature-card__icon">🔍</div>
-          <h3>Monaco Editor</h3>
-          <p>VS Code's editor engine with Dart, TypeScript, and JSX support. Multi-tab, Ctrl+P file picker, find in project, undo/redo history.</p>
+          <h3>Monaco Editor + Tab &amp; Ctrl+K</h3>
+          <p>VS Code's editor engine with Dart, TypeScript, and JSX support, ghost-text Tab completions, inline <code>Ctrl+K</code> edits, and multi-tab navigation.</p>
         </div>
 
         <div class="feature-card">
           <div class="feature-card__icon">⚠️</div>
           <h3>Inline Error Fixing</h3>
-          <p>Errors from <code>flutter analyze</code> or TypeScript compiler appear in the bottom panel. Click any error → "Fix this" → agent patches it.</p>
+          <p>Errors from <code>flutter analyze</code> or TypeScript compiler appear in the bottom panel. Click any error → "Fix this" → agent patches and verifies it.</p>
         </div>
 
         <div class="feature-card">
-          <div class="feature-card__icon">🌿</div>
-          <h3>Git UI Built-in</h3>
-          <p>Stage files, write commit messages, view diffs — without leaving the app. Branch display and history built for the daily Flutter/RN workflow.</p>
+          <div class="feature-card__icon">☁️</div>
+          <h3>Sandboxed Cloud Build</h3>
+          <p>Build signed Android APKs in isolated Docker containers without configuring local Java/Gradle toolchains, with live log streaming in the IDE.</p>
         </div>
 
         <div class="feature-card">
           <div class="feature-card__icon">🔒</div>
           <h3>Local-First &amp; Private</h3>
-          <p>Your code never leaves your machine. API keys stored locally. Telemetry is opt-in and anonymous. Works offline except for AI calls.</p>
+          <p>Your workspace files stay on your machine. Telemetry is strictly opt-in and scrubbed of keys and paths. Works offline for editing and local preview.</p>
         </div>
       </div>
     </div>
@@ -200,7 +204,7 @@
       <div class="section-header">
         <div class="section-badge">How it works</div>
         <h2>Three golden paths</h2>
-        <p>The workflows Peep was designed around.</p>
+        <p>The workflows Synkro was designed around.</p>
       </div>
 
       <div class="how__steps">
@@ -208,7 +212,7 @@
           <div class="how-step__num">01</div>
           <div class="how-step__content">
             <h3>Open app → see it running</h3>
-            <p>Open any Flutter or React Native project. Peep detects the platform, runs <code>pub get</code> or <code>npm install</code>, starts the dev server, and shows your app in the phone frame — in under 60 seconds.</p>
+            <p>Open any Flutter or React Native project. Synkro detects the platform, runs <code>pub get</code> or <code>npm install</code>, starts the dev server, and shows your app in the phone frame — in under 60 seconds.</p>
           </div>
         </div>
 
@@ -216,7 +220,7 @@
           <div class="how-step__num">02</div>
           <div class="how-step__content">
             <h3>Prompt → diff → preview</h3>
-            <p>Type <em>"Add a settings screen with dark mode toggle"</em>. The agent reads your project, writes the code, shows a unified diff, and waits for your approval. Accept → preview auto-refreshes.</p>
+            <p>Type <em>"Add a settings screen with dark mode toggle"</em>. The agent reads your project, writes the code, shows a unified diff, and updates the live preview automatically.</p>
           </div>
         </div>
 
@@ -242,19 +246,19 @@
         <table class="compare__table">
           <thead>
             <tr>
-              <th></th>
+              <th>Capability</th>
               <th>Cursor</th>
-              <th class="ours">Peep</th>
+              <th class="ours">Synkro</th>
             </tr>
           </thead>
           <tbody>
-            <tr><td>Live phone preview</td><td>✗</td><td class="ours">✅</td></tr>
+            <tr><td>Live phone preview + widget inspector</td><td>✗</td><td class="ours">✅ Built-in</td></tr>
             <tr><td>Flutter / RN domain knowledge</td><td>Generic</td><td class="ours">Deep</td></tr>
-            <tr><td>Platform-aware AI prompts</td><td>✗</td><td class="ours">✅</td></tr>
-            <tr><td>Analyze errors → AI fix</td><td>Partial</td><td class="ours">✅ Built-in</td></tr>
-            <tr><td>pub get / npm install in UI</td><td>Terminal only</td><td class="ours">✅ One click</td></tr>
-            <tr><td>Offline editor + preview</td><td>✅</td><td class="ours">✅</td></tr>
-            <tr><td>Local-first / BYOK</td><td>✅</td><td class="ours">✅</td></tr>
+            <tr><td>Platform-aware AI prompts &amp; scaffolds</td><td>✗</td><td class="ours">✅</td></tr>
+            <tr><td>Analyze errors → one-click AI fix</td><td>Partial</td><td class="ours">✅ Built-in</td></tr>
+            <tr><td>One-click Cloud APK Build</td><td>✗</td><td class="ours">✅ Built-in</td></tr>
+            <tr><td>Claude Code IDE Bridge compatible</td><td>✅</td><td class="ours">✅</td></tr>
+            <tr><td>Local-first workspace</td><td>✅</td><td class="ours">✅</td></tr>
           </tbody>
         </table>
       </div>
@@ -266,8 +270,8 @@
     <div class="container">
       <div class="section-header">
         <div class="section-badge">Pricing</div>
-        <h2>Simple, honest pricing</h2>
-        <p>Beta users get 3 months free Pro.</p>
+        <h2>Simple, usage-transparent pricing</h2>
+        <p>Start free with weekly AI model credits, or upgrade to Pro for 10x weekly capacity and unlimited Tab completions.</p>
       </div>
 
       <div class="pricing__cards">
@@ -275,40 +279,28 @@
           <div class="pricing-card__name">Free</div>
           <div class="pricing-card__price">$0<span>/mo</span></div>
           <ul class="pricing-card__features">
-            <li>✓ Full Monaco editor</li>
-            <li>✓ Live preview (Flutter + RN)</li>
-            <li>✓ Git UI &amp; Terminal</li>
-            <li>✓ BYOK AI (50 requests/day)</li>
-            <li>✓ All templates</li>
+            <li>✓ Full Monaco editor &amp; Live Preview (Flutter + RN)</li>
+            <li>✓ <strong>$0.50 / week</strong> included AI model pool (resets Mondays 00:00 UTC)</li>
+            <li>✓ <strong>2,000 / month</strong> Tab completions</li>
+            <li>✓ Auto model routing (10 chat req/min, 30 completions/min)</li>
+            <li>✓ Up to $0.05 max single request cost</li>
           </ul>
-          <a href="#beta" class="btn btn--ghost">Get started</a>
+          <a href="https://github.com/ahmedalouzi/synkro/releases/latest" class="btn btn--ghost" target="_blank" rel="noopener">Download Free</a>
         </div>
 
         <div class="pricing-card pricing-card--featured">
           <div class="pricing-card__badge">Most popular</div>
           <div class="pricing-card__name">Pro</div>
-          <div class="pricing-card__price">$24<span>/mo</span></div>
+          <div class="pricing-card__price">$20<span>/mo</span></div>
           <ul class="pricing-card__features">
             <li>✓ Everything in Free</li>
-            <li>✓ Unlimited AI agent requests</li>
-            <li>✓ Hosted model credits (no API key needed)</li>
-            <li>✓ Priority preview startup</li>
-            <li>✓ Early access to new features</li>
+            <li>✓ <strong>$5.00 / week</strong> AI model pool (10× Free, ~$20+/mo value)</li>
+            <li>✓ <strong>Unlimited</strong> monthly Tab completions</li>
+            <li>✓ Full model selection (Gemini 2.5 Pro, Claude, GPT-4o)</li>
+            <li>✓ Graceful Auto fallback when weekly pool is exhausted (never blocked)</li>
+            <li>✓ Higher burst limits (40 chat/min, 120 completions/min, $0.50 max/req)</li>
           </ul>
-          <a href="#beta" class="btn btn--primary">Start free beta →</a>
-        </div>
-
-        <div class="pricing-card">
-          <div class="pricing-card__name">Team</div>
-          <div class="pricing-card__price">$44<span>/user/mo</span></div>
-          <ul class="pricing-card__features">
-            <li>✓ Everything in Pro</li>
-            <li>✓ Shared templates library</li>
-            <li>✓ Org billing &amp; usage dashboard</li>
-            <li>✓ Priority support</li>
-            <li>✓ SSO (coming soon)</li>
-          </ul>
-          <a href="mailto:hello@peep.dev" class="btn btn--ghost">Contact us</a>
+          <a href="/pricing" class="btn btn--primary">Upgrade to Pro →</a>
         </div>
       </div>
     </div>
@@ -318,14 +310,14 @@
   <section id="beta" class="beta">
     <div class="container beta__inner">
       <div class="beta__text">
-        <div class="section-badge">Closed Beta</div>
-        <h2>Join the beta</h2>
-        <p>We're onboarding 50–100 Flutter and React Native developers for our closed beta. Get 3 months of Pro free and shape the roadmap.</p>
+        <div class="section-badge">Community &amp; Updates</div>
+        <h2>Stay in the loop</h2>
+        <p>Join mobile engineers building production Flutter and React Native apps with Synkro. Get release notes, tips, and early access to new agent capabilities.</p>
         <ul class="beta__perks">
-          <li>🎁 3 months Pro free</li>
-          <li>💬 Direct access to founders on Discord</li>
-          <li>🗺 Vote on roadmap features</li>
-          <li>🏷 Early-adopter pricing locked forever</li>
+          <li>⚡ Weekly AI pool resets every Monday 00:00 UTC</li>
+          <li>💬 Direct access to the engineering team on Discord</li>
+          <li>🗺 Vote on roadmap features &amp; mobile templates</li>
+          <li>☁️ Priority Cloud Build runners for Pro members</li>
         </ul>
       </div>
       <div class="beta__form-wrap">
@@ -369,13 +361,13 @@
             </label>
           </div>
           <button type="submit" class="btn btn--primary btn--full" id="submitBtn">
-            Apply for Beta →
+            Join Updates List →
           </button>
           <div class="form-success" id="formSuccess" hidden>
             🎉 You're on the list! We'll be in touch within 48 hours.
           </div>
           <div class="form-error" id="formError" hidden>
-            Something went wrong. Email us at <a href="mailto:beta@peep.dev">beta@peep.dev</a>
+            Something went wrong. Email us at <a href="mailto:support@synkro.com">support@synkro.com</a>
           </div>
         </form>
       </div>
@@ -386,36 +378,37 @@
   <footer class="footer">
     <div class="container footer__inner">
       <div class="footer__brand">
-        <a class="nav__logo" href="#">
-          <span class="nav__logo-icon">👁</span>
-          <span>Peep</span>
+        <a class="nav__logo" href="/">
+          <span class="nav__logo-icon">⚡</span>
+          <span>Synkro</span>
         </a>
-        <p>The AI desktop IDE for mobile developers.</p>
+        <p>The AI desktop IDE for Flutter &amp; React Native developers.</p>
       </div>
       <div class="footer__links">
         <div>
           <strong>Product</strong>
-          <a href="#features">Features</a>
-          <a href="#pricing">Pricing</a>
-          <a href="#beta">Beta</a>
+          <a href="/#features">Features</a>
+          <a href="/pricing">Pricing</a>
+          <a href="/docs">Documentation</a>
+          <a href="https://github.com/ahmedalouzi/synkro/releases/latest" target="_blank" rel="noopener">Download</a>
         </div>
         <div>
-          <strong>Company</strong>
-          <a href="mailto:hello@peep.dev">Contact</a>
-          <a href="privacy.html">Privacy</a>
-          <a href="terms.html">Terms</a>
+          <strong>Account &amp; Legal</strong>
+          <a href="/account">Account</a>
+          <a href="/account/billing">Billing</a>
+          <a href="/privacy">Privacy Policy</a>
+          <a href="/terms">Terms of Service</a>
         </div>
         <div>
           <strong>Community</strong>
-          <a href="#">Discord</a>
-          <a href="#">Twitter / X</a>
-          <a href="#">GitHub</a>
+          <a href="mailto:support@synkro.com">Support</a>
+          <a href="https://github.com/ahmedalouzi/synkro" target="_blank" rel="noopener">GitHub</a>
         </div>
       </div>
     </div>
     <div class="container footer__bottom">
-      <span>© 2026 Peep. All rights reserved.</span>
-      <span>Made with ❤️ for Flutter &amp; React Native devs</span>
+      <span>© 2026 Synkro. All rights reserved.</span>
+      <span>Built for Flutter &amp; React Native engineers</span>
     </div>
   </footer>
 

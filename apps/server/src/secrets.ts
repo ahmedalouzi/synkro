@@ -9,7 +9,9 @@ export async function fetchProductionSecrets(): Promise<Record<string, string>> 
       GOOGLE_API_KEY: process.env.GOOGLE_API_KEY || '',
       OPENAI_API_KEY: process.env.OPENAI_API_KEY || '',
       ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || '',
-      DATABASE_URL: process.env.DATABASE_URL || ''
+      DATABASE_URL: process.env.DATABASE_URL || '',
+      LEMONSQUEEZY_WEBHOOK_SECRET: process.env.LEMONSQUEEZY_WEBHOOK_SECRET || '',
+      STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET || '',
     };
   }
 

@@ -30,6 +30,53 @@ async function withWorkerRole<T>(fn: (c: { query: Function }) => Promise<T>): Pr
   }
 }
 
+/**
+ * Unconditionally cleans up temporary build files (`extractPath`, `localApkPath`, and `sourceZipPath`).
+ * Exported so unit tests can verify temp cleanup behavior directly.
+ */
+export async function cleanupBuildTempFiles(paths: {
+  extractPath?: string | null;
+  localApkPath?: string | null;
+  sourceZipPath?: string | null;
+}): Promise<void> {
+  if (paths.extractPath) {
+    await fs.rm(paths.extractPath, { recursive: true, force: true }).catch((e) => {
+      console.error(`[BUILD_WORKER] Cleanup failed for extractPath ${paths.extractPath}`, e);
+    });
+  }
+  if (paths.localApkPath) {
+    await fs.unlink(paths.localApkPath).catch(() => {});
+  }
+  if (paths.sourceZipPath && paths.sourceZipPath.endsWith('.zip')) {
+    await fs.unlink(paths.sourceZipPath).catch(() => {});
+  }
+}
+
+/**
+ * Extracts a ZIP archive into `extractPath` after verifying every entry stays inside `path.resolve(extractPath)` (Zip-Slip protection).
+ */
+export async function extractZipSafely(sourceZipPath: string, extractPath: string): Promise<void> {
+  await fs.mkdir(extractPath, { recursive: true });
+  const resolvedRoot = path.resolve(extractPath);
+  const zip = new AdmZip(sourceZipPath);
+  for (const entry of zip.getEntries()) {
+    const rawName = (entry.entryName || '').replace(/\\/g, '/');
+    if (
+      rawName.startsWith('/') ||
+      rawName.includes('\0') ||
+      /^[A-Za-z]:/.test(rawName) ||
+      rawName.split('/').includes('..')
+    ) {
+      throw new Error(`Unsafe ZIP entry rejected (Zip-Slip): "${entry.entryName}"`);
+    }
+    const targetPath = path.resolve(resolvedRoot, rawName);
+    if (targetPath !== resolvedRoot && !targetPath.startsWith(resolvedRoot + path.sep)) {
+      throw new Error(`Unsafe ZIP entry escapes target directory: "${entry.entryName}"`);
+    }
+  }
+  zip.extractAllTo(extractPath, true);
+}
+
 // ---------------------------------------------------------------------------
 // Reconciler: Recovers orphaned running jobs that the worker failed to complete
 // ---------------------------------------------------------------------------
@@ -117,89 +164,89 @@ export async function startBuildWorker() {
           [job.id]
         ));
         
-        // Extract the ZIP
         const extractPath = path.join('/tmp/builds', `${job.id}_extracted`);
+        const localApkPath = path.join('/tmp/artifacts', `${job.id}.apk`);
+        let cancelInterval: ReturnType<typeof setInterval> | undefined;
+        let sandbox: DockerSandbox | undefined;
+
         try {
-          await fs.mkdir(extractPath, { recursive: true });
-          if (job.source_path && job.source_path.endsWith('.zip')) {
-            const zip = new AdmZip(job.source_path);
-            zip.extractAllTo(extractPath, true);
-          } else {
-            console.log(`[BUILD_WORKER] Mocking extraction, no valid zip found for job ${job.id}`);
-          }
-        } catch (err: any) {
-          console.error(`[BUILD_WORKER] Extraction failed for job ${job.id}:`, err);
-          await withWorkerRole(async (c) => c.query(
-            `UPDATE build_jobs SET status = 'failed', error_log = COALESCE(error_log, '') || $1, updated_at = NOW() WHERE id = $2`,
-            [`Extraction Failed: ${err.message}\n`, job.id]
-          ));
-          return setImmediate(poll);
-        }
-
-        // Resolve keystore if present
-        let keystorePath: string | undefined;
-        let keystorePassword: string | undefined;
-        let keyAlias: string | undefined;
-        let keyPassword: string | undefined;
-
-        if (job.keystore_secret_id) {
-          // In production, fetch from a secrets manager (e.g., AWS Secrets Manager, Vault).
-          // For now, we look for a local keystore file dropped by the upload endpoint.
-          const localKeystorePath = path.join('/tmp/keystores', `${job.keystore_secret_id}.jks`);
+          // Extract the ZIP with Zip-Slip entry validation
           try {
-            await fs.access(localKeystorePath);
-            keystorePath = localKeystorePath;
-            // Passwords would come from the secrets manager in production
-            keystorePassword = process.env.DEFAULT_KEYSTORE_PASSWORD || 'changeit';
-            keyAlias = process.env.DEFAULT_KEY_ALIAS || 'release';
-            keyPassword = process.env.DEFAULT_KEY_PASSWORD || keystorePassword;
-          } catch {
-            console.warn(`[BUILD_WORKER] Keystore ${job.keystore_secret_id} not found, building without signing`);
-          }
-        }
-
-        // Execute the sandbox
-        const sandbox = new DockerSandbox({
-          jobId: job.id,
-          projectPath: extractPath,
-          framework,
-          keystorePath,
-          keystorePassword,
-          keyAlias,
-          keyPassword,
-        });
-
-        console.log(`[BUILD_WORKER] Launching ${framework} Docker Sandbox for job ${job.id}...`);
-        
-        const buildStartTime = Date.now();
-        let logsBuffer = '';
-        let logsFlushed = 0;
-        let jobCancelled = false;
-
-        // Periodic cancel check and log flush while build is running
-        const cancelInterval = setInterval(async () => {
-          try {
-            const res = await withWorkerRole(async (c) => c.query(
-              `SELECT status FROM build_jobs WHERE id = $1`, [job.id]
-            ));
-            if (res.rows[0]?.status === 'cancelled') {
-              console.log(`[BUILD_WORKER] Job ${job.id} cancelled by user. Terminating sandbox...`);
-              jobCancelled = true;
-              sandbox.forceKill();
-            } else if (logsBuffer.length > logsFlushed) {
-              const toFlush = logsBuffer.substring(logsFlushed);
-              logsFlushed = logsBuffer.length;
-              await withWorkerRole(async (c) => c.query(
-                `UPDATE build_jobs SET error_log = COALESCE(error_log, '') || $1 WHERE id = $2`,
-                [toFlush, job.id]
-              ));
+            if (job.source_path && job.source_path.endsWith('.zip')) {
+              await extractZipSafely(job.source_path, extractPath);
+            } else {
+              await fs.mkdir(extractPath, { recursive: true });
+              console.log(`[BUILD_WORKER] Mocking extraction, no valid zip found for job ${job.id}`);
             }
-          } catch (err) {
-            console.error(`[BUILD_WORKER] Error in periodic check for job ${job.id}:`, err);
+          } catch (err: any) {
+            console.error(`[BUILD_WORKER] Extraction failed for job ${job.id}:`, err);
+            await withWorkerRole(async (c) => c.query(
+              `UPDATE build_jobs SET status = 'failed', error_log = COALESCE(error_log, '') || $1, updated_at = NOW() WHERE id = $2`,
+              [`Extraction Failed: ${err.message}\n`, job.id]
+            ));
+            return;
           }
-        }, 5000);
 
-        try {
+          // Resolve keystore if present
+          let keystorePath: string | undefined;
+          let keystorePassword: string | undefined;
+          let keyAlias: string | undefined;
+          let keyPassword: string | undefined;
+
+          if (job.keystore_secret_id) {
+            const localKeystorePath = path.join('/tmp/keystores', `${job.keystore_secret_id}.jks`);
+            try {
+              await fs.access(localKeystorePath);
+              keystorePath = localKeystorePath;
+              keystorePassword = process.env.DEFAULT_KEYSTORE_PASSWORD || 'changeit';
+              keyAlias = process.env.DEFAULT_KEY_ALIAS || 'release';
+              keyPassword = process.env.DEFAULT_KEY_PASSWORD || keystorePassword;
+            } catch {
+              console.warn(`[BUILD_WORKER] Keystore ${job.keystore_secret_id} not found, building without signing`);
+            }
+          }
+
+          // Execute the sandbox
+          sandbox = new DockerSandbox({
+            jobId: job.id,
+            projectPath: extractPath,
+            framework,
+            keystorePath,
+            keystorePassword,
+            keyAlias,
+            keyPassword,
+          });
+
+          console.log(`[BUILD_WORKER] Launching ${framework} Docker Sandbox for job ${job.id}...`);
+          
+          const buildStartTime = Date.now();
+          let logsBuffer = '';
+          let logsFlushed = 0;
+          let jobCancelled = false;
+
+          // Periodic cancel check and log flush while build is running
+          cancelInterval = setInterval(async () => {
+            try {
+              const res = await withWorkerRole(async (c) => c.query(
+                `SELECT status FROM build_jobs WHERE id = $1`, [job.id]
+              ));
+              if (res.rows[0]?.status === 'cancelled') {
+                console.log(`[BUILD_WORKER] Job ${job.id} cancelled by user. Terminating sandbox...`);
+                jobCancelled = true;
+                sandbox?.forceKill();
+              } else if (logsBuffer.length > logsFlushed) {
+                const toFlush = logsBuffer.substring(logsFlushed);
+                logsFlushed = logsBuffer.length;
+                await withWorkerRole(async (c) => c.query(
+                  `UPDATE build_jobs SET error_log = COALESCE(error_log, '') || $1 WHERE id = $2`,
+                  [toFlush, job.id]
+                ));
+              }
+            } catch (err) {
+              console.error(`[BUILD_WORKER] Error in periodic check for job ${job.id}:`, err);
+            }
+          }, 5000);
+
           const success = await sandbox.runBuild((logChunk) => {
             process.stdout.write(`[SANDBOX ${job.id}] ${logChunk}`);
             logsBuffer += logChunk + '\n';
@@ -220,7 +267,6 @@ export async function startBuildWorker() {
             console.log(`[BUILD_WORKER] Job ${job.id} completed successfully in ${buildDuration}ms.`);
             
             // Extract artifact from container and upload to MinIO
-            const localApkPath = path.join('/tmp/artifacts', `${job.id}.apk`);
             await fs.mkdir(path.dirname(localApkPath), { recursive: true });
             
             const extracted = await sandbox.extractArtifact(localApkPath);
@@ -282,13 +328,13 @@ export async function startBuildWorker() {
             console.log(`[BUILD_WORKER] Job ${job.id} exited due to user cancellation after ${buildDuration}ms.`);
           }
         } finally {
-          clearInterval(cancelInterval);
-          sandbox.forceKill();
-          try {
-            await fs.rm(extractPath, { recursive: true, force: true });
-          } catch (e) {
-            console.error(`[BUILD_WORKER] Cleanup failed for ${extractPath}`, e);
-          }
+          if (cancelInterval) clearInterval(cancelInterval);
+          sandbox?.forceKill();
+          await cleanupBuildTempFiles({
+            extractPath,
+            localApkPath,
+            sourceZipPath: job.source_path,
+          });
         }
         
         setImmediate(poll);

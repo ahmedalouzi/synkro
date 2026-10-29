@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pricing — Synkro AI Desktop IDE</title>
+  <meta name="description" content="Compare Synkro Free vs Pro plans. Transparent weekly AI model budgets, unlimited Tab completions on Pro, and full access to the mobile IDE." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+
+  <nav class="nav">
+    <div class="nav__inner container">
+      <a class="nav__logo" href="/">
+        <span class="nav__logo-icon">⚡</span>
+        <span>Synkro</span>
+      </a>
+      <div class="nav__links">
+        <a href="/#features">Features</a>
+        <a href="/pricing" class="nav-active">Pricing</a>
+        <a href="/docs">Docs</a>
+        <a href="/account">Account</a>
+        <a href="https://github.com/ahmedalouzi/synkro/releases/latest" class="btn btn--ghost" target="_blank" rel="noopener">Download App</a>
+      </div>
+    </div>
+  </nav>
+
+  <header class="page-hero">
+    <div class="container">
+      <div class="section-badge">Pricing &amp; Plans</div>
+      <h1>Predictable weekly AI budgets</h1>
+      <p>Every Synkro plan includes the full local-first Flutter &amp; React Native IDE. Upgrade to Pro for 10× weekly model credits, manual model selection, and unlimited Tab completions.</p>
+    </div>
+  </header>
+
+  <section class="pricing" style="padding-top: 64px;">
+    <div class="container">
+      <div class="pricing__cards" style="max-width: 820px; margin: 0 auto 72px;">
+        <div class="pricing-card">
+          <div class="pricing-card__name">Free</div>
+          <div class="pricing-card__price">$0<span>/mo</span></div>
+          <ul class="pricing-card__features">
+            <li>✓ Full Monaco editor &amp; Live Phone-Frame Preview</li>
+            <li>✓ <strong>$0.50 / week</strong> AI chat &amp; agent pool (resets Mondays 00:00 UTC)</li>
+            <li>✓ <strong>2,000 / month</strong> ghost-text Tab completions</li>
+            <li>✓ Auto model routing</li>
+            <li>✓ Up to <strong>$0.05</strong> max single request cost</li>
+            <li>✓ 10 chat req/min &amp; 30 completions/min burst limits</li>
+            <li>✓ Requests pause until Monday 00:00 UTC when pool is spent</li>
+          </ul>
+          <a href="https://github.com/ahmedalouzi/synkro/releases/latest" class="btn btn--ghost btn--full" target="_blank" rel="noopener">Download Free</a>
+        </div>
+
+        <div class="pricing-card pricing-card--featured">
+          <div class="pricing-card__badge">Recommended for daily builders</div>
+          <div class="pricing-card__name">Pro</div>
+          <div class="pricing-card__price">$20<span>/mo</span></div>
+          <ul class="pricing-card__features">
+            <li>✓ Everything in Free</li>
+            <li>✓ <strong>$5.00 / week</strong> AI chat &amp; agent pool (10× Free)</li>
+            <li>✓ <strong>Unlimited</strong> monthly Tab completions (never draws from pool)</li>
+            <li>✓ Pick any frontier model (Gemini 2.5 Pro, Claude, GPT-4o) or Auto</li>
+            <li>✓ Up to <strong>$0.50</strong> max single request cost</li>
+            <li>✓ 40 chat req/min &amp; 120 completions/min burst limits</li>
+            <li>✓ <strong>Never blocked:</strong> falls back to fast Auto model when weekly pool is spent</li>
+          </ul>
+          <a href="/account/billing?checkout=pro" class="btn btn--primary btn--full">Upgrade to Pro →</a>
+        </div>
+      </div>
+
+      <div class="section-header">
+        <div class="section-badge">Plan Policy Breakdown</div>
+        <h2>Exact limits &amp; quotas</h2>
+        <p>Enforced transparently by the Synkro AI Gateway (`usage-limits.ts`).</p>
+      </div>
+
+      <div class="compare__table-wrap" style="margin-bottom: 80px;">
+        <table class="compare__table">
+          <thead>
+            <tr>
+              <th>Policy Metric</th>
+              <th>Free (<code>free</code>)</th>
+              <th class="ours">Pro (<code>pro</code>)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>Monthly subscription price</td><td>$0 / month</td><td class="ours">$20 / month</td></tr>
+            <tr><td>Weekly AI model pool (<code>weeklyPoolUsd</code>)</td><td>$0.50 / week</td><td class="ours">$5.00 / week</td></tr>
+            <tr><td>Weekly reset schedule</td><td>Monday 00:00 UTC</td><td class="ours">Monday 00:00 UTC</td></tr>
+            <tr><td>Monthly Tab completions (<code>monthlyCompletions</code>)</td><td>2,000 / calendar month</td><td class="ours">Unlimited</td></tr>
+            <tr><td>Tab completions count against weekly dollar pool?</td><td>No (separate monthly quota)</td><td class="ours">No (unlimited &amp; free)</td></tr>
+            <tr><td>Model picker (<code>allowModelSelection</code>)</td><td>Auto routing only</td><td class="ours">Manual model selection + Auto</td></tr>
+            <tr><td>Behavior when weekly pool reaches $0 (<code>whenPoolExhausted</code>)</td><td>Blocked until Monday 00:00 UTC</td><td class="ours">Automatic fallback to fast model</td></tr>
+            <tr><td>Max single-request estimated cost (<code>maxRequestCostUsd</code>)</td><td>$0.05</td><td class="ours">$0.50</td></tr>
+            <tr><td>Chat / Agent burst rate (<code>chatPerMinute</code>)</td><td>10 requests / min</td><td class="ours">40 requests / min</td></tr>
+            <tr><td>Tab completion burst rate (<code>completionsPerMinute</code>)</td><td>30 completions / min</td><td class="ours">120 completions / min</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="section-header">
+        <div class="section-badge">FAQ</div>
+        <h2>Frequently asked questions</h2>
+      </div>
+
+      <div class="faq-list">
+        <div class="faq-item">
+          <h3>Why is the AI budget measured in weekly dollars instead of monthly message counts?</h3>
+          <p>Different prompts and models consume vastly different amounts of compute. A weekly dollar pool ($0.50/wk on Free, $5.00/wk on Pro) lets you see exact token costs in real time and ensures a single heavy day never locks you out for an entire month — your pool refreshes every Monday at 00:00 UTC.</p>
+        </div>
+        <div class="faq-item">
+          <h3>What happens if I hit my $5.00 weekly pool on Pro before Monday?</h3>
+          <p>You are never locked out on Pro. Once your $5.00 weekly pool is spent, chat and agent requests automatically fall back to our high-speed Auto model at no extra charge until Monday 00:00 UTC.</p>
+        </div>
+        <div class="faq-item">
+          <h3>Do ghost-text Tab completions consume my weekly dollar pool?</h3>
+          <p>No. Tab completions never draw from your weekly dollar pool. Free accounts receive 2,000 completions per UTC calendar month, and Pro accounts get unlimited Tab completions.</p>
+        </div>
+        <div class="faq-item">
+          <h3>How do I cancel or manage my Pro subscription?</h3>
+          <p>Open <strong>Settings → Account</strong> inside the Synkro desktop app or visit <a href="/account/billing" style="color: var(--accent-2);">synkro.com/account/billing</a> to launch the customer billing portal and cancel anytime with one click.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <div class="container footer__inner">
+      <div class="footer__brand">
+        <a class="nav__logo" href="/">
+          <span class="nav__logo-icon">⚡</span>
+          <span>Synkro</span>
+        </a>
+        <p>The AI desktop IDE for Flutter &amp; React Native developers.</p>
+      </div>
+      <div class="footer__links">
+        <div>
+          <strong>Product</strong>
+          <a href="/#features">Features</a>
+          <a href="/pricing">Pricing</a>
+          <a href="/docs">Documentation</a>
+        </div>
+        <div>
+          <strong>Account &amp; Legal</strong>
+          <a href="/account">Account</a>
+          <a href="/account/billing">Billing</a>
+          <a href="/privacy">Privacy Policy</a>
+          <a href="/terms">Terms of Service</a>
+        </div>
+        <div>
+          <strong>Community</strong>
+          <a href="mailto:support@synkro.com">Support</a>
+          <a href="https://github.com/ahmedalouzi/synkro" target="_blank" rel="noopener">GitHub</a>
+        </div>
+      </div>
+    </div>
+    <div class="container footer__bottom">
+      <span>© 2026 Synkro. All rights reserved.</span>
+      <span>Built for Flutter &amp; React Native engineers</span>
+    </div>
+  </footer>
+
+  <script src="../main.js"></script>
+</body>
+</html>
