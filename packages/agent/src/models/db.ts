@@ -289,6 +289,7 @@ export async function initDbSchema() {
       EXCEPTION WHEN duplicate_object THEN null; END $$;
 
       GRANT SELECT, UPDATE ON build_jobs TO worker_user;
+      GRANT SELECT ON users TO worker_user;
 
       -- Allow the session login role to switch into api_user / worker_user.
       -- SESSION_USER is the actual login credential (e.g. 'testuser' in test,

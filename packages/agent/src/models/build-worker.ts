@@ -80,23 +80,128 @@ export async function extractZipSafely(sourceZipPath: string, extractPath: strin
 // ---------------------------------------------------------------------------
 // Reconciler: Recovers orphaned running jobs that the worker failed to complete
 // ---------------------------------------------------------------------------
-async function reconcileOrphanedJobs() {
-  try {
-    const res = await withWorkerRole(async (c) => c.query(`
+export const BUILD_TIMEOUT_MS = 20 * 60 * 1000;
+export const GRACE_PERIOD_MS = 5 * 60 * 1000;
+
+let isWorkerActive = false;
+let pollTimeout: NodeJS.Timeout | null = null;
+let reconcilerInterval: NodeJS.Timeout | null = null;
+let reaperInterval: NodeJS.Timeout | null = null;
+let retentionInterval: NodeJS.Timeout | null = null;
+
+export async function reconcileOrphanedJobs(customPool?: any): Promise<number> {
+  const runner = async (c: { query: Function }) => {
+    const res = await c.query(`
       UPDATE build_jobs
       SET status = 'failed',
-          error_log = COALESCE(error_log, '') || '[RECONCILER] Job abandoned. Worker crashed or timed out.',
+          completed_at = NOW(),
+          error_log = COALESCE(error_log, '') || '[RECONCILER] Auto-recovered orphaned job from worker ' || COALESCE(worker_id, 'unknown') || '. Worker crashed or timed out.\n',
           updated_at = NOW()
       WHERE status = 'running' 
-        AND updated_at < NOW() - INTERVAL '25 minutes'
+        AND (started_at < NOW() - INTERVAL '25 minutes' OR (started_at IS NULL AND updated_at < NOW() - INTERVAL '25 minutes'))
       RETURNING id
-    `));
+    `);
     if (res.rows.length > 0) {
       console.log(`[RECONCILER] Recovered ${res.rows.length} orphaned jobs: ${res.rows.map((r: any) => r.id).join(', ')}`);
     }
+    return res.rows.length;
+  };
+
+  try {
+    if (customPool) {
+      return await runner(customPool);
+    }
+    return await withWorkerRole(runner);
   } catch (err) {
     console.error('[RECONCILER] Error:', err);
+    return 0;
   }
+}
+
+/**
+ * Purges build artifacts older than retention limits (24h Free / 7d Pro).
+ * Removes files from local disk and MinIO (if enabled), then nulls artifact_url in build_jobs.
+ */
+export async function cleanupExpiredArtifacts(artifactDir?: string): Promise<number> {
+  try {
+    const expiredJobs = await withWorkerRole(async (c) => {
+      const res = await c.query(`
+        SELECT b.id, b.user_id, b.artifact_url, COALESCE(u.plan, 'free') AS plan
+        FROM build_jobs b
+        LEFT JOIN users u ON b.user_id = u.id
+        WHERE b.status = 'success'
+          AND b.artifact_url IS NOT NULL
+          AND (
+            (COALESCE(u.plan, 'free') = 'free' AND b.completed_at < NOW() - INTERVAL '24 hours')
+            OR
+            (COALESCE(u.plan, 'free') != 'free' AND b.completed_at < NOW() - INTERVAL '7 days')
+          )
+      `);
+      return res.rows;
+    });
+
+    if (expiredJobs.length === 0) {
+      return 0;
+    }
+
+    const destDir = artifactDir || process.env.ARTIFACT_DIR || '/var/lib/synkro/artifacts';
+    let cleanedCount = 0;
+
+    for (const job of expiredJobs) {
+      if (isMinioConfigured()) {
+        try {
+          const { deleteArtifact } = await import('./artifact-store');
+          await deleteArtifact(job.id);
+        } catch (minioErr) {
+          console.warn(`[BUILD_WORKER] MinIO cleanup error for job ${job.id}:`, minioErr);
+        }
+      }
+
+      try {
+        const localPath = path.join(destDir, job.user_id.toString(), `${job.id}.apk`);
+        await fs.unlink(localPath).catch(() => {});
+      } catch (fsErr) {
+        // ignore if not present
+      }
+
+      await withWorkerRole(async (c) => {
+        await c.query(`
+          UPDATE build_jobs
+          SET artifact_url = NULL, updated_at = NOW()
+          WHERE id = $1
+        `, [job.id]);
+      });
+
+      cleanedCount++;
+    }
+
+    console.log(`[BUILD_WORKER] Cleaned up ${cleanedCount} expired build artifact(s).`);
+    return cleanedCount;
+  } catch (err) {
+    console.error('[BUILD_WORKER] Error cleaning up expired artifacts:', err);
+    return 0;
+  }
+}
+
+export function stopBuildWorker() {
+  isWorkerActive = false;
+  if (pollTimeout) {
+    clearTimeout(pollTimeout);
+    pollTimeout = null;
+  }
+  if (reconcilerInterval) {
+    clearInterval(reconcilerInterval);
+    reconcilerInterval = null;
+  }
+  if (reaperInterval) {
+    clearInterval(reaperInterval);
+    reaperInterval = null;
+  }
+  if (retentionInterval) {
+    clearInterval(retentionInterval);
+    retentionInterval = null;
+  }
+  console.log('[BUILD_WORKER] Stopped.');
 }
 
 // ---------------------------------------------------------------------------
@@ -118,7 +223,13 @@ async function reapOrphanedContainers() {
 // ---------------------------------------------------------------------------
 export async function startBuildWorker() {
   console.log('[BUILD_WORKER] Starting worker, reconciler, and reaper...');
-  
+  isWorkerActive = true;
+
+  if (reconcilerInterval) clearInterval(reconcilerInterval);
+  if (reaperInterval) clearInterval(reaperInterval);
+  if (retentionInterval) clearInterval(retentionInterval);
+  if (pollTimeout) clearTimeout(pollTimeout);
+
   // Ensure MinIO bucket exists on startup if configured
   if (isMinioConfigured()) {
     try {
@@ -137,11 +248,27 @@ export async function startBuildWorker() {
     console.log('[BUILD_WORKER] Startup cleanup complete.');
   });
 
-  setInterval(reconcileOrphanedJobs, 60000);
-  setInterval(reapOrphanedContainers, 60000);
+  reconcilerInterval = setInterval(reconcileOrphanedJobs, 60000);
+  reconcilerInterval.unref();
+
+  reaperInterval = setInterval(reapOrphanedContainers, 60000);
+  reaperInterval.unref();
+
+  retentionInterval = setInterval(() => {
+    cleanupExpiredArtifacts().catch((err) =>
+      console.error('[BUILD_WORKER] Retention cleanup failed:', err)
+    );
+  }, 60 * 60 * 1000);
+  retentionInterval.unref();
+
+  // Startup artifact cleanup
+  cleanupExpiredArtifacts().catch((err) =>
+    console.error('[BUILD_WORKER] Startup retention cleanup failed:', err)
+  );
 
   // Simple recursive polling loop
   const poll = async () => {
+    if (!isWorkerActive) return;
     try {
       // Claim next queued job as worker_user (BYPASSRLS, no app.current_user_id needed)
       const result = await withWorkerRole(async (c) => c.query(`
@@ -337,13 +464,22 @@ export async function startBuildWorker() {
           });
         }
         
-        setImmediate(poll);
+        if (isWorkerActive) {
+          pollTimeout = setTimeout(poll, 0);
+          pollTimeout.unref();
+        }
       } else {
-        setTimeout(poll, 3000);
+        if (isWorkerActive) {
+          pollTimeout = setTimeout(poll, 3000);
+          pollTimeout.unref();
+        }
       }
     } catch (err) {
       console.error('[BUILD_WORKER] Error during polling:', err);
-      setTimeout(poll, 5000);
+      if (isWorkerActive) {
+        pollTimeout = setTimeout(poll, 5000);
+        pollTimeout.unref();
+      }
     }
   };
 

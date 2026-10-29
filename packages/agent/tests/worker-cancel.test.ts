@@ -1,7 +1,7 @@
-process.env.DATABASE_URL_WORKER = process.env.DATABASE_URL_WORKER || 'postgres://postgres:postgres@localhost:5432/peep';
+process.env.DATABASE_URL_WORKER = process.env.DATABASE_URL_WORKER || process.env.DATABASE_URL || 'postgres://postgres:postgres@localhost:5432/peep_test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { startBuildWorker } from '../src/models/build-worker';
+import { startBuildWorker, stopBuildWorker } from '../src/models/build-worker';
 import { DockerSandbox } from '../src/models/docker-sandbox';
 import { db } from '../src/models/db';
 
@@ -46,8 +46,13 @@ export async function run() {
     return true; // Mock extraction success
   };
 
+  let testUserId = randomUUID();
+
   try {
-    const testUserId = randomUUID();
+    await client.query(
+      `INSERT INTO users (id, email, password_hash, plan) VALUES ($1, $2, 'mock_hash', 'pro') ON CONFLICT (id) DO NOTHING`,
+      [testUserId, `cancel-test-${testUserId}@example.com`]
+    );
 
     // =========================================================
     // TEST 1: Mid-build cancellation polling
@@ -133,9 +138,11 @@ export async function run() {
     const finalRes2 = await client.query(`SELECT status FROM build_jobs WHERE id = $1`, [jobId2]);
     assert.equal(finalRes2.rows[0]?.status, 'cancelled', `REGRESSION: Worker silently clobbered 'cancelled' with 'success' / 'failed'`);
     console.log(`  ✅ Test 2 Passed: WHERE status != 'cancelled' prevented race condition.`);
-
-    process.exit(0);
   } finally {
+    stopBuildWorker();
+    await client.query(`DELETE FROM build_jobs WHERE user_id = $1`, [testUserId]).catch(() => {});
+    await client.query(`DELETE FROM users WHERE id = $1`, [testUserId]).catch(() => {});
+
     // Restore mocks
     DockerSandbox.prototype.runBuild = originalRunBuild;
     DockerSandbox.prototype.forceKill = originalForceKill;

@@ -4,6 +4,11 @@ import { db as client, validateZipBuffer, AuthenticationRouter } from '@peep/age
 
 export const buildRouter: Router = express.Router();
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export function isValidJobId(jobId: unknown): jobId is string {
+  return typeof jobId === 'string' && UUID_REGEX.test(jobId);
+}
+
 // Configure multer for zip uploads (max 50MB limit)
 const upload = multer({
   storage: multer.memoryStorage(), // For MVP, keep in memory before writing to disk/db
@@ -174,6 +179,11 @@ buildRouter.get('/:jobId', requireAuth, async (req, res) => {
     const userId = (req as any).user.userId;
     const jobId = req.params.jobId;
 
+    if (!isValidJobId(jobId)) {
+      res.status(400).json({ error: 'Invalid jobId: must be a valid UUID' });
+      return;
+    }
+
     const dbClient = await client.connect();
     try {
       await dbClient.query('BEGIN');
@@ -210,6 +220,11 @@ buildRouter.get('/:jobId/download', requireAuth, async (req, res) => {
     const userId = (req as any).user.userId;
     const jobId = req.params.jobId;
 
+    if (!isValidJobId(jobId)) {
+      res.status(400).json({ error: 'Invalid jobId: must be a valid UUID' });
+      return;
+    }
+
     const dbClient = await client.connect();
     let job;
     try {
@@ -245,9 +260,13 @@ buildRouter.get('/:jobId/download', requireAuth, async (req, res) => {
     const fs = await import('node:fs');
     const path = await import('node:path');
     const destDir = process.env.ARTIFACT_DIR || '/var/lib/synkro/artifacts';
-    
-    // We strictly use userId and jobId (UUIDs) avoiding path traversal
-    const artifactPath = path.join(destDir, userId.toString(), `${jobId}.apk`);
+    const resolvedDest = path.resolve(destDir);
+    const artifactPath = path.resolve(destDir, userId.toString(), `${jobId}.apk`);
+
+    if (!artifactPath.startsWith(resolvedDest + path.sep)) {
+      res.status(400).json({ error: 'Invalid artifact path' });
+      return;
+    }
 
     if (!fs.existsSync(artifactPath)) {
       res.status(404).json({ error: 'Artifact file not found on disk' });
@@ -257,6 +276,17 @@ buildRouter.get('/:jobId/download', requireAuth, async (req, res) => {
     res.setHeader('Content-Type', 'application/vnd.android.package-archive');
     res.setHeader('Content-Disposition', 'attachment; filename="app-release.apk"');
     const stream = fs.createReadStream(artifactPath);
+    stream.on('error', (err) => {
+      console.error('[Download Stream Error]', err);
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Failed to stream artifact' });
+      } else {
+        res.destroy();
+      }
+    });
+    res.on('close', () => {
+      stream.destroy();
+    });
     stream.pipe(res);
   } catch (err) {
     console.error('[GET /build/:jobId/download]', err);
@@ -268,6 +298,11 @@ buildRouter.post('/:jobId/cancel', requireAuth, async (req, res) => {
   try {
     const userId = (req as any).user.userId;
     const jobId = req.params.jobId;
+
+    if (!isValidJobId(jobId)) {
+      res.status(400).json({ error: 'Invalid jobId: must be a valid UUID' });
+      return;
+    }
 
     const dbClient = await client.connect();
     try {
@@ -305,6 +340,11 @@ buildRouter.get('/:jobId/stream', requireAuth, async (req, res) => {
   try {
     const userId = (req as any).user.userId;
     const jobId = req.params.jobId;
+
+    if (!isValidJobId(jobId)) {
+      res.status(400).json({ error: 'Invalid jobId: must be a valid UUID' });
+      return;
+    }
 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');

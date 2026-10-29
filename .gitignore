@@ -10,6 +10,7 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+!.env.production.example
 .peep/
 *.tsbuildinfo
 .vscode/*

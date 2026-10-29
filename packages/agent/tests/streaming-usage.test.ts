@@ -13,10 +13,14 @@ export default async function runTests() {
   // Mock the usage policy and auth
   gateway.budgetGuard.checkUsage = async () => ({ action: 'allow' });
   const testUserId = randomUUID();
-  gateway.authService.validateSession = async () => ({ userId: testUserId, email: 'test@example.com' });
+  const testEmail = `test-${testUserId}@example.com`;
+  gateway.authService.validateSession = async () => ({ userId: testUserId, email: testEmail });
 
   // Insert a test user
-  await db.query(`INSERT INTO users (id, email, password_hash) VALUES ($1, 'test@example.com', 'hash') ON CONFLICT DO NOTHING`, [testUserId]);
+  await db.query(
+    `INSERT INTO users (id, email, password_hash, plan) VALUES ($1, $2, 'hash', 'pro') ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, plan = 'pro'`,
+    [testUserId, testEmail]
+  );
 
   const reqId = 'req-' + randomUUID();
   const reqId2 = 'req-' + randomUUID();

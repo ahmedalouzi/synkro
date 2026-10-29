@@ -65,16 +65,23 @@ async function main() {
     }
   } catch (dbErr: any) {
     dbOffline = true;
+    if (process.env.CI === 'true') {
+      console.error(`  ❌ FATAL: Database connection failed in CI mode: ${dbErr.message || dbErr}`);
+      process.exit(1);
+    }
     console.warn(`  ⚠️ Database connection failed: ${dbErr.message || dbErr}. Running tests with database mock/skip fallback.\n`);
   }
 
   let passed = 0;
   let failed = 0;
+  let skipped = 0;
 
   const dbDependentSuites = [
     'auth.test.ts',
     'backend-gateway.test.ts',
     'budget-guard.test.ts',
+    'build-api-isolation.test.ts',
+    'build-hardening.test.ts',
     'cancellation.test.ts',
     'failover.test.ts',
     'p312-settings-gateway.test.ts',
@@ -83,14 +90,18 @@ async function main() {
     'p315-auth-production.test.ts',
     'production-gateway.test.ts',
     'server-router.test.ts',
-    'usage.test.ts'
+    'streaming-usage.test.ts',
+    'usage.test.ts',
+    'worker-cancel.test.ts',
+    'worker-crash-recovery.test.ts',
+    'worker-rls-identity.test.ts'
   ];
 
   for (const file of testFiles) {
     if (dbOffline && dbDependentSuites.includes(file)) {
       console.log(`Suite: ${file}`);
       console.warn(`  🟡 Skipped (Database required but offline)\n`);
-      passed++;
+      skipped++;
       continue;
     }
 
@@ -111,7 +122,7 @@ async function main() {
   }
 
   console.log(`----------------------------------------`);
-  console.log(`Results: ${passed} passed, ${failed} failed.`);
+  console.log(`Results: ${passed} passed, ${failed} failed, ${skipped} skipped.`);
   console.log(`----------------------------------------\n`);
 
   if (failed > 0) {

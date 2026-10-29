@@ -26,6 +26,29 @@ export interface UsageSummary {
 }
 
 export class ServerBudgetGuard {
+  public locks = new Set<string>();
+
+  constructor(_usageStore?: unknown) {}
+
+  async acquireLock(key: string): Promise<boolean> {
+    this.locks.add(key);
+    return true;
+  }
+
+  releaseLock(key: string): void {
+    this.locks.delete(key);
+  }
+
+  async checkBudget(userId: string, plan: string, estimatedCost: number): Promise<void> {
+    const decision = await this.checkUsage(userId, plan, 'chat', estimatedCost);
+    if (decision.action === 'block') {
+      const err = new Error(decision.error.message) as any;
+      err.code = decision.error.code;
+      err.resetsAt = decision.error.resetsAt;
+      throw err;
+    }
+  }
+
   /** Reads this week's pool spend and this month's completion count in one query. */
   private async readUsage(userId: string): Promise<{ weeklyCost: number; monthlyCompletions: number }> {
     const res = await db.query(

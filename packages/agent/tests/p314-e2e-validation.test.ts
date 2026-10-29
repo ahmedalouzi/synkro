@@ -75,6 +75,9 @@ async function runScenario(backend: BackendAIGateway, opts: {id:string;prompt:st
 export default async function runP314E2ETests() {
   console.log('  Running P3.14 Full E2E Validation tests...');
 
+  // Ensure default test user is on pro plan and clean any old test records
+  await db.query(`UPDATE users SET plan = 'pro' WHERE email = 'user@example.com'`);
+
   // ── BLOCK 1: SCENARIOS ───────────────────────────────────────────
   await gate('[S1] Restaurant Reservation — full lifecycle', 'Restaurant Reservation', async () => {
     const b = await mkBackend();
@@ -230,6 +233,11 @@ export default async function runP314E2ETests() {
     const id = 'stream-usage-' + Math.random().toString(36).substring(7);
     const res = await b.handleRequest('POST', '/v1/ai/stream', {'authorization': 'Bearer ' + s.sessionToken, 'x-request-id': id}, {tier:'fast', prompt:'stream'});
     assert(res.status===200, 'Stream must return 200, got ' + res.status);
+    const stream = res.body as AsyncIterable<any>;
+    if (stream && typeof (stream as any)[Symbol.asyncIterator] === 'function') {
+      for await (const _ of stream) {}
+    }
+    await new Promise(r => setTimeout(r, 50));
     const recs = (await b.usageStore.getRecordsForUser(s.userId)).filter((r:any)=>r.requestId===id);
     assert(recs.length===1, 'Expected 1 stream record, got ' + recs.length);
     assert(recs[0]!.status==='success', 'Expected success, got ' + recs[0]!.status);
@@ -443,7 +451,7 @@ export default async function runP314E2ETests() {
     const orig = global.fetch;
     global.fetch = async(_url:any,opts:any)=>{
       Object.assign(captured, opts?.headers||{});
-      return {ok:true,status:200,json:async()=>({content:'ok',usage:{inputTokens:5,outputTokens:10,totalTokens:15},cost:{cost:0.001,currency:'USD'}}),body:null} as any;
+      return {ok:true,status:200,headers:new Map(),json:async()=>({content:'ok',usage:{inputTokens:5,outputTokens:10,totalTokens:15},cost:{cost:0.001,currency:'USD'}}),body:null} as any;
     };
     try {
       const gw = new ProductionAIGateway({baseUrl:'http://localhost:4000', sessionToken:'session-xyz'});
@@ -482,7 +490,7 @@ export default async function runP314E2ETests() {
     const orig = global.fetch;
     global.fetch = async(_u:any,opts:any)=>{
       Object.assign(captured, opts?.headers||{});
-      return {ok:true,status:200,json:async()=>({cost:0.001,currency:'USD'}),body:null} as any;
+      return {ok:true,status:200,headers:new Map(),json:async()=>({cost:0.001,currency:'USD'}),body:null} as any;
     };
     try {
       const gw = new ProductionAIGateway({baseUrl:'http://localhost:4000', sessionToken:'estimate-session'});

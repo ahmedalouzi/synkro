@@ -15,15 +15,16 @@
 
 import assert from 'node:assert/strict';
 import { Pool } from 'pg';
-import { initBuildSchema, dropBuildSchema } from '../../cloud-build/src/job-store.js';
+import { db, initDbSchema } from '../src/models/db';
 import {
   reconcileOrphanedJobs,
   BUILD_TIMEOUT_MS,
   GRACE_PERIOD_MS,
-} from '../../cloud-build/src/reconciler.js';
+} from '../src/models/build-worker';
 
 const DB_URL = process.env.DATABASE_URL_WORKER
-  ?? 'postgres://testuser:testpass@localhost:5432/peep_test';
+  ?? process.env.DATABASE_URL
+  ?? 'postgres://postgres:postgres@localhost:5432/peep_test';
 
 const TEST_USER_ID = '00000000-0000-0000-0000-000000000099';
 
@@ -31,8 +32,11 @@ export default async function run() {
   const pool = new Pool({ connectionString: DB_URL });
 
   try {
-    await dropBuildSchema(pool);
-    await initBuildSchema(pool);
+    await initDbSchema();
+    await pool.query(
+      `INSERT INTO users (id, email, password_hash, plan) VALUES ($1, $2, 'mock_hash', 'pro') ON CONFLICT (id) DO NOTHING`,
+      [TEST_USER_ID, `crash-test-${TEST_USER_ID}@example.com`]
+    );
 
     // ── Step 1: Simulate a worker crash ──────────────────────────────────────
     // Insert a 'running' job with started_at far in the past.
@@ -117,7 +121,8 @@ export default async function run() {
     console.log('  Max orphan window: ' + ((BUILD_TIMEOUT_MS + GRACE_PERIOD_MS + 2 * 60 * 1000) / 60000) + ' minutes');
 
   } finally {
-    await dropBuildSchema(pool).catch(() => {});
+    await pool.query(`DELETE FROM build_jobs WHERE user_id = $1`, [TEST_USER_ID]).catch(() => {});
+    await pool.query(`DELETE FROM users WHERE id = $1`, [TEST_USER_ID]).catch(() => {});
     await pool.end();
   }
 }
