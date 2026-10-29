@@ -156,7 +156,9 @@ export function getBuildCommand(framework: BuildFramework): string {
     'printf "reactNativeArchitectures=arm64-v8a,armeabi-v7a\\n" >> android/gradle.properties',
   ].join(' && ');
 
-  const gradlewCmd = 'cd android && ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a,armeabi-v7a -Pandroid.injected.build.abi=arm64-v8a,armeabi-v7a';
+  // Not -Pandroid.injected.build.abi: that is Android Studio's deploy-to-one-device flag, and with it Gradle did not
+  // write app/build/outputs/apk/release/app-release.apk, so the worker found no APK (Oct 30, Expo on rn-sandbox:1).
+  const gradlewCmd = 'cd android && ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a,armeabi-v7a';
 
   // NOTE: We do NOT use `npx react-native build-android` here — the RN CLI wrapper calls
   // getTaskNames(..., 'bundle') internally, which runs bundleRelease and produces an .aab

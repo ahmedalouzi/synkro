@@ -32,9 +32,9 @@ export default async function runDockerSandboxTests() {
       'RN build command must inject reactNativeArchitectures=arm64-v8a,armeabi-v7a into gradle.properties',
     );
     assert.equal(
-      rnCommandNoKey.includes('-Pandroid.injected.build.abi=arm64-v8a,armeabi-v7a'),
-      true,
-      'RN build command must pass -Pandroid.injected.build.abi to gradlew assembleRelease',
+      rnCommandNoKey.includes('android.injected.build.abi'),
+      false,
+      'RN build command must not pass android.injected.build.abi (the APK is then not written where the worker reads it)',
     );
 
     // Signing no longer changes the command (it is injected through GRADLE_USER_HOME, see createSigningArchive).
