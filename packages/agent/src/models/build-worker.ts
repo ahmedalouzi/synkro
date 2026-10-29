@@ -1,5 +1,5 @@
 import { db } from './db';
-import { DockerSandbox, BuildFramework } from './docker-sandbox';
+import { DockerSandbox, BuildFramework, BUILD_TIMEOUT_MS as SANDBOX_TIMEOUT_MS } from './docker-sandbox';
 import { uploadArtifact, ensureBucket, isMinioConfigured } from './artifact-store';
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
@@ -80,8 +80,11 @@ export async function extractZipSafely(sourceZipPath: string, extractPath: strin
 // ---------------------------------------------------------------------------
 // Reconciler: Recovers orphaned running jobs that the worker failed to complete
 // ---------------------------------------------------------------------------
-export const BUILD_TIMEOUT_MS = 20 * 60 * 1000;
+/** The longest sandbox timeout (45 minutes for React Native, see docker-sandbox.ts). */
+export const BUILD_TIMEOUT_MS = Math.max(...Object.values(SANDBOX_TIMEOUT_MS));
 export const GRACE_PERIOD_MS = 5 * 60 * 1000;
+/** A running job older than this is treated as abandoned: always past the sandbox's own timeout. */
+const ORPHAN_AFTER_SECONDS = (BUILD_TIMEOUT_MS + GRACE_PERIOD_MS) / 1000;
 
 let isWorkerActive = false;
 let pollTimeout: NodeJS.Timeout | null = null;
@@ -98,9 +101,9 @@ export async function reconcileOrphanedJobs(customPool?: any): Promise<number> {
           error_log = COALESCE(error_log, '') || '[RECONCILER] Auto-recovered orphaned job from worker ' || COALESCE(worker_id, 'unknown') || '. Worker crashed or timed out.\n',
           updated_at = NOW()
       WHERE status = 'running' 
-        AND (started_at < NOW() - INTERVAL '25 minutes' OR (started_at IS NULL AND updated_at < NOW() - INTERVAL '25 minutes'))
+        AND (started_at < NOW() - make_interval(secs => $1) OR (started_at IS NULL AND updated_at < NOW() - make_interval(secs => $1)))
       RETURNING id
-    `);
+    `, [ORPHAN_AFTER_SECONDS]);
     if (res.rows.length > 0) {
       console.log(`[RECONCILER] Recovered ${res.rows.length} orphaned jobs: ${res.rows.map((r: any) => r.id).join(', ')}`);
     }

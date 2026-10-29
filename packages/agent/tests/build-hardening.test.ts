@@ -112,7 +112,8 @@ export default async function runBuildHardeningTests() {
   // =========================================================================
   console.log('  [Test 3] Retention expiration and timeout math verification');
   {
-    assert.equal(BUILD_TIMEOUT_MS, 20 * 60 * 1000, 'BUILD_TIMEOUT_MS must be 20 minutes');
+    // The longest sandbox timeout: 45 minutes for React Native (temporary until the pre-warmed RN/Expo image).
+    assert.equal(BUILD_TIMEOUT_MS, 45 * 60 * 1000, 'BUILD_TIMEOUT_MS must be the longest sandbox timeout (45 minutes)');
     assert.equal(GRACE_PERIOD_MS, 5 * 60 * 1000, 'GRACE_PERIOD_MS must be 5 minutes');
 
     const FREE_RETENTION_MS = 24 * 60 * 60 * 1000; // 24 hours

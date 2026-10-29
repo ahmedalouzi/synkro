@@ -20,7 +20,58 @@ const FRAMEWORK_IMAGES: Record<BuildFramework, string> = {
   'react-native': 'reactnativecommunity/react-native-android@sha256:10ab6f44862b9fb9c1c64fb94566ce9f3c11f5a016f9061ef1a38f30a6bcc76f',
 };
 
-function getBuildCommand(framework: BuildFramework, hasKeystore: boolean): string {
+// Runs inside the container on the copy of the project in /build, just before `expo prebuild`; the user's own
+// files are never touched. Only a static app.json is handled (an app.config.js is left as it is).
+// - Non-interactive prebuild refuses to run without android.package, which Expo templates leave out:
+//   one without it gets com.synkro.<slug>.
+// - Prebuild fails on an image path that does not exist (older Synkro templates pointed at an empty assets/):
+//   only that key is removed, so Expo falls back to its default image.
+const PREPARE_EXPO_CONFIG_JS = `
+const fs = require('fs');
+const path = require('path');
+if (fs.existsSync('app.json')) {
+  const json = JSON.parse(fs.readFileSync('app.json', 'utf8'));
+  const expo = json.expo || json;
+  expo.android = expo.android || {};
+  if (!expo.android.package) {
+    const slug = String(expo.slug || expo.name || 'app').toLowerCase().replace(/[^a-z0-9]/g, '');
+    expo.android.package = 'com.synkro.' + (/^[a-z]/.test(slug) ? slug : 'app' + slug);
+    console.log('[SYSTEM] android.package is not set, using ' + expo.android.package);
+  }
+  const IMAGE = /\.(png|jpe?g|webp|gif)$/i;
+  const dropMissingImages = (obj, at) => {
+    for (const [key, value] of Object.entries(obj)) {
+      if (typeof value === 'string' && IMAGE.test(value) && !/^[a-z]+:/i.test(value) && !fs.existsSync(path.resolve(value))) {
+        delete obj[key];
+        console.log('[SYSTEM] ' + at + key + ' points to a missing image (' + value + '), using the Expo default');
+      } else if (value && typeof value === 'object' && !Array.isArray(value)) {
+        dropMissingImages(value, at + key + '.');
+      }
+    }
+  };
+  dropMissingImages(expo, 'expo.');
+  fs.writeFileSync('app.json', JSON.stringify(json, null, 2));
+}
+`;
+// Base64 keeps the script clear of shell quoting.
+const PREPARE_EXPO_CONFIG = `echo ${Buffer.from(PREPARE_EXPO_CONFIG_JS).toString('base64')} | base64 -d > /tmp/prepare-expo-config.js && node /tmp/prepare-expo-config.js`;
+
+// Expo projects usually have no android/ folder, so generate it the same way the Flutter command runs
+// `flutter create`. Checks for android/gradlew, not the folder, so a half-made android/ still counts as missing.
+// CI=1 keeps prebuild non-interactive and EXPO_NO_TELEMETRY stops it calling Expo's servers. With the default
+// template it only fetches expo-template-bare-minimum from the npm registry, which the network allowlist covers.
+// --no-install skips prebuild's own install; npm install runs again after it in case package.json changed.
+const ENSURE_RN_ANDROID_PROJECT = [
+  '( [ -f android/gradlew ] || (',
+  '( [ -d node_modules/expo ] || { echo "[SYSTEM] There is no android/ project and this is not an Expo project, so one cannot be generated." >&2; exit 1; } )',
+  `&& ${PREPARE_EXPO_CONFIG}`,
+  '&& CI=1 EXPO_NO_TELEMETRY=1 npx expo prebuild --platform android --no-install',
+  '&& npm install --no-audit --no-fund',
+  ') )',
+].join(' ');
+
+/** `signingSetup` runs after android/ exists and before Gradle (React Native only). Exported for tests. */
+export function getBuildCommand(framework: BuildFramework, signingSetup: string[] = []): string {
   if (framework === 'flutter') {
     // If the project lacks an android/ folder (e.g. web-only repo), generate it safely
     // without overwriting existing lib/ or pubspec.yaml.
@@ -40,15 +91,29 @@ function getBuildCommand(framework: BuildFramework, hasKeystore: boolean): strin
     'printf "org.gradle.daemon=false\\n" >> android/gradle.properties',
     'printf "org.gradle.jvmargs=-Xmx1g\\n" >> android/gradle.properties',
   ].join(' && ');
-  if (hasKeystore) {
-    return `npm install --no-audit --no-fund && chmod +x android/gradlew && ${gradleConstraints} && cd android && ./gradlew assembleRelease`;
-  }
   // NOTE: We do NOT use `npx react-native build-android` here — the RN CLI wrapper calls
   // getTaskNames(..., 'bundle') internally, which runs bundleRelease and produces an .aab
   // (Android App Bundle). .aab requires Google Play's bundletool to install; it cannot be
   // sideloaded directly. We invoke ./gradlew assembleRelease explicitly to get a plain .apk.
-  return `npm install --no-audit --no-fund && chmod +x android/gradlew && ${gradleConstraints} && cd android && ./gradlew assembleRelease`;
+  return [
+    'npm install --no-audit --no-fund',
+    ENSURE_RN_ANDROID_PROJECT,
+    ...signingSetup,
+    'chmod +x android/gradlew',
+    gradleConstraints,
+    // Real phones only (no x86 emulator builds): native code is compiled per architecture, and all four
+    // took a 2-CPU sandbox about 40 minutes for a blank Expo app.
+    'cd android && ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a,armeabi-v7a',
+  ].join(' && ');
 }
+
+// TEMPORARY: a blank Expo app took ~40 minutes in a 2-CPU sandbox, most of it downloading and compiling Gradle
+// dependencies from scratch. Go back to 15 minutes once the pre-built image exists
+// (Trello: "Pre-warmed RN/Expo sandbox image"). Keep the reconciler in build-worker.ts at least 5 minutes above this.
+export const BUILD_TIMEOUT_MS: Record<BuildFramework, number> = {
+  'flutter': 15 * 60 * 1000,
+  'react-native': 45 * 60 * 1000,
+};
 
 function getArtifactPath(framework: BuildFramework): string {
   if (framework === 'flutter') {
@@ -81,11 +146,10 @@ export class DockerSandbox {
   }
 
   async runBuild(onLog: (chunk: string) => void): Promise<boolean> {
-    const timeoutMs = this.config.timeoutMs || 15 * 60 * 1000;
     const framework = this.config.framework || 'flutter';
+    const timeoutMs = this.config.timeoutMs || BUILD_TIMEOUT_MS[framework];
     const image = FRAMEWORK_IMAGES[framework];
     const hasKeystore = !!this.config.keystorePath;
-    const buildCommand = getBuildCommand(framework, hasKeystore);
 
     const netName = await this.setupNetwork(onLog);
     if (!netName) return false;
@@ -114,29 +178,30 @@ export class DockerSandbox {
       image,
     ];
 
-    let shellScript = `cd /build && ${buildCommand}`;
-
-    if (hasKeystore && this.config.keystorePassword && this.config.keyAlias) {
-      const keyPassword = this.config.keyPassword || this.config.keystorePassword;
-      if (framework === 'flutter') {
-        shellScript = [
-          `mkdir -p /build/android`,
-          `echo "storeFile=/build/release.jks" > /build/android/key.properties`,
-          `echo "storePassword=${this.config.keystorePassword}" >> /build/android/key.properties`,
-          `echo "keyAlias=${this.config.keyAlias}" >> /build/android/key.properties`,
-          `echo "keyPassword=${keyPassword}" >> /build/android/key.properties`,
-          `cd /build && ${buildCommand}`,
-        ].join(' && ');
-      } else {
-        shellScript = [
-          `mkdir -p /build/android`,
+    const canSign = hasKeystore && !!this.config.keystorePassword && !!this.config.keyAlias;
+    const keyPassword = this.config.keyPassword || this.config.keystorePassword;
+    // React Native writes its signing properties inside the build command, after android/ has been generated.
+    const rnSigningSetup = canSign && framework === 'react-native'
+      ? [
           `echo "MYAPP_UPLOAD_STORE_FILE=/build/release.jks" >> /build/android/gradle.properties`,
           `echo "MYAPP_UPLOAD_STORE_PASSWORD=${this.config.keystorePassword}" >> /build/android/gradle.properties`,
           `echo "MYAPP_UPLOAD_KEY_ALIAS=${this.config.keyAlias}" >> /build/android/gradle.properties`,
           `echo "MYAPP_UPLOAD_KEY_PASSWORD=${keyPassword}" >> /build/android/gradle.properties`,
-          `cd /build && ${buildCommand}`,
-        ].join(' && ');
-      }
+        ]
+      : [];
+    const buildCommand = getBuildCommand(framework, rnSigningSetup);
+
+    let shellScript = `cd /build && ${buildCommand}`;
+
+    if (canSign && framework === 'flutter') {
+      shellScript = [
+        `mkdir -p /build/android`,
+        `echo "storeFile=/build/release.jks" > /build/android/key.properties`,
+        `echo "storePassword=${this.config.keystorePassword}" >> /build/android/key.properties`,
+        `echo "keyAlias=${this.config.keyAlias}" >> /build/android/key.properties`,
+        `echo "keyPassword=${keyPassword}" >> /build/android/key.properties`,
+        `cd /build && ${buildCommand}`,
+      ].join(' && ');
     }
 
     createArgs.push('sh', '-c', shellScript);
