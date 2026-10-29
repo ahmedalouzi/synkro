@@ -566,16 +566,16 @@ export class ReactNativeManagedProvider extends FrameworkProvider {
       await writeFile(join(projectPath, 'tsconfig.json'), JSON.stringify(tsconfig, null, 2));
 
       // 3. Create app.json
+      // No icon/splash image paths: assets/ starts empty, and `expo prebuild` fails on a missing image.
+      // Expo uses its default icon until the user adds one.
       const appJson = {
         expo: {
           name: appName,
           slug: appSlug,
           version: "1.0.0",
           orientation: "portrait",
-          icon: "./assets/icon.png",
           userInterfaceStyle: "light",
           splash: {
-            image: "./assets/splash.png",
             resizeMode: "contain",
             backgroundColor: "#ffffff"
           },
@@ -584,12 +584,8 @@ export class ReactNativeManagedProvider extends FrameworkProvider {
           },
           android: {
             adaptiveIcon: {
-              foregroundImage: "./assets/adaptive-icon.png",
               backgroundColor: "#ffffff"
             }
-          },
-          web: {
-            favicon: "./assets/favicon.png"
           }
         }
       };
