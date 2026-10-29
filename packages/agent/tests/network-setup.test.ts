@@ -25,7 +25,7 @@ export default async function runNetworkSetupTests() {
   }
 
   // Test 2: Required Domain Inclusions
-  console.log('  [Test 2] Verify maven.google.com, oss.sonatype.org, and s01.oss.sonatype.org in allowlist');
+  console.log('  [Test 2] Verify maven.google.com is allowed and oss.sonatype.org is not (until a Linux build needs it)');
   {
     assert.equal(
       ALLOWLISTED_FQDNS.includes('maven.google.com'),
@@ -33,16 +33,11 @@ export default async function runNetworkSetupTests() {
       'maven.google.com must be in ALLOWLISTED_FQDNS',
     );
     assert.equal(
-      ALLOWLISTED_FQDNS.includes('oss.sonatype.org'),
-      true,
-      'oss.sonatype.org must be in ALLOWLISTED_FQDNS',
+      ALLOWLISTED_FQDNS.some((d) => d.endsWith('sonatype.org')),
+      false,
+      'oss.sonatype.org stays blocked until a firewalled Linux build shows it is needed',
     );
-    assert.equal(
-      ALLOWLISTED_FQDNS.includes('s01.oss.sonatype.org'),
-      true,
-      's01.oss.sonatype.org must be in ALLOWLISTED_FQDNS',
-    );
-    console.log('  ✓ Missing critical Gradle/Android repos present.');
+    console.log('  ✓ Allowlist matches the tested builds.');
   }
 
   // Test 3: Per-Domain Upstream & IPSet Directives

@@ -19,9 +19,10 @@ export const ALLOWLISTED_FQDNS = [
   'central.maven.org',
   'plugins.gradle.org',
   'dl.google.com',
+  // Google's Maven repository for Android libraries; Expo builds look it up.
   'maven.google.com',
-  'oss.sonatype.org',
-  's01.oss.sonatype.org',
+  // oss.sonatype.org is deliberately NOT allowed: a blank Expo build with it blocked still produced an APK.
+  // Add it only if a firewalled Linux build fails without it.
   'services.gradle.org',
   'jcenter.bintray.com',
   // Note: github.com and release-assets.githubusercontent.com host arbitrary user content.
