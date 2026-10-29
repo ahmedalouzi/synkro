@@ -327,6 +327,13 @@ export async function startBuildWorker() {
     console.error('[BUILD_WORKER] Startup retention cleanup failed:', err)
   );
 
+  // Every path out of poll() must schedule the next one, or the worker silently stops taking jobs.
+  const schedulePoll = (delayMs: number) => {
+    if (!isWorkerActive) return;
+    pollTimeout = setTimeout(poll, delayMs);
+    pollTimeout.unref();
+  };
+
   // Simple recursive polling loop
   const poll = async () => {
     if (!isWorkerActive) return;
@@ -372,6 +379,7 @@ export async function startBuildWorker() {
               `UPDATE build_jobs SET status = 'failed', error_log = COALESCE(error_log, '') || $1, updated_at = NOW() WHERE id = $2`,
               [`Extraction Failed: ${err.message}\n`, job.id]
             ));
+            schedulePoll(0);
             return;
           }
 
@@ -525,22 +533,13 @@ export async function startBuildWorker() {
           });
         }
         
-        if (isWorkerActive) {
-          pollTimeout = setTimeout(poll, 0);
-          pollTimeout.unref();
-        }
+        schedulePoll(0);
       } else {
-        if (isWorkerActive) {
-          pollTimeout = setTimeout(poll, 3000);
-          pollTimeout.unref();
-        }
+        schedulePoll(3000);
       }
     } catch (err) {
       console.error('[BUILD_WORKER] Error during polling:', err);
-      if (isWorkerActive) {
-        pollTimeout = setTimeout(poll, 5000);
-        pollTimeout.unref();
-      }
+      schedulePoll(5000);
     }
   };
 
