@@ -1,0 +1,47 @@
+# ==============================================================================
+# Synkro React Native & Expo Android Build Sandbox
+# Image Tag: synkro/rn-sandbox:1
+# ==============================================================================
+
+FROM reactnativecommunity/react-native-android@sha256:10ab6f44862b9fb9c1c64fb94566ce9f3c11f5a016f9061ef1a38f30a6bcc76f
+
+USER root
+
+# Setup environment matching Cloud Build sandbox runtime
+ENV HOME=/tmp \
+    GRADLE_USER_HOME=/tmp/.gradle \
+    NPM_CONFIG_CACHE=/tmp/.npm-cache
+
+# 1. Pre-warm common Gradle distribution wrappers (Gradle 8.8 and 8.6)
+#    Using the wrapper seed pattern ensures the exact MD5-hashed directory structure
+#    and .ok marker files are generated in $GRADLE_USER_HOME/wrapper/dists.
+RUN mkdir -p /tmp/.gradle/wrapper/dists /tmp/.npm-cache \
+ && for VERSION in 8.8 8.6; do \
+      echo "Pre-warming Gradle ${VERSION} wrapper..." \
+      && curl -fsSL -o /tmp/gradle-${VERSION}-bin.zip https://services.gradle.org/distributions/gradle-${VERSION}-bin.zip \
+      && unzip -q /tmp/gradle-${VERSION}-bin.zip -d /tmp \
+      && mkdir -p /tmp/gradle-seed-${VERSION} \
+      && touch /tmp/gradle-seed-${VERSION}/settings.gradle \
+      && /tmp/gradle-${VERSION}/bin/gradle --no-daemon --project-dir /tmp/gradle-seed-${VERSION} wrapper --gradle-version ${VERSION} --distribution-type bin \
+      && /tmp/gradle-seed-${VERSION}/gradlew --no-daemon --version \
+      && rm -rf /tmp/gradle-${VERSION} /tmp/gradle-${VERSION}-bin.zip /tmp/gradle-seed-${VERSION} ; \
+    done
+
+# 2. Warm the global npm cache with Expo SDK 51 & React Native 0.74 core packages
+RUN npm cache add \
+    expo@~51.0.0 \
+    react@18.2.0 \
+    react-dom@18.2.0 \
+    react-native@0.74.5 \
+    @expo/metro-runtime@~3.2.1 \
+    @expo/config@~9.0.0 \
+    @react-native/babel-preset@0.74.87 \
+    typescript@~5.3.3
+
+# 3. Create build mount point and set directory ownership for unprivileged sandbox user (1000:1000)
+RUN mkdir -p /build \
+ && chown -R 1000:1000 /tmp /build \
+ && chmod -R u+rwX,go+rX /tmp /build
+
+WORKDIR /build
+USER 1000:1000

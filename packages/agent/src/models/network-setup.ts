@@ -19,8 +19,9 @@ export const ALLOWLISTED_FQDNS = [
   'central.maven.org',
   'plugins.gradle.org',
   'dl.google.com',
-  // Google's Maven repository for Android libraries; Expo builds look it up (they also passed without it).
   'maven.google.com',
+  'oss.sonatype.org',
+  's01.oss.sonatype.org',
   'services.gradle.org',
   'jcenter.bintray.com',
   // Note: github.com and release-assets.githubusercontent.com host arbitrary user content.
@@ -112,7 +113,7 @@ export async function setupBuildNetwork(): Promise<void> {
 
   try {
     await execFileAsync('docker', [
-'network', 'create',
+      'network', 'create',
       '--driver', 'bridge',
       '--subnet', '172.30.0.0/24',
       '--gateway', RESOLVER_IP,

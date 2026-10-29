@@ -15,9 +15,9 @@ export interface SandboxConfig {
   keyPassword?: string;
 }
 
-const FRAMEWORK_IMAGES: Record<BuildFramework, string> = {
+export const FRAMEWORK_IMAGES: Record<BuildFramework, string> = {
   'flutter': 'synkro/flutter-sandbox:2',
-  'react-native': 'reactnativecommunity/react-native-android@sha256:10ab6f44862b9fb9c1c64fb94566ce9f3c11f5a016f9061ef1a38f30a6bcc76f',
+  'react-native': 'synkro/rn-sandbox:1',
 };
 
 // Runs inside the container on the copy of the project in /build, just before `expo prebuild`; the user's own
@@ -71,7 +71,7 @@ const ENSURE_RN_ANDROID_PROJECT = [
 ].join(' ');
 
 /** `signingSetup` runs after android/ exists and before Gradle (React Native only). Exported for tests. */
-export function getBuildCommand(framework: BuildFramework, signingSetup: string[] = []): string {
+export function getBuildCommand(framework: BuildFramework, signingSetupOrHasKeystore: string[] | boolean = []): string {
   if (framework === 'flutter') {
     // If the project lacks an android/ folder (e.g. web-only repo), generate it safely
     // without overwriting existing lib/ or pubspec.yaml.
@@ -84,13 +84,21 @@ export function getBuildCommand(framework: BuildFramework, signingSetup: string[
   //                   costs an extra forked process plus a daemon-watcher process
   //   - jvmargs=-Xmx1g: cap build JVM heap explicitly (default would be ~25% of container memory;
   //                      capping at 1g frees headroom for clang during native CMake compilation)
+  //   - reactNativeArchitectures=arm64-v8a,armeabi-v7a: ABI filter restricting NDK compilation to ARM devices,
+  //     cutting compilation time by ~50% by avoiding x86 and x86_64 emulator binaries.
   // Together these keep Gradle's peak PID count well under 200, letting us use pids-limit=384.
   const gradleConstraints = [
+    'mkdir -p android && touch android/gradle.properties',
     'printf "\\norg.gradle.workers.max=2\\n" >> android/gradle.properties',
     'printf "org.gradle.parallel=false\\n" >> android/gradle.properties',
     'printf "org.gradle.daemon=false\\n" >> android/gradle.properties',
     'printf "org.gradle.jvmargs=-Xmx1g\\n" >> android/gradle.properties',
+    'printf "reactNativeArchitectures=arm64-v8a,armeabi-v7a\\n" >> android/gradle.properties',
   ].join(' && ');
+
+  const signing = Array.isArray(signingSetupOrHasKeystore) ? signingSetupOrHasKeystore : [];
+  const gradlewCmd = 'cd android && ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a,armeabi-v7a -Pandroid.injected.build.abi=arm64-v8a,armeabi-v7a';
+
   // NOTE: We do NOT use `npx react-native build-android` here — the RN CLI wrapper calls
   // getTaskNames(..., 'bundle') internally, which runs bundleRelease and produces an .aab
   // (Android App Bundle). .aab requires Google Play's bundletool to install; it cannot be
@@ -98,12 +106,10 @@ export function getBuildCommand(framework: BuildFramework, signingSetup: string[
   return [
     'npm install --no-audit --no-fund',
     ENSURE_RN_ANDROID_PROJECT,
-    ...signingSetup,
-    'chmod +x android/gradlew',
+    ...signing,
+    '([ -f android/gradlew ] && chmod +x android/gradlew || true)',
     gradleConstraints,
-    // Real phones only (no x86 emulator builds): native code is compiled per architecture, and all four
-    // took a 2-CPU sandbox about 40 minutes for a blank Expo app.
-    'cd android && ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a,armeabi-v7a',
+    gradlewCmd,
   ].join(' && ');
 }
 

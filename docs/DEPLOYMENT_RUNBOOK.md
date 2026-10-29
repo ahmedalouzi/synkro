@@ -50,7 +50,12 @@ echo "[+] Backup successfully verified: $BACKUP_FILE ($(du -h "$BACKUP_FILE" | c
 
 Synkro packages (such as `@peep/agent`) export TypeScript directly without bundling to CJS/ESM. Therefore, the production server runs via `tsx` under PM2 cluster/fork mode. Type-checking is performed upfront via `pnpm typecheck` before process reload.
 
-Execute as the `synkro` service user:
+### Sandbox Images
+The Cloud Build worker uses two pre-warmed, unprivileged Docker sandboxes:
+- `synkro/flutter-sandbox:2` (`infra/docker/Dockerfile.flutter-sandbox`): Pre-warmed Flutter SDK environment.
+- `synkro/rn-sandbox:1` (`infra/docker/Dockerfile.rn-sandbox`): Pre-warmed React Native / Expo environment with Gradle 8.8 & 8.6 distribution wrappers and Expo SDK 51 & React Native 0.74 npm packages cached to `/tmp/.npm-cache`.
+
+Execute deployment as the `synkro` service user:
 
 ```bash
 sudo -u synkro bash -lc '
@@ -68,10 +73,14 @@ sudo -u synkro bash -lc '
   # 3. Validate entire monorepo TypeScript definitions
   pnpm typecheck
 
-  # 4. Gracefully reload or launch PM2 process with updated environment
+  # 4. Pre-build / update Cloud Build sandbox Docker images
+  docker build -t synkro/flutter-sandbox:2 -f infra/docker/Dockerfile.flutter-sandbox infra/docker
+  docker build -t synkro/rn-sandbox:1 -f infra/docker/Dockerfile.rn-sandbox infra/docker
+
+  # 5. Gracefully reload or launch PM2 process with updated environment
   pm2 reload synkro-server --update-env || pm2 start npx --name synkro-server -- tsx apps/server/src/index.ts
 
-  # 5. Save PM2 process list for auto-boot on server restart
+  # 6. Save PM2 process list for auto-boot on server restart
   pm2 save
 '
 ```
@@ -124,6 +133,12 @@ curl -sf -H "Authorization: Bearer $TOKEN" https://api.synkro.com/api/build/hist
 ```bash
 pm2 logs synkro-server --lines 50 --nostream | grep "\[DATABASE_BOOT\] Database initialized successfully!"
 echo "[+] Database boot confirmation verified in PM2 logs."
+```
+
+### 7. Cloud Build Sandbox Docker Images
+```bash
+docker image inspect synkro/flutter-sandbox:2 >/dev/null && echo "[+] Flutter sandbox image verified."
+docker image inspect synkro/rn-sandbox:1 >/dev/null && echo "[+] React Native sandbox image verified."
 ```
 
 ---

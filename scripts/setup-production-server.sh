@@ -153,6 +153,19 @@ systemctl restart caddy
 echo "[+] Configuring PM2 systemd daemon unit for ${SYNKRO_USER}..."
 env PATH="$PATH:/usr/bin:/usr/local/bin" pm2 startup systemd -u "${SYNKRO_USER}" --hp "/home/${SYNKRO_USER}" || true
 
+# 10. Pre-build Cloud Build Sandbox Docker Images
+echo "[+] Checking Cloud Build sandbox Docker images..."
+if [ -d "${SYNKRO_HOME}/infra/docker" ]; then
+  echo "    Building synkro/flutter-sandbox:2..."
+  docker build -t synkro/flutter-sandbox:2 -f "${SYNKRO_HOME}/infra/docker/Dockerfile.flutter-sandbox" "${SYNKRO_HOME}/infra/docker"
+
+  echo "    Building synkro/rn-sandbox:1..."
+  docker build -t synkro/rn-sandbox:1 -f "${SYNKRO_HOME}/infra/docker/Dockerfile.rn-sandbox" "${SYNKRO_HOME}/infra/docker"
+  echo "[+] Cloud Build sandbox images built and tagged successfully."
+else
+  echo "[!] INFO: ${SYNKRO_HOME}/infra/docker not found yet. Sandbox images will be built during first deploy."
+fi
+
 echo "=============================================================================="
 echo "[+] Synkro production server provisioning complete!"
 echo "    App Directory:   ${SYNKRO_HOME}"
