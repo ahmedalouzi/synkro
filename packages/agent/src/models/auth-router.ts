@@ -17,6 +17,11 @@ export class AuthenticationRouter implements IAuthProvider {
   async login(email: string, password: string) {
     return this.productionProvider.login(email, password);
   }
+
+  /** Re-checks a signed-in user's account password (for sensitive actions such as the keystore download). */
+  async verifyUserPassword(userId: string, password: string): Promise<boolean> {
+    return this.productionProvider.verifyUserPassword(userId, password);
+  }
   
   async refresh(refreshToken: string) {
     return this.productionProvider.refresh(refreshToken);

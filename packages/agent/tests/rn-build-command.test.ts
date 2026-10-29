@@ -7,8 +7,7 @@ import { BUILD_TIMEOUT_MS, getBuildCommand } from '../src/models/docker-sandbox.
 
 /** Checks the React Native build steps; the real build runs in expo-android-build.test.ts on Linux. */
 export default async function run() {
-  const signing = ['echo "MYAPP_UPLOAD_STORE_FILE=/build/release.jks" >> /build/android/gradle.properties'];
-  const cmd = getBuildCommand('react-native', signing);
+  const cmd = getBuildCommand('react-native');
   const at = (part: string) => {
     const i = cmd.indexOf(part);
     assert.ok(i >= 0, `missing: ${part}`);
@@ -17,12 +16,13 @@ export default async function run() {
 
   // android/ is generated only when gradlew is missing.
   assert.ok(cmd.includes('[ -f android/gradlew ] ||'));
-  // Dependencies first (prebuild needs the local expo package), then the config fix-ups, prebuild, signing, Gradle.
+  // Dependencies first (prebuild needs the local expo package), then the config fix-ups, prebuild, Gradle.
   assert.ok(at('npm install') < at('node /tmp/prepare-expo-config.js'));
   assert.ok(at('node /tmp/prepare-expo-config.js') < at('npx expo prebuild --platform android --no-install'));
-  assert.ok(at('npx expo prebuild') < at(signing[0]));
-  assert.ok(at(signing[0]) < at('chmod +x android/gradlew'));
+  assert.ok(at('npx expo prebuild') < at('chmod +x android/gradlew'));
   assert.ok(at('chmod +x android/gradlew') < at('./gradlew assembleRelease'));
+  // Signing is injected through GRADLE_USER_HOME (createSigningArchive), never in the command.
+  assert.ok(!/MYAPP_UPLOAD|key\.properties|release\.jks/.test(cmd));
   // Prebuild must not prompt or call Expo's servers.
   assert.ok(cmd.includes('CI=1 EXPO_NO_TELEMETRY=1 npx expo prebuild'));
   // Phone architectures only, and a plain .apk, not an .aab (see the NOTE in docker-sandbox.ts).

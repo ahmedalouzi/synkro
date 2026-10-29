@@ -15,7 +15,7 @@ export default async function runDockerSandboxTests() {
   // Test 2: React Native Build Command ABI Optimization & Directory Safety
   console.log('  [Test 2] Verify ABI filter optimizations & directory safety in RN build command');
   {
-    const rnCommandNoKey = getBuildCommand('react-native', false);
+    const rnCommandNoKey = getBuildCommand('react-native');
     assert.equal(
       rnCommandNoKey.includes('mkdir -p android && touch android/gradle.properties'),
       true,
@@ -37,19 +37,14 @@ export default async function runDockerSandboxTests() {
       'RN build command must pass -Pandroid.injected.build.abi to gradlew assembleRelease',
     );
 
-    const rnCommandWithKey = getBuildCommand('react-native', true);
-    assert.equal(
-      rnCommandWithKey.includes('-Pandroid.injected.build.abi=arm64-v8a,armeabi-v7a'),
-      true,
-      'RN build command with keystore must include ABI filters',
-    );
+    // Signing no longer changes the command (it is injected through GRADLE_USER_HOME, see createSigningArchive).
     console.log('  ✓ React Native ABI filters and directory safety verified.');
   }
 
   // Test 3: Flutter Build Command Preservation
   console.log('  [Test 3] Verify Flutter build command remains intact');
   {
-    const flutterCmd = getBuildCommand('flutter', false);
+    const flutterCmd = getBuildCommand('flutter');
     assert.equal(
       flutterCmd.includes('flutter build apk --release'),
       true,

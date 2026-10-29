@@ -2,6 +2,7 @@ import { promises as fs } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { config } from 'dotenv';
+import { randomBytes } from 'node:crypto';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -38,6 +39,8 @@ try {
 
 config({ path: resolve(__dirname, '../../../.env') });
 process.env.NODE_ENV = 'test';
+// The build worker signs every build (signing-keys.ts); tests get a throwaway encryption key.
+process.env.SYNKRO_SIGNING_ENC_KEY ??= randomBytes(32).toString('base64');
 
 async function main() {
   const files = await fs.readdir(__dirname);
@@ -90,6 +93,7 @@ async function main() {
     'p315-auth-production.test.ts',
     'production-gateway.test.ts',
     'server-router.test.ts',
+    'signing-keys-db.test.ts',
     'streaming-usage.test.ts',
     'usage.test.ts',
     'worker-cancel.test.ts',

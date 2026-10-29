@@ -1,6 +1,8 @@
 import { db } from './db';
 import { DockerSandbox, BuildFramework, BUILD_TIMEOUT_MS as SANDBOX_TIMEOUT_MS } from './docker-sandbox';
 import { uploadArtifact, ensureBucket, isMinioConfigured } from './artifact-store';
+import { getOrCreateSigningKey, recordSigningPackageName, type SigningKey } from './signing-keys';
+import { verifyApk, isDebugCertificate } from './apk-verify';
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
 import AdmZip from 'adm-zip';
@@ -340,7 +342,7 @@ export async function startBuildWorker() {
     try {
       // Claim next queued job as worker_user (BYPASSRLS, no app.current_user_id needed)
       const result = await withWorkerRole(async (c) => c.query(`
-        SELECT id, user_id, project_id, status, source_path, framework, keystore_secret_id
+        SELECT id, user_id, project_id, status, source_path, framework
         FROM build_jobs 
         WHERE status = 'queued' 
         ORDER BY created_at ASC 
@@ -383,23 +385,21 @@ export async function startBuildWorker() {
             return;
           }
 
-          // Resolve keystore if present
-          let keystorePath: string | undefined;
-          let keystorePassword: string | undefined;
-          let keyAlias: string | undefined;
-          let keyPassword: string | undefined;
-
-          if (job.keystore_secret_id) {
-            const localKeystorePath = path.join('/tmp/keystores', `${job.keystore_secret_id}.jks`);
-            try {
-              await fs.access(localKeystorePath);
-              keystorePath = localKeystorePath;
-              keystorePassword = process.env.DEFAULT_KEYSTORE_PASSWORD || 'changeit';
-              keyAlias = process.env.DEFAULT_KEY_ALIAS || 'release';
-              keyPassword = process.env.DEFAULT_KEY_PASSWORD || keystorePassword;
-            } catch {
-              console.warn(`[BUILD_WORKER] Keystore ${job.keystore_secret_id} not found, building without signing`);
+          // Release signing key: created on the project's first build and reused after it (signing-keys.ts).
+          let signingKey: SigningKey;
+          try {
+            if (!job.project_id || job.project_id === 'unknown') {
+              throw new Error('this build has no project ID. Update Synkro and build again.');
             }
+            signingKey = await withWorkerRole((c) => getOrCreateSigningKey(c, job.user_id, job.project_id));
+          } catch (err: any) {
+            console.error(`[BUILD_WORKER] Signing key unavailable for job ${job.id}:`, err.message);
+            await withWorkerRole(async (c) => c.query(
+              `UPDATE build_jobs SET status = 'failed', completed_at = NOW(), error_log = COALESCE(error_log, '') || $1, updated_at = NOW() WHERE id = $2`,
+              [`[SIGNING] Release signing key unavailable: ${err.message}\n`, job.id]
+            ));
+            schedulePoll(0);
+            return;
           }
 
           // Execute the sandbox
@@ -407,10 +407,12 @@ export async function startBuildWorker() {
             jobId: job.id,
             projectPath: extractPath,
             framework,
-            keystorePath,
-            keystorePassword,
-            keyAlias,
-            keyPassword,
+            signing: {
+              keystore: signingKey.keystore,
+              storePassword: signingKey.storePassword,
+              keyPassword: signingKey.keyPassword,
+              alias: signingKey.alias,
+            },
           });
 
           console.log(`[BUILD_WORKER] Launching ${framework} Docker Sandbox for job ${job.id}...`);
@@ -466,7 +468,46 @@ export async function startBuildWorker() {
             await fs.mkdir(path.dirname(localApkPath), { recursive: true });
             
             const extracted = await sandbox.extractArtifact(localApkPath);
+
+            // Only an APK signed with this project's own key is delivered: never the shared debug key.
+            let signingError: string | null = null;
+            let signedPackage = '';
             if (extracted) {
+              try {
+                const signature = await verifyApk(localApkPath);
+                if (isDebugCertificate(signature.certDn)) {
+                  signingError = 'the APK is signed with the Android debug key';
+                } else if (signature.certSha256 !== signingKey.certSha256) {
+                  signingError = `the APK is signed with an unexpected certificate (SHA-256 ${signature.certSha256})`;
+                }
+                signedPackage = signature.packageName;
+              } catch (err: any) {
+                signingError = err.message;
+              }
+            }
+
+            if (extracted && signingError) {
+              await withWorkerRole(async (c) => c.query(
+                `UPDATE build_jobs SET status = 'failed', completed_at = NOW(), error_log = COALESCE(error_log, '') || $1, updated_at = NOW() WHERE id = $2 AND status != 'cancelled'`,
+                [`[SIGNING] Release signing check failed: ${signingError}\n`, job.id]
+              ));
+            } else if (extracted) {
+              const firstSignedBuild = await withWorkerRole(async (c) => {
+                await recordSigningPackageName(c, job.user_id, job.project_id, signedPackage);
+                const earlier = await c.query(
+                  `SELECT 1 FROM build_jobs WHERE user_id = $1 AND project_id = $2 AND status = 'success' AND signing_cert_sha256 IS NOT NULL LIMIT 1`,
+                  [job.user_id, job.project_id]
+                );
+                return earlier.rows.length === 0;
+              });
+              const signedNote = [
+                `[SIGNING] Signed with this project's release key (certificate SHA-256 ${signingKey.certSha256}).`,
+                // Beta: apps built before release signing carry the debug key, and Android refuses to install over them.
+                ...(firstSignedBuild
+                  ? ['[SIGNING] If an older copy of this app is on your phone, uninstall it first. Builds before release signing used a different key, so this one cannot install over it.']
+                  : []),
+                '',
+              ].join('\n');
               try {
                 let url: string;
                 let sizeBytes: number;
@@ -490,8 +531,8 @@ export async function startBuildWorker() {
                 }
 
                 await withWorkerRole(async (c) => c.query(
-                  `UPDATE build_jobs SET status = 'success', completed_at = NOW(), artifact_url = $1, artifact_size_bytes = $2, updated_at = NOW() WHERE id = $3 AND status != 'cancelled'`,
-                  [url, sizeBytes, job.id]
+                  `UPDATE build_jobs SET status = 'success', completed_at = NOW(), artifact_url = $1, artifact_size_bytes = $2, signing_cert_sha256 = $4, error_log = COALESCE(error_log, '') || $5, updated_at = NOW() WHERE id = $3 AND status != 'cancelled'`,
+                  [url, sizeBytes, job.id, signingKey.certSha256, signedNote]
                 ));
               } catch (uploadErr: any) {
                 if (process.env.SYNKRO_ALLOW_MOCK_ARTIFACT === 'true') {

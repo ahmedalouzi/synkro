@@ -11,7 +11,7 @@ config({ path: path.join(__dirname, '../../../.env') });
 
 import express from 'express';
 import * as Sentry from '@sentry/node';
-import { BackendAIGateway, initDbSchema, startBuildWorker } from '@peep/agent/server';
+import { BackendAIGateway, initDbSchema, startBuildWorker, loadSigningEncKey } from '@peep/agent/server';
 import { fetchProductionSecrets } from './secrets';
 import { execSync } from 'node:child_process';
 import { buildRouter } from './build-router';
@@ -45,6 +45,18 @@ async function bootstrap() {
   if (secrets.ANTHROPIC_API_KEY) process.env.ANTHROPIC_API_KEY = secrets.ANTHROPIC_API_KEY;
   if (secrets.LEMONSQUEEZY_WEBHOOK_SECRET) process.env.LEMONSQUEEZY_WEBHOOK_SECRET = secrets.LEMONSQUEEZY_WEBHOOK_SECRET;
   if (secrets.STRIPE_WEBHOOK_SECRET) process.env.STRIPE_WEBHOOK_SECRET = secrets.STRIPE_WEBHOOK_SECRET;
+  if (secrets.SYNKRO_SIGNING_ENC_KEY) process.env.SYNKRO_SIGNING_ENC_KEY = secrets.SYNKRO_SIGNING_ENC_KEY;
+
+  // Every Cloud Build is signed with a key stored encrypted under SYNKRO_SIGNING_ENC_KEY: without it no build
+  // can be signed, so production does not start.
+  if (process.env.NODE_ENV === 'production') {
+    try {
+      loadSigningEncKey();
+    } catch (err: any) {
+      console.error(`[BOOT] ${err.message}. Refusing to start.`);
+      process.exit(1);
+    }
+  }
 
   // Initialize the database schema (tables, indexes)
   console.log('[DATABASE_BOOT] Initializing database schema...');

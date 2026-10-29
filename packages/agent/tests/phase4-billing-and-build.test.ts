@@ -283,8 +283,22 @@ export default async function runPhase4BillingAndBuildTests() {
       });
       assert.strictEqual(res3.status, 400);
 
+      // No project ID: the build could not be signed with the project's key.
+      const formNoProject = new FormData();
+      formNoProject.append('project', new Blob([zipBuf]), 'project.zip');
+      formNoProject.append('framework', 'flutter');
+      formNoProject.append('target', 'apk');
+      const resNoProject = await fetch(`http://127.0.0.1:${buildPort}/api/build/upload`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer valid_test_token' },
+        body: formNoProject as any,
+      });
+      assert.strictEqual(resNoProject.status, 400);
+      assert.match((await resNoProject.json()).error, /no project ID/);
+
       const form4 = new FormData();
       form4.append('project', new Blob([zipBuf]), 'project.zip');
+      form4.append('projectId', crypto.randomUUID());
       form4.append('framework', 'flutter');
       form4.append('target', 'apk');
       const res4 = await fetch(`http://127.0.0.1:${buildPort}/api/build/upload`, {

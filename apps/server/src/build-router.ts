@@ -1,6 +1,6 @@
 import express, { Router } from 'express';
 import multer from 'multer';
-import { db as client, validateZipBuffer, AuthenticationRouter } from '@peep/agent/server';
+import { db as client, validateZipBuffer, AuthenticationRouter, readSigningKey } from '@peep/agent/server';
 
 export const buildRouter: Router = express.Router();
 
@@ -90,6 +90,12 @@ buildRouter.post('/upload', requireAuth, buildRateLimiter, upload.single('projec
 
     if (!ALLOWED_TARGETS.has(target)) {
       res.status(400).json({ error: `Invalid target "${target}". Must be "apk" or "aab".` });
+      return;
+    }
+
+    // Every build is signed with its project's own key, found by this ID (.synkro/project.json on the desktop).
+    if (!UUID_REGEX.test(projectId)) {
+      res.status(400).json({ error: 'This build has no project ID, so it cannot be signed. Update Synkro and build again.' });
       return;
     }
 
@@ -413,5 +419,108 @@ buildRouter.get('/:jobId/stream', requireAuth, async (req, res) => {
   } catch (err) {
     console.error('[GET /build/:jobId/stream]', err);
     res.status(500).end();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Release keystore download: lets a project's owner take their signing key with them (they need it to keep
+// updating their app on Google Play if they leave Synkro). Sensitive, so: session token from the
+// Authorization header only (never ?token=), the account password again in the body, 5 attempts per hour,
+// and every attempt logged without secrets.
+// ---------------------------------------------------------------------------
+const KEYSTORE_DOWNLOADS_PER_HOUR = 5;
+
+/** Counts this attempt; false once the user has used up the hour's attempts. */
+async function allowKeystoreAttempt(userId: string): Promise<boolean> {
+  const res = await client.query(
+    `INSERT INTO rate_limits (ip_or_email, attempts, window_start) VALUES ($1, 1, NOW())
+     ON CONFLICT (ip_or_email) DO UPDATE SET
+       attempts = CASE WHEN rate_limits.window_start < NOW() - INTERVAL '1 hour' THEN 1 ELSE rate_limits.attempts + 1 END,
+       window_start = CASE WHEN rate_limits.window_start < NOW() - INTERVAL '1 hour' THEN NOW() ELSE rate_limits.window_start END
+     RETURNING attempts`,
+    [`keystore-download:${userId}`],
+  );
+  return res.rows[0].attempts <= KEYSTORE_DOWNLOADS_PER_HOUR;
+}
+
+buildRouter.post('/signing/:projectId/keystore', async (req, res) => {
+  const projectId = String(req.params.projectId);
+  let userId = 'anonymous';
+  const audit = (result: string) => {
+    console.log(`[KEYSTORE_DOWNLOAD] user=${userId} project=${projectId.slice(0, 64)} ip=${req.ip} result=${result}`);
+  };
+  res.setHeader('Cache-Control', 'no-store');
+
+  try {
+    const header = String(req.headers['authorization'] || '');
+    if (!header.startsWith('Bearer ')) {
+      audit('no_token');
+      res.status(401).json({ error: 'Unauthorized: send the session token in the Authorization header' });
+      return;
+    }
+    try {
+      userId = (await authService.validateSession(header.slice('Bearer '.length))).userId;
+    } catch {
+      audit('bad_token');
+      res.status(401).json({ error: 'Unauthorized: invalid session' });
+      return;
+    }
+
+    if (!UUID_REGEX.test(projectId)) {
+      audit('bad_project_id');
+      res.status(400).json({ error: 'Invalid project ID' });
+      return;
+    }
+
+    if (!(await allowKeystoreAttempt(userId))) {
+      audit('rate_limited');
+      res.status(429).json({ error: `Too many attempts. You can try ${KEYSTORE_DOWNLOADS_PER_HOUR} times per hour.` });
+      return;
+    }
+
+    const password = req.body?.password;
+    if (typeof password !== 'string' || !(await authService.verifyUserPassword(userId, password))) {
+      audit('bad_password');
+      res.status(403).json({ error: 'Wrong account password' });
+      return;
+    }
+
+    const dbClient = await client.connect();
+    let key;
+    try {
+      await dbClient.query('BEGIN');
+      await dbClient.query('SET LOCAL ROLE api_user');
+      await dbClient.query('SELECT set_config($1, $2, true)', ['app.current_user_id', userId]);
+      key = await readSigningKey(dbClient, userId, projectId);
+      await dbClient.query('COMMIT');
+    } catch (e) {
+      await dbClient.query('ROLLBACK');
+      throw e;
+    } finally {
+      dbClient.release();
+    }
+
+    if (!key) {
+      audit('not_found');
+      res.status(404).json({ error: 'This project has no signing key yet. It is created by the first Cloud Build.' });
+      return;
+    }
+
+    audit('ok');
+    res.json({
+      projectId,
+      packageName: key.packageName,
+      keystoreType: 'PKCS12',
+      fileName: `synkro-upload-${projectId}.p12`,
+      keystoreBase64: key.keystore.toString('base64'),
+      alias: key.alias,
+      storePassword: key.storePassword,
+      keyPassword: key.keyPassword,
+      certSha256: key.certSha256,
+    });
+  } catch (err: any) {
+    audit('error');
+    console.error('[POST /build/signing/:projectId/keystore]', err.message);
+    res.status(500).json({ error: 'Internal Server Error' });
   }
 });

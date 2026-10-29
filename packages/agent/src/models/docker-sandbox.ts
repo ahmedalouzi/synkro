@@ -9,10 +9,70 @@ export interface SandboxConfig {
   projectPath: string;
   timeoutMs?: number;
   framework?: BuildFramework;
-  keystorePath?: string;
-  keystorePassword?: string;
-  keyAlias?: string;
-  keyPassword?: string;
+  /** Release signing key for this build (see signing-keys.ts). */
+  signing?: SandboxSigning;
+}
+
+export interface SandboxSigning {
+  keystore: Buffer;
+  storePassword: string;
+  keyPassword: string;
+  alias: string;
+}
+
+// The Android Gradle Plugin's "injected" signing properties (what Android Studio's Generate Signed APK uses)
+// override the signingConfig in build.gradle for every variant, so one mechanism signs React Native, Expo
+// (after prebuild) and Flutter without editing their Gradle files. They are read from gradle.properties in
+// GRADLE_USER_HOME, which keeps the passwords out of the command line, the environment and the build log.
+const GRADLE_USER_HOME = '/tmp/.gradle';
+const SIGNING_KEYSTORE_PATH = `${GRADLE_USER_HOME}/synkro-upload.p12`;
+
+/** Exported for tests. */
+export function signingGradleProperties(signing: SandboxSigning): string {
+  return [
+    `android.injected.signing.store.file=${SIGNING_KEYSTORE_PATH}`,
+    `android.injected.signing.store.password=${signing.storePassword}`,
+    `android.injected.signing.key.alias=${signing.alias}`,
+    `android.injected.signing.key.password=${signing.keyPassword}`,
+    '',
+  ].join('\n');
+}
+
+/** One ustar header + content, padded to 512-byte blocks. */
+function tarEntry(name: string, mode: number, content: Buffer | null): Buffer {
+  const header = Buffer.alloc(512);
+  const field = (value: string, offset: number, length: number) => header.write(value, offset, length, 'utf8');
+  const octal = (value: number, offset: number, length: number) => field(value.toString(8).padStart(length - 1, '0') + '\0', offset, length);
+  field(name, 0, 100);
+  octal(mode, 100, 8);
+  octal(1000, 108, 8); // uid: the sandbox user
+  octal(1000, 116, 8); // gid
+  octal(content ? content.length : 0, 124, 12);
+  octal(Math.floor(Date.now() / 1000), 136, 12);
+  header.fill(' ', 148, 156); // the checksum is computed with this field as spaces
+  field(content ? '0' : '5', 156, 1);
+  field('ustar\0', 257, 6);
+  field('00', 263, 2);
+  let sum = 0;
+  for (const byte of header) sum += byte;
+  field(sum.toString(8).padStart(6, '0') + '\0 ', 148, 8);
+  if (!content) return header;
+  return Buffer.concat([header, content, Buffer.alloc((512 - (content.length % 512)) % 512)]);
+}
+
+/**
+ * A tar archive for `docker cp -a - <container>:/` holding GRADLE_USER_HOME with the keystore and the signing
+ * properties, owned by the sandbox user and readable only by it. Streamed over stdin, so nothing secret is
+ * written to the host's disk. Exported for tests.
+ */
+export function createSigningArchive(signing: SandboxSigning): Buffer {
+  const dir = GRADLE_USER_HOME.slice(1);
+  return Buffer.concat([
+    tarEntry(`${dir}/`, 0o700, null),
+    tarEntry(`${dir}/gradle.properties`, 0o600, Buffer.from(signingGradleProperties(signing), 'utf8')),
+    tarEntry(SIGNING_KEYSTORE_PATH.slice(1), 0o600, signing.keystore),
+    Buffer.alloc(1024),
+  ]);
 }
 
 export const FRAMEWORK_IMAGES: Record<BuildFramework, string> = {
@@ -70,8 +130,8 @@ const ENSURE_RN_ANDROID_PROJECT = [
   ') )',
 ].join(' ');
 
-/** `signingSetup` runs after android/ exists and before Gradle (React Native only). Exported for tests. */
-export function getBuildCommand(framework: BuildFramework, signingSetupOrHasKeystore: string[] | boolean = []): string {
+/** Exported for tests. */
+export function getBuildCommand(framework: BuildFramework): string {
   if (framework === 'flutter') {
     // If the project lacks an android/ folder (e.g. web-only repo), generate it safely
     // without overwriting existing lib/ or pubspec.yaml.
@@ -96,7 +156,6 @@ export function getBuildCommand(framework: BuildFramework, signingSetupOrHasKeys
     'printf "reactNativeArchitectures=arm64-v8a,armeabi-v7a\\n" >> android/gradle.properties',
   ].join(' && ');
 
-  const signing = Array.isArray(signingSetupOrHasKeystore) ? signingSetupOrHasKeystore : [];
   const gradlewCmd = 'cd android && ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a,armeabi-v7a -Pandroid.injected.build.abi=arm64-v8a,armeabi-v7a';
 
   // NOTE: We do NOT use `npx react-native build-android` here — the RN CLI wrapper calls
@@ -106,7 +165,6 @@ export function getBuildCommand(framework: BuildFramework, signingSetupOrHasKeys
   return [
     'npm install --no-audit --no-fund',
     ENSURE_RN_ANDROID_PROJECT,
-    ...signing,
     '([ -f android/gradlew ] && chmod +x android/gradlew || true)',
     gradleConstraints,
     gradlewCmd,
@@ -151,14 +209,13 @@ export class DockerSandbox {
     return BUILD_NETWORK;
   }
 
-  async runBuild(onLog: (chunk: string) => void): Promise<boolean> {
+  /**
+   * Arguments for `docker create`. They are visible to anyone on the host (docker inspect, ps), so they never
+   * carry secrets: the signing key goes in through createSigningArchive(). Public for tests.
+   */
+  createContainerArgs(netName: string): string[] {
     const framework = this.config.framework || 'flutter';
-    const timeoutMs = this.config.timeoutMs || BUILD_TIMEOUT_MS[framework];
     const image = FRAMEWORK_IMAGES[framework];
-    const hasKeystore = !!this.config.keystorePath;
-
-    const netName = await this.setupNetwork(onLog);
-    if (!netName) return false;
 
     // Flutter needs a much larger storage limit (15G) because the SDK/Android SDK are in the image layer
     // and NDK/CMake downloads at build time consume a significant amount of additional space.
@@ -180,37 +237,22 @@ export class DockerSandbox {
       '--user=1000:1000',
       '-e', 'NPM_CONFIG_CACHE=/tmp/.npm-cache',
       '-e', 'HOME=/tmp',
-      '-e', 'GRADLE_USER_HOME=/tmp/.gradle',
+      '-e', `GRADLE_USER_HOME=${GRADLE_USER_HOME}`,
       image,
     ];
 
-    const canSign = hasKeystore && !!this.config.keystorePassword && !!this.config.keyAlias;
-    const keyPassword = this.config.keyPassword || this.config.keystorePassword;
-    // React Native writes its signing properties inside the build command, after android/ has been generated.
-    const rnSigningSetup = canSign && framework === 'react-native'
-      ? [
-          `echo "MYAPP_UPLOAD_STORE_FILE=/build/release.jks" >> /build/android/gradle.properties`,
-          `echo "MYAPP_UPLOAD_STORE_PASSWORD=${this.config.keystorePassword}" >> /build/android/gradle.properties`,
-          `echo "MYAPP_UPLOAD_KEY_ALIAS=${this.config.keyAlias}" >> /build/android/gradle.properties`,
-          `echo "MYAPP_UPLOAD_KEY_PASSWORD=${keyPassword}" >> /build/android/gradle.properties`,
-        ]
-      : [];
-    const buildCommand = getBuildCommand(framework, rnSigningSetup);
+    createArgs.push('sh', '-c', `cd /build && ${getBuildCommand(framework)}`);
+    return createArgs;
+  }
 
-    let shellScript = `cd /build && ${buildCommand}`;
+  async runBuild(onLog: (chunk: string) => void): Promise<boolean> {
+    const framework = this.config.framework || 'flutter';
+    const timeoutMs = this.config.timeoutMs || BUILD_TIMEOUT_MS[framework];
 
-    if (canSign && framework === 'flutter') {
-      shellScript = [
-        `mkdir -p /build/android`,
-        `echo "storeFile=/build/release.jks" > /build/android/key.properties`,
-        `echo "storePassword=${this.config.keystorePassword}" >> /build/android/key.properties`,
-        `echo "keyAlias=${this.config.keyAlias}" >> /build/android/key.properties`,
-        `echo "keyPassword=${keyPassword}" >> /build/android/key.properties`,
-        `cd /build && ${buildCommand}`,
-      ].join(' && ');
-    }
+    const netName = await this.setupNetwork(onLog);
+    if (!netName) return false;
 
-    createArgs.push('sh', '-c', shellScript);
+    const createArgs = this.createContainerArgs(netName);
 
     onLog(`[SYSTEM] Creating ${framework} sandbox with security constraints...\n`);
 
@@ -242,15 +284,19 @@ export class DockerSandbox {
       return false;
     }
 
-    if (hasKeystore) {
-      onLog(`[SYSTEM] Injecting signing keystore...\n`);
+    if (this.config.signing) {
+      onLog(`[SYSTEM] Injecting release signing key...\n`);
       try {
-        if (process.platform !== 'win32') {
-          await execFileAsync('chown', ['1000:1000', this.config.keystorePath!]);
-        }
-        await execFileAsync('docker', ['cp', this.config.keystorePath!, `${this.containerName}:/build/release.jks`]);
+        await new Promise<void>((resolve, reject) => {
+          const cp = spawn('docker', ['cp', '-a', '-', `${this.containerName}:/`]);
+          let stderr = '';
+          cp.stderr?.on('data', (d) => { stderr += d.toString(); });
+          cp.on('error', reject);
+          cp.on('close', (code) => (code === 0 ? resolve() : reject(new Error(stderr.trim() || `docker cp exited with ${code}`))));
+          cp.stdin?.end(createSigningArchive(this.config.signing!));
+        });
       } catch (err: any) {
-        onLog(`[SYSTEM] Keystore injection failed: ${err.message}\n`);
+        onLog(`[SYSTEM] Signing key injection failed: ${err.message}\n`);
         return false;
       }
     }

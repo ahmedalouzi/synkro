@@ -135,6 +135,14 @@ export class AuthService implements IAuthProvider {
     }
   }
 
+  /** True when `password` is this user's account password. */
+  async verifyUserPassword(userId: string, password: string): Promise<boolean> {
+    if (typeof password !== 'string' || password.length === 0) return false;
+    const res = await db.query('SELECT password_hash FROM users WHERE id = $1', [userId]);
+    if (res.rows.length === 0) return false;
+    return this.verifyPassword(password, res.rows[0].password_hash);
+  }
+
   async login(email: string, password: string): Promise<UserSession> {
     if (!(await this.checkRateLimit(`login:${email}`))) {
       throw new Error('Too many attempts. Please try again later.');

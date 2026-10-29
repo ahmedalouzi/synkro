@@ -217,7 +217,8 @@ export async function initDbSchema() {
       ADD COLUMN IF NOT EXISTS keystore_secret_id TEXT,
       ADD COLUMN IF NOT EXISTS framework build_framework DEFAULT 'flutter',
       ADD COLUMN IF NOT EXISTS target TEXT DEFAULT 'apk',
-      ADD COLUMN IF NOT EXISTS status build_status DEFAULT 'queued';
+      ADD COLUMN IF NOT EXISTS status build_status DEFAULT 'queued',
+      ADD COLUMN IF NOT EXISTS signing_cert_sha256 TEXT;
     `);
 
     await client.query(`
@@ -227,8 +228,35 @@ export async function initDbSchema() {
       CREATE INDEX IF NOT EXISTS idx_build_jobs_stuck      ON build_jobs(started_at) WHERE status = 'running';
     `);
 
+    // Release signing keys (signing-keys.ts): one per (user, project), every secret column encrypted
+    // with AES-256-GCM under SYNKRO_SIGNING_ENC_KEY.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS signing_keys (
+        id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id             UUID        NOT NULL,
+        project_id          TEXT        NOT NULL,
+        package_name        TEXT,
+        alias               TEXT        NOT NULL,
+        keystore_enc        BYTEA       NOT NULL,
+        store_password_enc  BYTEA       NOT NULL,
+        key_password_enc    BYTEA       NOT NULL,
+        cert_sha256         TEXT        NOT NULL,
+        created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+        UNIQUE (user_id, project_id)
+      );
+    `);
+
     // Enable Row-Level Security
     await client.query(`
+      ALTER TABLE signing_keys ENABLE ROW LEVEL SECURITY;
+
+      DO $$ BEGIN
+        CREATE POLICY signing_keys_user_isolation ON signing_keys
+          USING (user_id = NULLIF(current_setting('app.current_user_id', true), '')::UUID);
+      EXCEPTION
+        WHEN duplicate_object THEN null;
+      END $$;
+
       ALTER TABLE build_jobs ENABLE ROW LEVEL SECURITY;
       
       DO $$ BEGIN
@@ -282,6 +310,8 @@ export async function initDbSchema() {
       
       GRANT SELECT, INSERT ON build_jobs TO api_user;
       GRANT UPDATE (status) ON build_jobs TO api_user;
+      -- Owners can only read their keys (keystore download); keys are created by the worker.
+      GRANT SELECT ON signing_keys TO api_user;
       GRANT SELECT, INSERT, UPDATE, DELETE ON chat_threads, chat_messages, chat_runs TO api_user;
 
       DO $$ BEGIN
@@ -289,6 +319,8 @@ export async function initDbSchema() {
       EXCEPTION WHEN duplicate_object THEN null; END $$;
 
       GRANT SELECT, UPDATE ON build_jobs TO worker_user;
+      GRANT SELECT, INSERT ON signing_keys TO worker_user;
+      GRANT UPDATE (package_name) ON signing_keys TO worker_user;
       GRANT SELECT ON users TO worker_user;
 
       -- Allow the session login role to switch into api_user / worker_user.
