@@ -7,6 +7,8 @@ const execFileAsync = promisify(execFile);
 export const RESOLVER_IP = '172.30.0.1';
 export const BUILD_NETWORK = 'build-restricted';
 export const IPSET_NAME = 'build-allowed-ips';
+/** Public resolvers that allowlisted names are forwarded to. Nothing else is ever forwarded. */
+export const UPSTREAM_RESOLVERS = ['8.8.8.8', '1.1.1.1'];
 
 export const ALLOWLISTED_FQDNS = [
   'pub.dev',
@@ -17,6 +19,8 @@ export const ALLOWLISTED_FQDNS = [
   'central.maven.org',
   'plugins.gradle.org',
   'dl.google.com',
+  // Google's Maven repository for Android libraries; Expo builds look it up (they also passed without it).
+  'maven.google.com',
   'services.gradle.org',
   'jcenter.bintray.com',
   // Note: github.com and release-assets.githubusercontent.com host arbitrary user content.
@@ -41,22 +45,23 @@ export function generateDnsmasqConfig(): string {
     `listen-address=${RESOLVER_IP}`,
     `bind-interfaces`,
     '',
-    '# Explicit upstream resolvers (bypassing host /etc/resolv.conf).',
-    '# Architectural decision: DNS queries for allowlisted domains leave',
-    '# this host to Google/Cloudflare public resolvers. Acceptable for MVP',
-    '# since only pre-approved package-registry domains are ever queried.',
+    '# Ignore the host /etc/resolv.conf. There is deliberately NO global server= line:',
+    '# with one, every name (allowed or not) is forwarded upstream and address=/#/ blocks',
+    '# nothing, which lets a build leak data inside DNS queries. Only the domains below',
+    '# have an upstream; they go to Google/Cloudflare public resolvers.',
     'no-resolv',
-    'server=8.8.8.8',
-    'server=1.1.1.1',
     '',
-    '# For each allowlisted FQDN: resolve normally AND add IPs to ipset',
+    '# For each allowlisted FQDN (and its subdomains): forward it upstream AND add its IPs to the ipset',
   ];
   for (const fqdn of ALLOWLISTED_FQDNS) {
+    for (const upstream of UPSTREAM_RESOLVERS) {
+      lines.push(`server=/${fqdn}/${upstream}`);
+    }
     lines.push(`ipset=/${fqdn}/${IPSET_NAME}`);
   }
   lines.push(
     '',
-    '# CATCH-ALL: return NXDOMAIN for any FQDN not matched above.',
+    '# CATCH-ALL: answer NXDOMAIN locally for any FQDN not matched above (never forwarded).',
     'address=/#/',
   );
   return lines.join('\n') + '\n';

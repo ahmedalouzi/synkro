@@ -85,7 +85,7 @@ if len(sys.argv) > 1:
   const attackScript = `#!/bin/sh
 echo "[ADV_EVIDENCE_START] Executing malicious payload inside sandbox..."
 echo "[ADV_EVIDENCE_DNS_GOOD]" $(nslookup registry.npmjs.org 172.30.0.1 2>&1 | grep Address | tail -n 1)
-echo "[ADV_EVIDENCE_DNS_BAD]" $(nslookup attacker.workers.dev 172.30.0.1 2>&1 | grep -i "can't find\\|nxdomain" || echo "NXDOMAIN")
+echo "[ADV_EVIDENCE_DNS_BAD]" $(nslookup attacker.workers.dev 172.30.0.1 2>&1 | grep -i "can't find\\|nxdomain" || echo "RESOLVED (not blocked)")
 HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 https://registry.npmjs.org/)
 echo "[ADV_EVIDENCE_CURL_GOOD] HTTP $HTTP_CODE"
 HARDCODED_CODE=$(curl -s -o /dev/null -w "%{http_code} exit:%{exitcode}" --max-time 10 --resolve "attacker.workers.dev:443:${npmIp}" https://attacker.workers.dev/ || echo "exit:$?")
