@@ -1,4 +1,8 @@
+import { existsSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
+import { join } from 'node:path';
 import { PROJECT_TEMPLATES } from '@peep/flutter-adapter';
+import { createManagedFlutterProject } from './providers/flutter-managed';
 import type { CreateProjectOptions, ProjectTemplateInfo } from '@peep/shared';
 import type { PlatformRegistry } from './platform-registry';
 import type { WorkspaceManager } from './workspace-manager';
@@ -32,16 +36,27 @@ export class ProjectService {
       throw new Error('Project name must start with a letter and contain only lowercase letters, numbers, and underscores.');
     }
 
-    // Determine provider based on options. For now, default to react-native-managed if beginner or not specified.
-    const mode = (options as any).mode || 'beginner';
-    const framework = (options as any).framework || 'react-native';
-    
-    let providerId = 'react-native-managed';
-    if (mode === 'advanced') {
-      providerId = framework === 'flutter' ? 'flutter-local' : 'react-native-local';
+    const projectPath = join(options.parentPath, name);
+    if (existsSync(projectPath)) {
+      throw new Error(`Folder already exists: ${projectPath}`);
     }
 
-    const provider = this.registry.getProvider(providerId);
-    return await provider.createProject(name, options.parentPath, options.templateId);
+    const mode = options.mode || 'beginner';
+    const framework = options.framework || 'react-native';
+    try {
+      if (mode === 'advanced') {
+        const provider = this.registry.getProvider(framework === 'flutter' ? 'flutter-local' : 'react-native-local');
+        return await provider.createProject(name, options.parentPath, options.templateId);
+      }
+      // Managed: no local SDK. Flutter projects are written directly; React Native ones are Expo projects.
+      if (framework === 'flutter') {
+        return await createManagedFlutterProject(name, options.parentPath, options.templateId);
+      }
+      return await this.registry.getProvider('react-native-managed').createProject(name, options.parentPath, options.templateId);
+    } catch (err) {
+      // The folder did not exist before this call: remove what was half-created so the next try can use the name.
+      await rm(projectPath, { recursive: true, force: true }).catch(() => {});
+      throw err;
+    }
   }
 }

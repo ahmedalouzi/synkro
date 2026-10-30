@@ -14,7 +14,7 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
   {
     id: 'blank',
     name: 'Blank',
-    description: 'Standard Flutter app from flutter create — no customizations.',
+    description: 'A minimal Flutter app with no customizations.',
     files: [],
   },
   {
@@ -27,16 +27,16 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
         content: `import 'package:flutter/material.dart';
 
 void main() {
-  runApp(const PeepMaterialApp());
+  runApp(const AtomvsMaterialApp());
 }
 
-class PeepMaterialApp extends StatelessWidget {
-  const PeepMaterialApp({super.key});
+class AtomvsMaterialApp extends StatelessWidget {
+  const AtomvsMaterialApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Peep App',
+      title: 'Atomvs App',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF6750A4)),
@@ -62,7 +62,7 @@ class HomeScreen extends StatelessWidget {
             const SizedBox(height: 16),
             Text('Your app is ready', style: Theme.of(context).textTheme.headlineSmall),
             const SizedBox(height: 8),
-            Text('Start building with Peep', style: Theme.of(context).textTheme.bodyMedium),
+            Text('Start building with Atomvs', style: Theme.of(context).textTheme.bodyMedium),
           ],
         ),
       ),
@@ -83,16 +83,16 @@ class HomeScreen extends StatelessWidget {
         content: `import 'package:flutter/material.dart';
 
 void main() {
-  runApp(const PeepNavApp());
+  runApp(const AtomvsNavApp());
 }
 
-class PeepNavApp extends StatelessWidget {
-  const PeepNavApp({super.key});
+class AtomvsNavApp extends StatelessWidget {
+  const AtomvsNavApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Peep Nav App',
+      title: 'Atomvs Nav App',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF006874)),

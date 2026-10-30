@@ -61,39 +61,18 @@ export class ReactNativeManagedProvider extends FrameworkProvider {
     
     await mkdir(projectPath, { recursive: true });
 
-    // In managed mode, we can create the project via `create-expo-app` or use a template.
-    if (templateId) {
-      const template = getTemplate(templateId);
-      if (template && template.files.length > 0) {
-        for (const file of template.files) {
-          const fullPath = join(projectPath, file.relativePath);
-          await mkdir(join(fullPath, '..'), { recursive: true });
-          await writeFile(fullPath, file.content, 'utf-8');
-        }
-      }
-      
-      // Install dependencies
-      const pm = await this.detectPackageManager(projectPath);
-      const installCmd = process.platform === 'win32' ? `${pm}.cmd` : pm;
-      await new Promise<void>((resolve, reject) => {
-        const info = this.processManager.spawn(installCmd, ['install'], projectPath, undefined, { shell: false });
-        info.process.on('exit', (code) => {
-          if (code === 0) resolve();
-          else reject(new Error(`${pm} install failed`));
-        });
-      });
-    } else {
-      // Default to npx create-expo-app
-      const npx = process.platform === 'win32' ? 'npx.cmd' : 'npx';
-      await new Promise<void>((resolve, reject) => {
-        const info = this.processManager.spawn(npx, ['create-expo-app', name, '--template', 'blank'], parentPath, undefined, { shell: false });
-        info.process.on('exit', (code) => {
-          if (code === 0) resolve();
-          else reject(new Error('create-expo-app failed'));
-        });
-      });
+    // The Expo project (package.json, app.json, tsconfig.json, App.tsx) and its dependencies. Writing only the
+    // template's App.tsx left a folder with no package.json, so `npm install` installed nothing.
+    const result = await this.bootstrapProject(projectPath);
+    if (!result.success) throw new Error(result.message);
+
+    // The chosen template's files replace the defaults (the React Native templates ship App.tsx).
+    for (const file of getTemplate(templateId ?? '')?.files ?? []) {
+      const fullPath = join(projectPath, file.relativePath);
+      await mkdir(join(fullPath, '..'), { recursive: true });
+      await writeFile(fullPath, file.content, 'utf-8');
     }
-    
+
     return projectPath;
   }
 

@@ -906,10 +906,13 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
   });
 
   ipcMain.handle(IPC_CHANNELS.PROJECT_CREATE_FROM_PROMPT, async (_event, options) => {
+    // Same creation path as New Project: managed or local, Flutter or React Native, as chosen in the dialog.
     const projectPath = await projectService.createFromTemplate({
       name: options.name,
       parentPath: options.parentPath,
-      templateId: 'blank',
+      templateId: options.framework === 'flutter' ? 'blank' : 'blank-rn',
+      mode: options.mode,
+      framework: options.framework,
     });
 
     mainWindow?.webContents.send(IPC_EVENTS.AGENT_STREAM, {
