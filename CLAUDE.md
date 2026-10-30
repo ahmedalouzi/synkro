@@ -39,4 +39,5 @@ Local dev backend: sign up a normal account against it. There is no auth bypass 
 - Two command-permission layers disagree (`packages/agent/src/tools/safety.ts` vs `apps/desktop/src/main/services/terminal-service.ts`).
 - No ESLint/Prettier; match surrounding style.
 - Cloud Build changes must be checked on Linux too: on Windows/macOS the `build0` firewall and `--storage-opt` are not applied (see `docs/LINUX_TEST_SESSION.md`).
+- ufw must allow DNS in on `build0` to 172.30.0.1:53 (udp+tcp), or sandboxes can't resolve any name while host-side DNS checks still pass.
 - Antivirus HTTPS scanning (e.g. Avast) breaks builds in local Docker: containers do not trust its certificate.

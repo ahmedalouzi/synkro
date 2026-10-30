@@ -110,6 +110,11 @@ ufw default allow outgoing
 ufw allow 22/tcp comment 'SSH'
 ufw allow 80/tcp comment 'HTTP Caddy challenge'
 ufw allow 443/tcp comment 'HTTPS Caddy'
+# Cloud Build sandboxes resolve names through Docker's embedded DNS, which forwards from the container to
+# dnsmasq on 172.30.0.1:53 (bridge build0, section 12). That traffic hits the host INPUT chain, so without
+# these rules "deny incoming" drops it and no build can resolve any name. Only DNS to the resolver is opened.
+ufw allow in on build0 to 172.30.0.1 port 53 proto udp comment 'sandbox DNS'
+ufw allow in on build0 to 172.30.0.1 port 53 proto tcp comment 'sandbox DNS'
 ufw --force enable
 
 # 8. Caddy Reverse Proxy Installation and Config
@@ -207,6 +212,8 @@ if [[ "${REPO_READY}" == "true" ]]; then
     "${BUILD_NETWORK_LIB}/packages/agent/src/models"
   install -m 0644 -o root -g root "${SYNKRO_HOME}/scripts/setup-build-network.ts" "${BUILD_NETWORK_LIB}/scripts/"
   install -m 0644 -o root -g root "${SYNKRO_HOME}/packages/agent/src/models/network-setup.ts" "${BUILD_NETWORK_LIB}/packages/agent/src/models/"
+  # Image for the in-container DNS check (the service runs it at every boot, and it runs again below).
+  DNS_CHECK_IMAGE="$(grep -oE "synkro/rn-sandbox:[0-9]+" "${SYNKRO_HOME}/packages/agent/src/models/docker-sandbox.ts" | head -n 1 || true)"
 
   cat <<UNIT > /etc/systemd/system/synkro-build-network.service
 [Unit]
@@ -219,6 +226,7 @@ Before=pm2-${SYNKRO_USER}.service
 [Service]
 Type=oneshot
 RemainAfterExit=yes
+Environment=SYNKRO_DNS_CHECK_IMAGE=${DNS_CHECK_IMAGE}
 ExecStart=/usr/bin/env tsx ${BUILD_NETWORK_LIB}/scripts/setup-build-network.ts
 
 [Install]
@@ -227,8 +235,28 @@ UNIT
 
   systemctl daemon-reload
   systemctl enable synkro-build-network.service
-  systemctl restart synkro-build-network.service
-  echo "[+] Build network ready (example.com is NXDOMAIN inside the sandbox)."
+  if ! systemctl restart synkro-build-network.service; then
+    journalctl -u synkro-build-network.service -n 30 --no-pager -o cat || true
+    echo "[!] FAILED: synkro-build-network.service did not start (log above). Cloud Builds will not work." >&2
+    exit 1
+  fi
+
+  # The service checks DNS from the host. Builds resolve through Docker's embedded DNS inside the container,
+  # which a host firewall can block while the host check passes, so check from a throwaway sandbox container too.
+  if [[ -z "${DNS_CHECK_IMAGE}" ]] || ! docker image inspect "${DNS_CHECK_IMAGE}" >/dev/null 2>&1; then
+    echo "[!] WARNING: no sandbox image ${DNS_CHECK_IMAGE:-synkro/rn-sandbox} yet: in-container DNS check skipped."
+    echo "[!] Build network NOT confirmed. Build the images (section 11) and run this script again."
+  else
+    DNS_RESULT="$(docker run --rm --network build-restricted --dns 172.30.0.1 "${DNS_CHECK_IMAGE}" sh -c \
+      'for n in registry.npmjs.org example.com; do if getent hosts "$n" >/dev/null; then echo "$n RESOLVED"; else echo "$n UNRESOLVED"; fi; done' 2>&1)" || true
+    echo "${DNS_RESULT}"
+    if ! grep -qx "registry.npmjs.org RESOLVED" <<<"${DNS_RESULT}" || ! grep -qx "example.com UNRESOLVED" <<<"${DNS_RESULT}"; then
+      echo "[!] FAILED: in-container DNS check (registry.npmjs.org must resolve, example.com must not)." >&2
+      echo "[!] Check 'ufw status' allows DNS in on build0 to 172.30.0.1 (section 7). Cloud Builds will not work." >&2
+      exit 1
+    fi
+    echo "[+] Build network ready (checked inside a ${DNS_CHECK_IMAGE} container: only allowlisted names resolve)."
+  fi
 else
   echo "[!] Skipping synkro-build-network.service until the repo is in ${SYNKRO_HOME}."
 fi

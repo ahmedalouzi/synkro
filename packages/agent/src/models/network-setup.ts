@@ -218,6 +218,25 @@ export async function verifySandboxDns(resolverIp = RESOLVER_IP): Promise<void> 
 }
 
 /**
+ * Checks DNS from inside a throwaway container on the sandbox network, the way builds resolve names: through
+ * Docker's embedded DNS, which forwards from the container's netns to RESOLVER_IP on build0. That traffic goes
+ * through the host INPUT chain, so a host firewall (ufw "deny incoming") can break every build while
+ * verifySandboxDns(), which queries RESOLVER_IP from the host, still passes. Throws with the reason.
+ */
+export async function verifySandboxDnsInContainer(image: string): Promise<void> {
+  const script = 'for n in registry.npmjs.org example.com; do if getent hosts "$n" >/dev/null; then echo "$n RESOLVED"; else echo "$n UNRESOLVED"; fi; done';
+  const { stdout } = await execFileAsync('docker', [
+    'run', '--rm', '--network', BUILD_NETWORK, '--dns', RESOLVER_IP, image, 'sh', '-c', script,
+  ], { timeout: 60_000 });
+  if (!stdout.includes('registry.npmjs.org RESOLVED')) {
+    throw new Error(`registry.npmjs.org does not resolve inside a sandbox container (is the host firewall dropping DNS from build0 to ${RESOLVER_IP}:53?)`);
+  }
+  if (!stdout.includes('example.com UNRESOLVED')) {
+    throw new Error('example.com resolves inside a sandbox container: the DNS allowlist is not applied');
+  }
+}
+
+/**
  * Checks, without root, that the firewall set up by setupBuildNetwork() is in place: the Docker network exists
  * and the sandbox resolver blocks names outside the allowlist. (The iptables rules need root to read.)
  */

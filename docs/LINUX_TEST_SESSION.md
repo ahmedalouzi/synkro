@@ -49,8 +49,12 @@ sudo mount -a && mount | grep /var/lib/docker        # must show xfs and prjquot
 
 ## 4. Firewall (as root)
 
-- [ ] `systemctl status synkro-build-network` is `active (exited)`; its log ends with "only allowlisted names resolve".
-- [ ] `dig @172.30.0.1 example.com` returns NXDOMAIN; `dig @172.30.0.1 registry.npmjs.org` returns an address.
+- [ ] `systemctl status synkro-build-network` is `active (exited)`; its log ends with "only allowlisted names resolve (checked inside a synkro/rn-sandbox:1 container)".
+- [ ] `ufw status` has the two "sandbox DNS" rules (in on build0 to 172.30.0.1 port 53, udp and tcp), and nothing else new.
+- [ ] `dig @172.30.0.1 example.com` returns NXDOMAIN; `dig @172.30.0.1 registry.npmjs.org` returns an address. This runs from the host, so it passes even when ufw blocks the sandboxes; the next check is the one that counts.
+- [ ] From a container, the way builds resolve (through Docker's embedded DNS):
+  `docker run --rm --network build-restricted --dns 172.30.0.1 synkro/rn-sandbox:1 sh -c 'getent hosts registry.npmjs.org; getent hosts example.com || echo "example.com UNRESOLVED"'`
+  prints an address for registry.npmjs.org and then `example.com UNRESOLVED`.
 - [ ] `iptables -S DOCKER-USER | grep build0`: the last build0 rule is `-i build0 -j DROP`.
 - [ ] `cd /opt/synkro/packages/agent && sudo npx tsx tests/dns-allowlist.test.ts` passes (includes the in-sandbox check).
 - [ ] `sudo npx tsx tests/network-fqdn-distinction.test.ts` passes (DNS BAD must say NXDOMAIN, not "RESOLVED").
