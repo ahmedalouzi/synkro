@@ -47,7 +47,7 @@ Row-level security on build_jobs and chat tables; isolation relies on `SET LOCAL
 
 **Release signing** (`models/signing-keys.ts`, `models/apk-verify.ts`): one upload key per (user, project), created on the project's first build (RSA 2048, PKCS#12, 30 years) and stored in `signing_keys`, encrypted with AES-256-GCM under `SYNKRO_SIGNING_ENC_KEY`. It reaches the build as `android.injected.signing.*` in `GRADLE_USER_HOME` (no secrets in args, env or logs); after the build apksigner must show the project's key, never the debug key. The desktop keeps the project ID in `.synkro/project.json`. Owners can download their keystore with `POST /api/build/signing/:projectId/keystore` (account password, 5 per hour).
 
-**Production today:** none. The old DigitalOcean droplet was deleted on Oct 20, 2026, with its database. Production is rebuilt from `scripts/setup-production-server.sh` (one droplet, PM2 process `synkro-server` as the `synkro` user, artifacts in `/var/lib/synkro/artifacts`); see `docs/LINUX_TEST_SESSION.md` and `docs/DEPLOYMENT_RUNBOOK.md`.
+**Production today:** `https://api.atomvs.com`, one DigitalOcean droplet built from `scripts/setup-production-server.sh` (Caddy with a Let's Encrypt certificate, PM2 process `synkro-server` as the `synkro` user, artifacts in `/var/lib/synkro/artifacts`); see `docs/LINUX_TEST_SESSION.md` and `docs/DEPLOYMENT_RUNBOOK.md`. The desktop's default gateway is this URL (`DEFAULT_GATEWAY_URL`, `GatewayResolver.PRODUCTION_DEFAULT`); a `gatewayUrl` in the user's settings still overrides it. The previous droplet was deleted on Oct 20, 2026, with its database.
 
 ## 6. Tests & CI
 - Agent suite: `pnpm --filter @peep/agent test` (custom runner, ~63 suites). With no Postgres, the DB suites are reported as skipped (CI fails instead). Cloud Build tests that need the real firewall skip themselves off Linux.
@@ -55,7 +55,7 @@ Row-level security on build_jobs and chat tables; isolation relies on `SET LOCAL
 - CI (`.github/workflows/production-pipeline.yml`): audit, typecheck, build, `pnpm -r test`; deploy jobs are placeholders. pnpm caching order looks wrong **(unverified)**.
 
 ## 7. Known risks (tracked on Trello)
-- Electron accepts any TLS certificate (`certificate-error` handler) and `.npmrc` has `strict-ssl=false`.
+- Sandbox egress is filtered by IP, not hostname: allowlisted names share CDN IPs (Cloudflare), so a build can reach other hosts on those IPs with `curl --resolve`. DNS still blocks the names. Fix: SNI proxy (post-beta).
 - The build worker runs in the same process as the public API, as a user in the `docker` group (root-equivalent).
 - Download/stream links carry the session token in the query string.
 - Server Dockerfile may not build/start as written (packages lack `build` scripts) **(unverified)**.

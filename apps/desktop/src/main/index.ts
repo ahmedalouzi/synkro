@@ -126,10 +126,6 @@ function createWindow(): void {
     return { action: 'deny' };
   });
 
-  app.on('certificate-error', (_e, _webContents, _url, _error, _certificate, callback) => {
-    callback(true);
-  });
-
   app.on('web-contents-created', (_e, contents) => {
     contents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
       log.error(`[DID-FAIL-LOAD] Error Code: ${errorCode}, Description: ${errorDescription}, URL: ${validatedURL}`);

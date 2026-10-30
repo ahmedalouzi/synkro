@@ -7,7 +7,7 @@ declare const __SYNKRO_SENTRY_DSN__: string | undefined;
 const BAKED_GATEWAY_URL = typeof __SYNKRO_GATEWAY_URL__ === 'string' ? __SYNKRO_GATEWAY_URL__ : '';
 const BAKED_SENTRY_DSN = typeof __SYNKRO_SENTRY_DSN__ === 'string' ? __SYNKRO_SENTRY_DSN__ : '';
 
-export const DEFAULT_GATEWAY_URL = 'https://api.synkro.com';
+export const DEFAULT_GATEWAY_URL = 'https://api.atomvs.com';
 
 /** User setting → dev .env → value baked at build time → default. */
 export function resolveGatewayUrl(settingsUrl?: string | null): string {

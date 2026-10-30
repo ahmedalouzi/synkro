@@ -8,7 +8,7 @@
  * Resolution order:
  *     1. settingsUrl    (user-configured via the Settings UI)
  *     2. envGatewayUrl  (SYNKRO_GATEWAY_URL — env override)
- *     3. PRODUCTION_DEFAULT (https://api.synkro.com)
+ *     3. PRODUCTION_DEFAULT (https://api.atomvs.com)
  */
 
 export interface GatewayResolverOptions {
@@ -22,7 +22,7 @@ export interface GatewayResolverOptions {
 
 export class GatewayResolver {
   /** Fallback base URL for production environments. */
-  static readonly PRODUCTION_DEFAULT = 'https://api.synkro.com';
+  static readonly PRODUCTION_DEFAULT = 'https://api.atomvs.com';
 
   /**
    * Resolves the active gateway base URL.

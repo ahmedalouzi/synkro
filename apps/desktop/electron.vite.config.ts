@@ -20,7 +20,7 @@ function releaseValues(command: string) {
   const fromFile = existsSync(file) ? parse(readFileSync(file)) : {};
   const gatewayUrl = process.env.SYNKRO_GATEWAY_URL || fromFile.SYNKRO_GATEWAY_URL || '';
   const sentryDsn = process.env.SENTRY_DSN || fromFile.SENTRY_DSN || '';
-  if (!gatewayUrl) console.warn('[build] SYNKRO_GATEWAY_URL not set: the app will use https://api.synkro.com');
+  if (!gatewayUrl) console.warn('[build] SYNKRO_GATEWAY_URL not set: the app will use the default https://api.atomvs.com');
   if (!sentryDsn) console.warn('[build] SENTRY_DSN not set: crash reports are disabled in this build');
   return { gatewayUrl, sentryDsn };
 }
