@@ -12,10 +12,10 @@ Naming note: code scope is `@peep/*` ("Peep"), runtime/env/infra names are `SYNK
 - `pnpm build` — desktop + server
 - `pnpm test` — runs only `@peep/agent` suite (custom runner, not jest/vitest)
 - `pnpm test:env:up` / `test:env:down` — Postgres for tests (docker-compose.test.yml, db `peep_test`)
-- `pnpm --filter @peep/server dev` — backend on :8080 (needs `DATABASE_URL`, `GOOGLE_API_KEY`)
+- `pnpm --filter @peep/server dev` — backend on :8080 (needs `DATABASE_URL`, `GOOGLE_API_KEY`; production also `SYNKRO_SIGNING_ENC_KEY` or it refuses to start)
 - `pnpm --filter @peep/agent eval` — AI evals
 
-Local dev backend: set `SYNKRO_DEV_AUTH_BYPASS=true` (token `dev_test_session`). NEVER set this in production.
+Local dev backend: sign up a normal account against it. There is no auth bypass any more (removed in f99371e1).
 
 ## Layout
 - `apps/desktop` — Electron (main / preload / renderer). IPC channel names + shared types live in `packages/shared/src/index.ts`.
@@ -35,8 +35,8 @@ Local dev backend: set `SYNKRO_DEV_AUTH_BYPASS=true` (token `dev_test_session`).
 8. Update the Trello card (comment + move) when work changes state.
 
 ## Known traps (see Trello backlog)
-- Tests that need Postgres are silently skipped (counted as passed) when the DB is unreachable. Start the test DB first.
+- Tests that need Postgres are reported as skipped (not failed) when the DB is unreachable locally; CI fails instead. Start the test DB first (`pnpm test:env:up`).
 - Two command-permission layers disagree (`packages/agent/src/tools/safety.ts` vs `apps/desktop/src/main/services/terminal-service.ts`).
 - No ESLint/Prettier; match surrounding style.
-- `.env.example` is broken (UTF-16, Sentry only).
-- Dev auth bypass relies on `NODE_ENV !== 'production'`; make sure `NODE_ENV=production` is set on the server.
+- Cloud Build changes must be checked on Linux too: on Windows/macOS the `build0` firewall and `--storage-opt` are not applied (see `docs/LINUX_TEST_SESSION.md`).
+- Antivirus HTTPS scanning (e.g. Avast) breaks builds in local Docker: containers do not trust its certificate.

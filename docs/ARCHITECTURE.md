@@ -41,23 +41,24 @@ Row-level security on build_jobs and chat tables; isolation relies on `SET LOCAL
 
 **Statuses:** queued → running → success | failed | cancelled.
 
-**Worker** (`models/build-worker.ts`, runs inside the API process): polls every 3 s, claims one queued job with `FOR UPDATE SKIP LOCKED`, extracts zip to `/tmp/builds`, runs the sandbox, checks for cancel every 5 s, extracts the APK, stores it (local disk by default; MinIO if configured). A reconciler fails jobs stuck `running` > 25 min; a reaper removes exited `build_sandbox_*` containers.
+**Worker** (`models/build-worker.ts`, runs inside the API process): polls every 3 s, claims one queued job with `FOR UPDATE SKIP LOCKED`, extracts zip to `/tmp/builds`, gets the project's signing key, runs the sandbox, checks for cancel every 5 s, extracts the APK, verifies its signature, stores it (local disk by default; MinIO if configured). A reconciler fails jobs stuck `running` longer than the longest sandbox timeout + 5 min (50 min); a reaper removes sandbox containers of finished jobs, and any older than that.
 
-**Sandbox** (`models/docker-sandbox.ts`): image per framework (flutter `synkro/flutter-sandbox:2`, RN pinned image); `--memory=5g --cpus=2 --pids-limit=384`, disk 15G/5G, `--cap-drop=ALL`, no-new-privileges, user 1000, 15 min timeout, restricted network `build0` with DNS allowlist (pub.dev, npm, Maven, Gradle, Google, GitHub) set up by `network-setup.ts` (needs root, iptables, ipset, dnsmasq). Artifact extraction uses lstat checks and a 250 MB cap.
+**Sandbox** (`models/docker-sandbox.ts`): image per framework (`synkro/flutter-sandbox:2`, `synkro/rn-sandbox:1`, built from `infra/docker`); `--memory=5g --cpus=2 --pids-limit=384`, disk 15G/5G, `--cap-drop=ALL`, no-new-privileges, user 1000; timeout 15 min Flutter, 45 min React Native (temporary). Expo projects without `android/` get `expo prebuild` first. Restricted network `build0`: dnsmasq forwards only allowlisted domains (npm, pub.dev, Maven, Gradle, Google, GitHub), everything else is NXDOMAIN, and iptables/ipset drop other traffic. Set up by root at boot (`synkro-build-network.service`, `scripts/setup-build-network.ts`); a non-root worker only verifies it. Artifact extraction uses lstat checks and a 250 MB cap.
 
-**Production today:** one DigitalOcean droplet, PM2 process `synkro-server`, artifacts in `/var/lib/synkro/artifacts`.
+**Release signing** (`models/signing-keys.ts`, `models/apk-verify.ts`): one upload key per (user, project), created on the project's first build (RSA 2048, PKCS#12, 30 years) and stored in `signing_keys`, encrypted with AES-256-GCM under `SYNKRO_SIGNING_ENC_KEY`. It reaches the build as `android.injected.signing.*` in `GRADLE_USER_HOME` (no secrets in args, env or logs); after the build apksigner must show the project's key, never the debug key. The desktop keeps the project ID in `.synkro/project.json`. Owners can download their keystore with `POST /api/build/signing/:projectId/keystore` (account password, 5 per hour).
+
+**Production today:** none. The old DigitalOcean droplet was deleted on Oct 20, 2026, with its database. Production is rebuilt from `scripts/setup-production-server.sh` (one droplet, PM2 process `synkro-server` as the `synkro` user, artifacts in `/var/lib/synkro/artifacts`); see `docs/LINUX_TEST_SESSION.md` and `docs/DEPLOYMENT_RUNBOOK.md`.
 
 ## 6. Tests & CI
-- Agent suite: `pnpm --filter @peep/agent test` (custom runner, ~55 suites). With no Postgres, 12 DB suites are skipped but reported as passed.
+- Agent suite: `pnpm --filter @peep/agent test` (custom runner, ~63 suites). With no Postgres, the DB suites are reported as skipped (CI fails instead). Cloud Build tests that need the real firewall skip themselves off Linux.
 - Desktop tests exist but have no `test` script; root `scripts/*.ts` are manual.
 - CI (`.github/workflows/production-pipeline.yml`): audit, typecheck, build, `pnpm -r test`; deploy jobs are placeholders. pnpm caching order looks wrong **(unverified)**.
 
 ## 7. Known risks (tracked on Trello)
-- Session tokens are logged in several places (desktop, gateway, server).
+- Session tokens are logged in plain text: `models/production-gateway.ts` (`[HTTP_TRACE] ... Session=`) and the server's request log in `apps/server/src/index.ts` (the `session` header).
 - Electron accepts any TLS certificate (`certificate-error` handler) and `.npmrc` has `strict-ssl=false`.
-- Worker with root-level network setup runs in the same process as the public API.
-- `/upload` writes to `/tmp/builds` without creating it; `framework`/`target` not validated; uploaded zips and old APKs are never deleted.
+- The build worker runs in the same process as the public API, as a user in the `docker` group (root-equivalent).
 - Download/stream links carry the session token in the query string.
 - Server Dockerfile may not build/start as written (packages lack `build` scripts) **(unverified)**.
 - Rate limiter and budget mutex are per-process.
-- Docs: README is stale; repo root has many leftover files.
+- Docs: README is stale.
