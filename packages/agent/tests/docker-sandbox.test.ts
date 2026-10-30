@@ -37,16 +37,16 @@ export default async function runDockerSandboxTests() {
       'RN build command must not pass android.injected.build.abi (the APK is then not written where the worker reads it)',
     );
 
-    // Signing no longer changes the command (it is injected through GRADLE_USER_HOME, see createSigningArchive).
+    // Signing no longer changes the command (it is injected through GRADLE_USER_HOME, see createGradleHomeArchive).
     console.log('  ✓ React Native ABI filters and directory safety verified.');
   }
 
   // Test 3: Flutter Build Command Preservation
   console.log('  [Test 3] Verify Flutter build command remains intact');
   {
-    const flutterCmd = getBuildCommand('flutter');
+    const flutterCmd = getBuildCommand('flutter', '3f9a1c07-be42-4d11-9a0e-123456789abc');
     assert.equal(
-      flutterCmd.includes('flutter build apk --release'),
+      flutterCmd.includes('flutter build apk --release --target-platform android-arm,android-arm64'),
       true,
       'Flutter build command must remain release APK build',
     );

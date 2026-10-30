@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { BUILD_TIMEOUT_MS, getBuildCommand } from '../src/models/docker-sandbox.js';
+import { BUILD_TIMEOUT_MS, flutterOrg, getBuildCommand } from '../src/models/docker-sandbox.js';
 
 /** Checks the React Native build steps; the real build runs in expo-android-build.test.ts on Linux. */
 export default async function run() {
@@ -60,13 +60,17 @@ export default async function run() {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 
-  // Temporary React Native timeout; the reconciler in build-worker.ts runs at 50 minutes.
-  assert.equal(BUILD_TIMEOUT_MS['react-native'], 45 * 60 * 1000);
+  // Temporary React Native timeout; the reconciler in build-worker.ts runs at 40 minutes.
+  assert.equal(BUILD_TIMEOUT_MS['react-native'], 35 * 60 * 1000);
   assert.equal(BUILD_TIMEOUT_MS.flutter, 15 * 60 * 1000);
 
-  // Flutter is unchanged.
+  // Flutter: stable package from the project ID (not com.example) and only the ARM ABIs.
   assert.equal(
-    getBuildCommand('flutter'),
-    'cd /build && ( [ -d android ] || flutter create --platforms=android . ) && flutter build apk --release',
+    getBuildCommand('flutter', '3F9A1C07-BE42-4d11-9a0e-123456789abc'),
+    'cd /build && ( [ -d android ] || flutter create --platforms=android --org com.atomvs.p3f9a1c07be . )'
+      + ' && flutter build apk --release --target-platform android-arm,android-arm64',
   );
+  assert.equal(flutterOrg('00000000-0000-4000-8000-000000000000'), 'com.atomvs.p0000000000');
+  assert.throws(() => getBuildCommand('flutter'), /project ID/);
+  assert.throws(() => flutterOrg('not-a-uuid'), /project ID/);
 }

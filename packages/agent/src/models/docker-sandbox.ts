@@ -9,6 +9,8 @@ export interface SandboxConfig {
   projectPath: string;
   timeoutMs?: number;
   framework?: BuildFramework;
+  /** The project's stable ID (a UUID). Flutter builds need it for the package name, see flutterOrg(). */
+  projectId?: string;
   /** Release signing key for this build (see signing-keys.ts). */
   signing?: SandboxSigning;
 }
@@ -26,6 +28,37 @@ export interface SandboxSigning {
 // GRADLE_USER_HOME, which keeps the passwords out of the command line, the environment and the build log.
 const GRADLE_USER_HOME = '/tmp/.gradle';
 const SIGNING_KEYSTORE_PATH = `${GRADLE_USER_HOME}/synkro-upload.p12`;
+
+/** ABIs packaged into every APK: real phones are ARM; x86/x86_64 are only for emulators. */
+export const PACKAGED_ABIS = ['arm64-v8a', 'armeabi-v7a'];
+
+/**
+ * Gradle init script (GRADLE_USER_HOME/init.d/, applied to every build) that packages only PACKAGED_ABIS.
+ * reactNativeArchitectures and Flutter's --target-platform only limit what is compiled; prebuilt .so files
+ * from AARs (Hermes, fbjni, ...) still ship for every ABI unless the app's ndk.abiFilters says otherwise.
+ * finalizeDsl runs after the app's build.gradle, so this overrides its own abiFilters without editing the
+ * user's files. Not -Pandroid.injected.build.abi: with it Gradle did not write the APK where we look for it.
+ * Exported for tests.
+ */
+export const ABI_INIT_SCRIPT = `// Atomvs Cloud Build: package only ${PACKAGED_ABIS.join(' and ')}.
+def abis = [${PACKAGED_ABIS.map((a) => `'${a}'`).join(', ')}]
+gradle.allprojects { project ->
+  project.plugins.withId('com.android.application') {
+    def components = project.extensions.findByName('androidComponents')
+    if (components != null) {
+      components.finalizeDsl { android ->
+        android.defaultConfig.ndk.abiFilters.clear()
+        android.defaultConfig.ndk.abiFilters.addAll(abis)
+      }
+    } else {
+      project.afterEvaluate {
+        project.android.defaultConfig.ndk.abiFilters.clear()
+        project.android.defaultConfig.ndk.abiFilters.addAll(abis)
+      }
+    }
+  }
+}
+`;
 
 /** Exported for tests. */
 export function signingGradleProperties(signing: SandboxSigning): string {
@@ -61,16 +94,22 @@ function tarEntry(name: string, mode: number, content: Buffer | null): Buffer {
 }
 
 /**
- * A tar archive for `docker cp -a - <container>:/` holding GRADLE_USER_HOME with the keystore and the signing
- * properties, owned by the sandbox user and readable only by it. Streamed over stdin, so nothing secret is
- * written to the host's disk. Exported for tests.
+ * A tar archive for `docker cp -a - <container>:/` holding GRADLE_USER_HOME: the ABI init script and, when the
+ * build is signed, the keystore and the signing properties. Owned by the sandbox user and readable only by it.
+ * Streamed over stdin, so nothing secret is written to the host's disk. Exported for tests.
  */
-export function createSigningArchive(signing: SandboxSigning): Buffer {
+export function createGradleHomeArchive(signing?: SandboxSigning): Buffer {
   const dir = GRADLE_USER_HOME.slice(1);
   return Buffer.concat([
     tarEntry(`${dir}/`, 0o700, null),
-    tarEntry(`${dir}/gradle.properties`, 0o600, Buffer.from(signingGradleProperties(signing), 'utf8')),
-    tarEntry(SIGNING_KEYSTORE_PATH.slice(1), 0o600, signing.keystore),
+    tarEntry(`${dir}/init.d/`, 0o700, null),
+    tarEntry(`${dir}/init.d/atomvs-abi.gradle`, 0o600, Buffer.from(ABI_INIT_SCRIPT, 'utf8')),
+    ...(signing
+      ? [
+          tarEntry(`${dir}/gradle.properties`, 0o600, Buffer.from(signingGradleProperties(signing), 'utf8')),
+          tarEntry(SIGNING_KEYSTORE_PATH.slice(1), 0o600, signing.keystore),
+        ]
+      : []),
     Buffer.alloc(1024),
   ]);
 }
@@ -130,12 +169,27 @@ const ENSURE_RN_ANDROID_PROJECT = [
   ') )',
 ].join(' ');
 
+/**
+ * The --org for `flutter create`: com.atomvs.p<first 10 hex of the project ID>. Without it Flutter uses
+ * com.example, which Google Play rejects. It must never change for a project (signing_keys.package_name), so it
+ * comes from the project ID: the same identity as the project's signing key, and two projects of one user with
+ * the same pubspec name still get different packages. Exported for tests.
+ */
+export function flutterOrg(projectId: string | undefined): string {
+  const hex = (projectId ?? '').replace(/-/g, '').toLowerCase().slice(0, 10);
+  if (!/^[0-9a-f]{10}$/.test(hex)) {
+    throw new Error('Flutter builds need the project ID (a UUID) for a stable package name');
+  }
+  return `com.atomvs.p${hex}`;
+}
+
 /** Exported for tests. */
-export function getBuildCommand(framework: BuildFramework): string {
+export function getBuildCommand(framework: BuildFramework, projectId?: string): string {
   if (framework === 'flutter') {
     // If the project lacks an android/ folder (e.g. web-only repo), generate it safely
-    // without overwriting existing lib/ or pubspec.yaml.
-    return 'cd /build && ( [ -d android ] || flutter create --platforms=android . ) && flutter build apk --release';
+    // without overwriting existing lib/ or pubspec.yaml. An existing android/ keeps its own applicationId.
+    return `cd /build && ( [ -d android ] || flutter create --platforms=android --org ${flutterOrg(projectId)} . )`
+      + ' && flutter build apk --release --target-platform android-arm,android-arm64';
   }
   // Append sandbox Gradle constraints to android/gradle.properties before invoking the wrapper:
   //   - workers.max=2: cap JVM worker processes to our CPU budget (avoids spawning host-core-count workers)
@@ -173,12 +227,13 @@ export function getBuildCommand(framework: BuildFramework): string {
   ].join(' && ');
 }
 
-// TEMPORARY: a blank Expo app took ~40 minutes in a 2-CPU sandbox, most of it downloading and compiling Gradle
-// dependencies from scratch. Go back to 15 minutes once the pre-built image exists
-// (Trello: "Pre-warmed RN/Expo sandbox image"). Keep the reconciler in build-worker.ts at least 5 minutes above this.
+// TEMPORARY: React Native/Expo builds download and compile Gradle dependencies from scratch. Measured on the Linux
+// server (Oct 30): Expo 23-25 min, bare RN 12 min, Flutter 11 min. Go back to 15 minutes once the pre-built image
+// exists (Trello: "Pre-warmed RN/Expo sandbox image"). The reconciler in build-worker.ts uses the longest of these
+// plus 5 minutes.
 export const BUILD_TIMEOUT_MS: Record<BuildFramework, number> = {
   'flutter': 15 * 60 * 1000,
-  'react-native': 45 * 60 * 1000,
+  'react-native': 35 * 60 * 1000,
 };
 
 function getArtifactPath(framework: BuildFramework): string {
@@ -225,7 +280,7 @@ export class DockerSandbox {
 
   /**
    * Arguments for `docker create`. They are visible to anyone on the host (docker inspect, ps), so they never
-   * carry secrets: the signing key goes in through createSigningArchive(). Public for tests.
+   * carry secrets: the signing key goes in through createGradleHomeArchive(). Public for tests.
    */
   createContainerArgs(netName: string): string[] {
     const framework = this.config.framework || 'flutter';
@@ -255,7 +310,7 @@ export class DockerSandbox {
       image,
     ];
 
-    createArgs.push('sh', '-c', `cd /build && ${getBuildCommand(framework)}`);
+    createArgs.push('sh', '-c', `cd /build && ${getBuildCommand(framework, this.config.projectId)}`);
     return createArgs;
   }
 
@@ -266,7 +321,13 @@ export class DockerSandbox {
     const netName = await this.setupNetwork(onLog);
     if (!netName) return false;
 
-    const createArgs = this.createContainerArgs(netName);
+    let createArgs: string[];
+    try {
+      createArgs = this.createContainerArgs(netName);
+    } catch (err: any) {
+      onLog(`[SYSTEM] ${err.message}\n`);
+      return false;
+    }
 
     onLog(`[SYSTEM] Creating ${framework} sandbox with security constraints...\n`);
 
@@ -298,21 +359,21 @@ export class DockerSandbox {
       return false;
     }
 
-    if (this.config.signing) {
-      onLog(`[SYSTEM] Injecting release signing key...\n`);
-      try {
-        await new Promise<void>((resolve, reject) => {
-          const cp = spawn('docker', ['cp', '-a', '-', `${this.containerName}:/`]);
-          let stderr = '';
-          cp.stderr?.on('data', (d) => { stderr += d.toString(); });
-          cp.on('error', reject);
-          cp.on('close', (code) => (code === 0 ? resolve() : reject(new Error(stderr.trim() || `docker cp exited with ${code}`))));
-          cp.stdin?.end(createSigningArchive(this.config.signing!));
-        });
-      } catch (err: any) {
-        onLog(`[SYSTEM] Signing key injection failed: ${err.message}\n`);
-        return false;
-      }
+    onLog(this.config.signing
+      ? `[SYSTEM] Injecting Gradle settings and release signing key...\n`
+      : `[SYSTEM] Injecting Gradle settings...\n`);
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const cp = spawn('docker', ['cp', '-a', '-', `${this.containerName}:/`]);
+        let stderr = '';
+        cp.stderr?.on('data', (d) => { stderr += d.toString(); });
+        cp.on('error', reject);
+        cp.on('close', (code) => (code === 0 ? resolve() : reject(new Error(stderr.trim() || `docker cp exited with ${code}`))));
+        cp.stdin?.end(createGradleHomeArchive(this.config.signing));
+      });
+    } catch (err: any) {
+      onLog(`[SYSTEM] Gradle settings injection failed: ${err.message}\n`);
+      return false;
     }
 
     onLog(`[SYSTEM] Starting ${framework} build process...\n`);

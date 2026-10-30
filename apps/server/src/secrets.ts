@@ -3,8 +3,9 @@ import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-sec
 const client = new SecretsManagerClient({ region: process.env.AWS_REGION || 'us-east-1' });
 
 export async function fetchProductionSecrets(): Promise<Record<string, string>> {
-  if (process.env.NODE_ENV !== 'production') {
-    // In dev/staging, fallback to env vars or dev secrets
+  // AWS Secrets Manager only when asked for. The DigitalOcean server reads its secrets from .env, and calling AWS
+  // there only logged an error at every boot.
+  if (process.env.SYNKRO_SECRETS_SOURCE !== 'aws') {
     return {
       GOOGLE_API_KEY: process.env.GOOGLE_API_KEY || '',
       OPENAI_API_KEY: process.env.OPENAI_API_KEY || '',

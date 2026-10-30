@@ -82,7 +82,7 @@ export async function extractZipSafely(sourceZipPath: string, extractPath: strin
 // ---------------------------------------------------------------------------
 // Reconciler: Recovers orphaned running jobs that the worker failed to complete
 // ---------------------------------------------------------------------------
-/** The longest sandbox timeout (45 minutes for React Native, see docker-sandbox.ts). */
+/** The longest sandbox timeout (35 minutes for React Native, see docker-sandbox.ts). */
 export const BUILD_TIMEOUT_MS = Math.max(...Object.values(SANDBOX_TIMEOUT_MS));
 export const GRACE_PERIOD_MS = 5 * 60 * 1000;
 /** A running job older than this is treated as abandoned: always past the sandbox's own timeout. */
@@ -407,6 +407,7 @@ export async function startBuildWorker() {
             jobId: job.id,
             projectPath: extractPath,
             framework,
+            projectId: job.project_id,
             signing: {
               keystore: signingKey.keystore,
               storePassword: signingKey.storePassword,
