@@ -1,10 +1,10 @@
 /**
- * The Synkro website: pricing/checkout, account & billing, docs.
- * Set VITE_SYNKRO_WEB_URL in apps/desktop/.env (it is baked in at build time, so it also
- * applies to installed builds); the fallback is only a placeholder until the site exists.
+ * The Atomvs website (https://www.atomvs.com, source in the synkro-web repo): pricing/checkout,
+ * account & billing, docs. VITE_SYNKRO_WEB_URL in apps/desktop/.env overrides it (baked in at
+ * build time, so it also applies to installed builds).
  */
 export const SYNKRO_WEB_URL = (
-  ((import.meta as { env?: Record<string, string | undefined> }).env?.VITE_SYNKRO_WEB_URL || 'https://atomvs.com')
+  ((import.meta as { env?: Record<string, string | undefined> }).env?.VITE_SYNKRO_WEB_URL || 'https://www.atomvs.com')
 ).replace(/\/+$/, '');
 
 /** Pages the app links to; the website needs to serve these paths. */
