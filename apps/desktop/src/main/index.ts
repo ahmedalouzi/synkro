@@ -1,5 +1,6 @@
 import './migrate-user-data';
 import { app, BrowserWindow, Menu, shell } from 'electron';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { cleanupServices, registerIpcHandlers, setMainWindow } from './ipc';
 import { config } from 'dotenv';
@@ -18,60 +19,100 @@ log.initialize();
 log.transports.file.level = 'info';
 log.transports.console.level = 'info';
 
-let sentryInitialized = false;
-
-export function syncSentryOptIn(enabled: boolean) {
-  if (enabled && !sentryInitialized) {
-    Sentry.init({
-      dsn: resolveSentryDsn(),
-      beforeSend(event: any) {
-        if (event.request && event.request.data) {
-          delete event.request.data;
-        }
-        
-        const tokenRegex = /(Bearer\s+|session_token=)([a-zA-Z0-9\-_]+)/g;
-        const apiKeyRegex = /AIza[0-9A-Za-z\-_]{35}|sk-[a-zA-Z0-9]{48}|sk-ant-[a-zA-Z0-9\-_]{90,}/g;
-
-        const scrubString = (str: string) => {
-          if (!str) return str;
-          let res = str.replace(tokenRegex, '$1[REDACTED]');
-          res = res.replace(apiKeyRegex, '[REDACTED_API_KEY]');
-          res = res.replace(/(?:[A-Z]:\\[^\s]+|\/[^\s]+)[\\/]([^\s\\/]+)/g, '[REDACTED]/$1');
-          return res;
-        };
-
-        if (event.breadcrumbs) {
-          event.breadcrumbs.forEach((bc: any) => {
-            if (bc.message) bc.message = scrubString(bc.message);
-            if (bc.data) {
-              for (const key in bc.data) {
-                if (typeof bc.data[key] === 'string') {
-                  bc.data[key] = scrubString(bc.data[key]);
-                }
-              }
-            }
-          });
-        }
-
-        if (event.exception && event.exception.values) {
-          event.exception.values.forEach((val: any) => {
-            if (val.value) val.value = scrubString(val.value);
-          });
-        }
-        
-        return event;
+function readSavedTelemetryOptIn(): boolean {
+  try {
+    const optInPath = join(app.getPath('userData'), 'telemetry', 'opt-in.json');
+    if (existsSync(optInPath)) {
+      const raw = readFileSync(optInPath, 'utf-8');
+      const parsed = JSON.parse(raw) as { enabled?: boolean };
+      if (typeof parsed?.enabled === 'boolean') {
+        return parsed.enabled;
       }
-    });
-    sentryInitialized = true;
-    log.info('[SENTRY] Initialized successfully (opt-in)');
-  } else if (!enabled && sentryInitialized) {
-    Sentry.close(2000).then(() => {
-      sentryInitialized = false;
-      log.info('[SENTRY] Closed successfully (opt-out)');
-    });
+    }
+  } catch {
+    // ignore
   }
+
+  try {
+    const storePath = join(app.getPath('userData'), 'peep-store.json');
+    if (existsSync(storePath)) {
+      const raw = readFileSync(storePath, 'utf-8');
+      const parsed = JSON.parse(raw) as { settings?: { telemetryEnabled?: boolean } };
+      if (typeof parsed?.settings?.telemetryEnabled === 'boolean') {
+        return parsed.settings.telemetryEnabled;
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  return false;
 }
 
+let telemetryEnabled = readSavedTelemetryOptIn();
+
+Sentry.init({
+  dsn: resolveSentryDsn(),
+  enabled: telemetryEnabled,
+  beforeSend(event: any) {
+    if (!telemetryEnabled) {
+      return null;
+    }
+
+    if (event.request && event.request.data) {
+      delete event.request.data;
+    }
+    
+    const tokenRegex = /(Bearer\s+|session_token=)([a-zA-Z0-9\-_]+)/g;
+    const apiKeyRegex = /AIza[0-9A-Za-z\-_]{35}|sk-[a-zA-Z0-9]{48}|sk-ant-[a-zA-Z0-9\-_]{90,}/g;
+
+    const scrubString = (str: string) => {
+      if (!str) return str;
+      let res = str.replace(tokenRegex, '$1[REDACTED]');
+      res = res.replace(apiKeyRegex, '[REDACTED_API_KEY]');
+      res = res.replace(/(?:[A-Z]:\\[^\s]+|\/[^\s]+)[\\/]([^\s\\/]+)/g, '[REDACTED]/$1');
+      return res;
+    };
+
+    if (event.breadcrumbs) {
+      event.breadcrumbs.forEach((bc: any) => {
+        if (bc.message) bc.message = scrubString(bc.message);
+        if (bc.data) {
+          for (const key in bc.data) {
+            if (typeof bc.data[key] === 'string') {
+              bc.data[key] = scrubString(bc.data[key]);
+            }
+          }
+        }
+      });
+    }
+
+    if (event.exception && event.exception.values) {
+      event.exception.values.forEach((val: any) => {
+        if (val.value) val.value = scrubString(val.value);
+      });
+    }
+    
+    return event;
+  },
+  beforeBreadcrumb(breadcrumb: any) {
+    if (!telemetryEnabled) {
+      return null;
+    }
+    return breadcrumb;
+  },
+});
+
+log.info(`[SENTRY] Initialized successfully (opt-in: ${telemetryEnabled})`);
+
+export function syncSentryOptIn(enabled: boolean) {
+  telemetryEnabled = enabled;
+  const client = Sentry.getClient();
+  if (client) {
+    (client.getOptions() as any).enabled = enabled;
+  }
+  log.info(`[SENTRY] Telemetry ${enabled ? 'enabled' : 'disabled'}`);
+}
 
 // Suppress harmless Chromium GPU cache permission errors on Windows
 if (process.platform === 'win32') {
