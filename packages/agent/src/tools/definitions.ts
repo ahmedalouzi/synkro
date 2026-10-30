@@ -332,7 +332,7 @@ export const OPENAI_TOOLS = [
     type: 'function' as const,
     function: {
       name: 'stop_app',
-      description: 'Stop the active application process started by Synkro.',
+      description: 'Stop the active application process started by Atomvs.',
       parameters: {
         type: 'object',
         properties: {

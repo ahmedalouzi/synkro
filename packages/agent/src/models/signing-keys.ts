@@ -83,8 +83,8 @@ export function generateUploadKeystore(): { keystore: Buffer; password: string; 
   cert.validity.notAfter = new Date(now);
   cert.validity.notAfter.setFullYear(now.getFullYear() + VALIDITY_YEARS);
   const subject = [
-    { name: 'commonName', value: 'Synkro Upload Key' },
-    { name: 'organizationName', value: 'Synkro' },
+    { name: 'commonName', value: 'Atomvs Upload Key' },
+    { name: 'organizationName', value: 'Atomvs' },
   ];
   cert.setSubject(subject);
   cert.setIssuer(subject);

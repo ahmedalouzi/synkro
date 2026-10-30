@@ -83,7 +83,7 @@ export const FRAMEWORK_IMAGES: Record<BuildFramework, string> = {
 // Runs inside the container on the copy of the project in /build, just before `expo prebuild`; the user's own
 // files are never touched. Only a static app.json is handled (an app.config.js is left as it is).
 // - Non-interactive prebuild refuses to run without android.package, which Expo templates leave out:
-//   one without it gets com.synkro.<slug>.
+//   one without it gets com.atomvs.<slug>.
 // - Prebuild fails on an image path that does not exist (older Synkro templates pointed at an empty assets/):
 //   only that key is removed, so Expo falls back to its default image.
 const PREPARE_EXPO_CONFIG_JS = `
@@ -95,7 +95,7 @@ if (fs.existsSync('app.json')) {
   expo.android = expo.android || {};
   if (!expo.android.package) {
     const slug = String(expo.slug || expo.name || 'app').toLowerCase().replace(/[^a-z0-9]/g, '');
-    expo.android.package = 'com.synkro.' + (/^[a-z]/.test(slug) ? slug : 'app' + slug);
+    expo.android.package = 'com.atomvs.' + (/^[a-z]/.test(slug) ? slug : 'app' + slug);
     console.log('[SYSTEM] android.package is not set, using ' + expo.android.package);
   }
   const IMAGE = /\.(png|jpe?g|webp|gif)$/i;

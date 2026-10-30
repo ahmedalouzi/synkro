@@ -95,7 +95,7 @@ buildRouter.post('/upload', requireAuth, buildRateLimiter, upload.single('projec
 
     // Every build is signed with its project's own key, found by this ID (.synkro/project.json on the desktop).
     if (!UUID_REGEX.test(projectId)) {
-      res.status(400).json({ error: 'This build has no project ID, so it cannot be signed. Update Synkro and build again.' });
+      res.status(400).json({ error: 'This build has no project ID, so it cannot be signed. Update Atomvs and build again.' });
       return;
     }
 
@@ -511,7 +511,7 @@ buildRouter.post('/signing/:projectId/keystore', async (req, res) => {
       projectId,
       packageName: key.packageName,
       keystoreType: 'PKCS12',
-      fileName: `synkro-upload-${projectId}.p12`,
+      fileName: `atomvs-upload-${projectId}.p12`,
       keystoreBase64: key.keystore.toString('base64'),
       alias: key.alias,
       storePassword: key.storePassword,

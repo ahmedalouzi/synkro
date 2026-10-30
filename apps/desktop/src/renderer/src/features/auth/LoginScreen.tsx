@@ -194,7 +194,7 @@ export function LoginScreen() {
               <span className="lx-brand-halo" />
               <SynkroMark size={40} />
             </span>
-            <span className="lx-brand-name">SYNKRO</span>
+            <span className="lx-brand-name">ATOMVS</span>
             <span className="lx-badge">
               <span className="lx-badge-dot" />
               Private beta
@@ -220,7 +220,7 @@ export function LoginScreen() {
                 <span className="lx-dot" style={{ background: '#ff5f57' }} />
                 <span className="lx-dot" style={{ background: '#febc2e' }} />
                 <span className="lx-dot" style={{ background: '#28c840' }} />
-                <span className="lx-terminal-title">agent — synkro</span>
+                <span className="lx-terminal-title">agent — atomvs</span>
               </div>
               <div className="lx-terminal-body">
                 <div className="lx-line lx-prompt">
@@ -266,7 +266,7 @@ export function LoginScreen() {
               </div>
               <h1 className="lx-title">{mode === 'signin' ? 'Welcome back' : 'Create your account'}</h1>
               <p className="lx-caption">
-                {mode === 'signin' ? 'Sign in to continue building with Synkro' : 'Start shipping apps with your AI engineer'}
+                {mode === 'signin' ? 'Sign in to continue building with Atomvs' : 'Start shipping apps with your AI engineer'}
               </p>
             </div>
 

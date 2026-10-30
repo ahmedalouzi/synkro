@@ -1,8 +1,8 @@
-# Synkro
+# Atomvs
 
 **The AI-Native Desktop IDE for Flutter & React Native Developers.**
 
-Synkro accelerates mobile and web cross-platform engineering by pairing a high-performance desktop editor with deep AI-assisted development, live component preview, Claude Code IDE integration, and cloud-native Android/Web compilation.
+Atomvs accelerates mobile and web cross-platform engineering by pairing a high-performance desktop editor with deep AI-assisted development, live component preview, Claude Code IDE integration, and cloud-native Android/Web compilation.
 
 ---
 
@@ -97,4 +97,4 @@ pnpm --filter @peep/desktop build:mac
 
 ## License
 
-Private and proprietary. Copyright © 2026 Synkro Inc. All rights reserved.
+Private and proprietary. Copyright © 2026 Atomvs All rights reserved.

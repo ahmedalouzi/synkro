@@ -599,7 +599,7 @@ import { StatusBar } from 'expo-status-bar';
 export default function App() {
   return (
     <View style={styles.container}>
-      <Text>Welcome to your new Synkro React Native app!</Text>
+      <Text>Welcome to your new Atomvs React Native app!</Text>
       <StatusBar style="auto" />
     </View>
   );

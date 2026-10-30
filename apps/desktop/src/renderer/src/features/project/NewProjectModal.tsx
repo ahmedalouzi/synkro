@@ -84,7 +84,7 @@ const PLATFORMS: Record<Platform, { label: string; hint: string; logo: ReactNode
 const ENV_MODES: Record<EnvMode, { label: string; hint: (platform: string) => string; icon: string }> = {
   beginner: {
     label: 'Managed',
-    hint: () => 'No SDK needed — Synkro runs the toolchain for you.',
+    hint: () => 'No SDK needed — Atomvs runs the toolchain for you.',
     icon: ICON.cloud,
   },
   advanced: {
@@ -333,7 +333,7 @@ export function NewProjectModal({ open, onClose, onCreated }: NewProjectModalPro
                   }
                   onChange={(e) => setPrompt(e.target.value)}
                 />
-                <small>The AI scaffolds the first version of your app. Requires a Synkro account.</small>
+                <small>The AI scaffolds the first version of your app. Requires an Atomvs account.</small>
               </label>
             )}
           </div>

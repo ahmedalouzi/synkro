@@ -222,7 +222,7 @@ function closeFolder() {
 const RULES_TEMPLATE = `# Project Rules
 
 Instructions the AI follows in this project (agent chat and Ctrl+K edits).
-Synkro also reads .cursorrules, .cursor/rules/*.mdc and AGENTS.md.
+Atomvs also reads .cursorrules, .cursor/rules/*.mdc and AGENTS.md.
 
 ## Stack
 -

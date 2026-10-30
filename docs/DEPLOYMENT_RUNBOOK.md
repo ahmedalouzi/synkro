@@ -1,6 +1,6 @@
-# Synkro Production Deployment & Rollback Runbook
+# Atomvs Production Deployment & Rollback Runbook
 
-This runbook defines the exact operational procedures for deploying, verifying, and rolling back the Synkro API Server (`@peep/server`) and Cloud Build Worker in production.
+This runbook defines the exact operational procedures for deploying, verifying, and rolling back the Atomvs API Server (`@peep/server`) and Cloud Build Worker in production.
 
 ---
 
@@ -48,7 +48,7 @@ echo "[+] Backup successfully verified: $BACKUP_FILE ($(du -h "$BACKUP_FILE" | c
 
 ## 3. Standard Zero-Downtime Deployment Procedure
 
-Synkro packages (such as `@peep/agent`) export TypeScript directly without bundling to CJS/ESM. Therefore, the production server runs via `tsx` under PM2 cluster/fork mode. Type-checking is performed upfront via `pnpm typecheck` before process reload.
+Atomvs packages (such as `@peep/agent`) export TypeScript directly without bundling to CJS/ESM. Therefore, the production server runs via `tsx` under PM2 cluster/fork mode. Type-checking is performed upfront via `pnpm typecheck` before process reload.
 
 ### Sandbox Images
 The Cloud Build worker uses two pre-warmed, unprivileged Docker sandboxes:
@@ -93,7 +93,7 @@ Run these automated checks immediately following PM2 reload:
 
 ### 1. Health & Server Version Header
 ```bash
-curl -i https://api.synkro.com/health
+curl -i https://api.atomvs.com/health
 # Expected: HTTP/2 200 OK
 # Header: X-Synkro-Server-Version matching `git rev-parse --short HEAD`
 # Body: {"status":"ok"}
@@ -101,9 +101,9 @@ curl -i https://api.synkro.com/health
 
 ### 2. User Authentication
 ```bash
-AUTH_RES=$(curl -s -X POST https://api.synkro.com/v1/auth/signin \
+AUTH_RES=$(curl -s -X POST https://api.atomvs.com/v1/auth/signin \
   -H "Content-Type: application/json" \
-  -d '{"email":"test-admin@synkro.com","password":"<secure-password>"}')
+  -d '{"email":"test-admin@atomvs.com","password":"<secure-password>"}')
 
 TOKEN=$(echo "$AUTH_RES" | jq -r '.sessionToken')
 test "$TOKEN" != "null" && test -n "$TOKEN"
@@ -112,20 +112,20 @@ echo "[+] Auth signin passed, token acquired."
 
 ### 3. Account Status & Usage Pool
 ```bash
-curl -sf -H "Authorization: Bearer $TOKEN" https://api.synkro.com/v1/account/status | jq .
+curl -sf -H "Authorization: Bearer $TOKEN" https://api.atomvs.com/v1/account/status | jq .
 # Expected: { "tier": "...", "weeklyPoolUsd": ..., "weeklyUsedUsd": ... }
 ```
 
 ### 4. Billing Webhook Rejection (Unsigned)
 ```bash
-STATUS_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST https://api.synkro.com/v1/billing/webhook)
+STATUS_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST https://api.atomvs.com/v1/billing/webhook)
 test "$STATUS_CODE" -eq 401
 echo "[+] Billing webhook signature validation passed (401 returned for unsigned request)."
 ```
 
 ### 5. Build History Endpoint
 ```bash
-curl -sf -H "Authorization: Bearer $TOKEN" https://api.synkro.com/api/build/history | jq .
+curl -sf -H "Authorization: Bearer $TOKEN" https://api.atomvs.com/api/build/history | jq .
 # Expected: 200 OK with JSON array
 ```
 

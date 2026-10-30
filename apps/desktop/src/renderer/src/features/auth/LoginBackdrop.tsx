@@ -75,7 +75,7 @@ export function BuiltWithTicker() {
   const items = [...BUILT_WITH, ...BUILT_WITH];
   return (
     <div className="lx-ticker" aria-hidden="true">
-      <span className="lx-ticker-label">Built with Synkro</span>
+      <span className="lx-ticker-label">Built with Atomvs</span>
       <div className="lx-ticker-track">
         <div className="lx-ticker-row">
           {items.map((name, i) => (

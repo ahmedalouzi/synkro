@@ -1,6 +1,6 @@
-# Onboarding — Synkro
+# Onboarding — Atomvs
 
-Your home base is the Trello board **"Synkro — Source of Truth"**. This file mirrors its ONBOARDING list. If they disagree, the board wins.
+Your home base is the Trello board **"Atomvs — Source of Truth"**. This file mirrors its ONBOARDING list. If they disagree, the board wins.
 
 ## Day 0 — Access
 - Join the Trello board; get GitHub access; read READ ME FIRST and Project map.
@@ -34,7 +34,7 @@ Write 2 Given/When/Then test cases (copy the TEMPLATE card). Log failures as bac
 
 # 🇪🇬 الأونبوردنج بالمصري
 
-اللوحة الرئيسية هي بورد Trello اسمها **"Synkro — Source of Truth"**. الملف ده نسخة من ليستة ONBOARDING، ولو في اختلاف البورد هي الأصل.
+اللوحة الرئيسية هي بورد Trello اسمها **"Atomvs — Source of Truth"**. الملف ده نسخة من ليستة ONBOARDING، ولو في اختلاف البورد هي الأصل.
 
 - **اليوم 0:** ادخل البورد واطلب صلاحية GitHub، واقرا READ ME FIRST وخريطة المشروع، واكتب كومنت "أهلاً" وحدد مين المراجع بتاعك.
 - **اليوم 1:** شغّل `pnpm install` و`pnpm dev` و`pnpm typecheck` و`pnpm test` (التست محتاج Postgres: `pnpm test:env:up`). لو وقفت 30 دقيقة قول على الكارت.

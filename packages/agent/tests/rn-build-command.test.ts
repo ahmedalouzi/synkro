@@ -51,7 +51,7 @@ export default async function run() {
     assert.deepEqual(expo, {
       name: 'My App 2', slug: '2-my-app', icon: './assets/icon.png',
       splash: { resizeMode: 'contain', backgroundColor: '#ffffff' },
-      android: { adaptiveIcon: { backgroundColor: '#ffffff' }, package: 'com.synkro.app2myapp' },
+      android: { adaptiveIcon: { backgroundColor: '#ffffff' }, package: 'com.atomvs.app2myapp' },
       web: {},
       plugins: ['expo-router'],
       extra: { remoteLogo: 'https://example.com/logo.png' },

@@ -389,7 +389,7 @@ export async function startBuildWorker() {
           let signingKey: SigningKey;
           try {
             if (!job.project_id || job.project_id === 'unknown') {
-              throw new Error('this build has no project ID. Update Synkro and build again.');
+              throw new Error('this build has no project ID. Update Atomvs and build again.');
             }
             signingKey = await withWorkerRole((c) => getOrCreateSigningKey(c, job.user_id, job.project_id));
           } catch (err: any) {

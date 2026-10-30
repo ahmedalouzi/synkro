@@ -1,9 +1,9 @@
-# CLAUDE.md — Synkro (repo name: peep)
+# CLAUDE.md — Atomvs (repo name: peep)
 
 Electron desktop AI coding agent for mobile developers (Flutter + React Native) with a Node/Express backend, PostgreSQL, and a Docker-sandbox "Cloud Build" that produces an APK.
-Source of truth for tasks/decisions: the Trello board "Synkro — Source of Truth". Architecture: `docs/ARCHITECTURE.md`. Onboarding: `docs/ONBOARDING.md`.
+Source of truth for tasks/decisions: the Trello board "Atomvs — Source of Truth". Architecture: `docs/ARCHITECTURE.md`. Onboarding: `docs/ONBOARDING.md`.
 
-Naming note: code scope is `@peep/*` ("Peep"), runtime/env/infra names are `SYNKRO_*` ("Synkro"). Both mean this product.
+Naming note: the product is Atomvs (atomvs.com, API at https://api.atomvs.com). Code scope `@peep/*` and env/infra names `SYNKRO_*` / `synkro` are legacy names for the same product; keep them.
 
 ## Commands (pnpm >= 9, Node >= 20)
 - `pnpm install`

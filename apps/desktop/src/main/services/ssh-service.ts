@@ -38,7 +38,7 @@ export function openSshTerminal(target: SshTarget): void {
 
   if (process.platform === 'win32') {
     // `start` opens a new console window; `cmd /k` keeps it open after ssh exits so errors stay visible.
-    spawn('cmd.exe', ['/c', 'start', '"Synkro SSH"', 'cmd.exe', '/k', sshCommand], {
+    spawn('cmd.exe', ['/c', 'start', '"Atomvs SSH"', 'cmd.exe', '/k', sshCommand], {
       detached: true,
       stdio: 'ignore',
       windowsHide: false,

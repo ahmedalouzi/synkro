@@ -90,7 +90,7 @@ function createWindow(): void {
     minWidth: 1024,
     minHeight: 640,
     show: false,
-    title: 'Synkro',
+    title: 'Atomvs',
     // Taskbar/window icon; in dev this replaces Electron's default. Packaged via electron-builder `files`.
     icon: join(__dirname, '../../resources/icons/icon.png'),
     backgroundColor: '#0d1117',
@@ -148,7 +148,7 @@ import { setupPoCIpc } from './ipc/poc';
 
 app.whenReady().then(() => {
   if (process.platform === 'win32') {
-    app.setAppUserModelId('com.synkro.desktop');
+    app.setAppUserModelId('com.atomvs.desktop');
     // Terminate any orphaned dart processes to release active sockets and lockfiles
     import('node:child_process').then(({ exec }) => {
       exec('taskkill /f /im dart.exe', () => {});

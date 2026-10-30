@@ -81,11 +81,11 @@ export class MockAIGateway implements AIGateway {
 
     if (isIdentityQuery) {
       if (/\b(sen|beni|kimsin|adın|anladın)\b/i.test(lowerPrompt)) {
-        content = 'Ben Synkro, sizin AI kodlama ve geliştirme asistanınızım. Evet, sizi gayet iyi anlıyorum! Sorularınızı yanıtlayabilir, sohbet edebilir veya projenizde kod düzenlemeleri yapmamı istediğinizde bana bildirebilirsiniz.';
+        content = 'Ben Atomvs, sizin AI kodlama ve geliştirme asistanınızım. Evet, sizi gayet iyi anlıyorum! Sorularınızı yanıtlayabilir, sohbet edebilir veya projenizde kod düzenlemeleri yapmamı istediğinizde bana bildirebilirsiniz.';
       } else if (/(أنت|انت|اسمك|تفهمني|تسمعني)/i.test(promptText)) {
-        content = 'أنا سفيان (Synkro)، مساعدك الذكي للتطوير والبرمجة. نعم، أفهمك بشكل ممتاز! يمكنني الإجابة على أسئلتك، والتحدث معك، أو مساعدتك في كتابة وتعديل الكود وإصلاح الأخطاء.';
+        content = 'أنا سفيان (Atomvs)، مساعدك الذكي للتطوير والبرمجة. نعم، أفهمك بشكل ممتاز! يمكنني الإجابة على أسئلتك، والتحدث معك، أو مساعدتك في كتابة وتعديل الكود وإصلاح الأخطاء.';
       } else {
-        content = 'I am Synkro, your AI development assistant. Yes, I understand you perfectly! I can answer general questions, discuss ideas, or help you write and debug code whenever you explicitly request it.';
+        content = 'I am Atomvs, your AI development assistant. Yes, I understand you perfectly! I can answer general questions, discuss ideas, or help you write and debug code whenever you explicitly request it.';
       }
     } else if (isGreeting) {
       if (/\b(merhaba|selam|günaydın|iyi|nasılsın)\b/i.test(lowerPrompt)) {
@@ -106,7 +106,7 @@ export class MockAIGateway implements AIGateway {
     } else {
       // General Conversation & Information
       if (/\b(nedir|nasıl|neden|açıkla)\b/i.test(lowerPrompt)) {
-        content = `Sorunuz için teşekkürler! "${promptText}" hakkında bilgi almak istiyorsunuz. Ben Synkro olarak hem genel sorularınızı yanıtlayabilir hem de mobil uygulama projenizi geliştirebilirim.`;
+        content = `Sorunuz için teşekkürler! "${promptText}" hakkında bilgi almak istiyorsunuz. Ben Atomvs olarak hem genel sorularınızı yanıtlayabilir hem de mobil uygulama projenizi geliştirebilirim.`;
       } else if (/(ما هو|كيف|لماذا|اشرح)/i.test(promptText)) {
         content = `شكراً لسؤالك! حول "${promptText}": بصفتي مساعدك الذكي، يمكنني الإجابة على استفساراتك العامة بالإضافة إلى تطوير وتعديل تطبيقاتك.`;
       } else {

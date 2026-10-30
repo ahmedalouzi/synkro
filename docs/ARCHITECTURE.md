@@ -1,4 +1,4 @@
-# Synkro Architecture
+# Atomvs Architecture
 
 > Written from a read-only code pass (commit 26d100a). Items marked **(unverified)** were inferred from code, not run. Update this file when behavior changes.
 

@@ -3,7 +3,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync 
 import { join } from 'node:path';
 
 /**
- * The app was renamed Peep → Synkro, which moves Electron's userData folder.
+ * The app was renamed Peep → Synkro → Atomvs; each rename moves Electron's userData folder.
  * On first launch the old folder is moved over so settings, recent projects and
  * encrypted secrets survive. The whole folder moves because the key that decrypts
  * the stored secrets lives in its "Local State" file.
@@ -63,7 +63,7 @@ function importLegacyProjects(legacy: string, target: string): void {
 function migrateUserData(): void {
   const target = app.getPath('userData');
   const appData = app.getPath('appData');
-  const legacy = [join(appData, 'Peep'), join(appData, '@peep', 'desktop')].find((dir) => existsSync(dir));
+  const legacy = [join(appData, 'Synkro'), join(appData, 'Peep'), join(appData, '@peep', 'desktop')].find((dir) => existsSync(dir));
   if (!legacy || legacy === target) return;
 
   if (existsSync(target)) {

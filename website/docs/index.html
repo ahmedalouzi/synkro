@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Documentation — Synkro AI Desktop IDE</title>
-  <meta name="description" content="Official Synkro documentation: Getting started, Flutter & React Native setup, AI Agent, Tab completions, Ctrl+K, Claude Code bridge, Cloud Build, and shortcuts." />
+  <title>Documentation — Atomvs AI Desktop IDE</title>
+  <meta name="description" content="Official Atomvs documentation: Getting started, Flutter & React Native setup, AI Agent, Tab completions, Ctrl+K, Claude Code bridge, Cloud Build, and shortcuts." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
@@ -16,7 +16,7 @@
     <div class="nav__inner container">
       <a class="nav__logo" href="/">
         <span class="nav__logo-icon">⚡</span>
-        <span>Synkro</span>
+        <span>Atomvs</span>
       </a>
       <div class="nav__links">
         <a href="/#features">Features</a>
@@ -31,8 +31,8 @@
   <header class="page-hero">
     <div class="container">
       <div class="section-badge">Documentation</div>
-      <h1>Synkro User &amp; Developer Guide</h1>
-      <p>Everything you need to build, preview, debug, and ship Flutter &amp; React Native apps with Synkro.</p>
+      <h1>Atomvs User &amp; Developer Guide</h1>
+      <p>Everything you need to build, preview, debug, and ship Flutter &amp; React Native apps with Atomvs.</p>
     </div>
   </header>
 
@@ -55,20 +55,20 @@
     <main class="docs-content">
       <section id="getting-started" class="docs-section">
         <h2>1. Installation &amp; Quick Start</h2>
-        <p>Download the latest Synkro installer for Windows (<code>.exe</code>) or macOS (<code>.dmg</code>) from the <a href="https://github.com/ahmedalouzi/synkro/releases/latest" style="color: var(--accent-2);" target="_blank" rel="noopener">Releases page</a>, launch the app, and sign in via <strong>Settings → Account</strong>.</p>
+        <p>Download the latest Atomvs installer for Windows (<code>.exe</code>) or macOS (<code>.dmg</code>) from the <a href="https://github.com/ahmedalouzi/synkro/releases/latest" style="color: var(--accent-2);" target="_blank" rel="noopener">Releases page</a>, launch the app, and sign in via <strong>Settings → Account</strong>.</p>
         <h3>Open or Scaffold a Project</h3>
         <ul>
           <li><strong>Existing project:</strong> Click <strong>Open Folder</strong> (<code>Ctrl+O</code> / <code>Cmd+O</code>) and select any Flutter or React Native directory.</li>
-          <li><strong>New project from AI prompt:</strong> Ask the AI Agent in an empty workspace to scaffold a new Flutter or Expo/React Native app — Synkro automatically detects the platform and boots the live phone-frame preview.</li>
+          <li><strong>New project from AI prompt:</strong> Ask the AI Agent in an empty workspace to scaffold a new Flutter or Expo/React Native app — Atomvs automatically detects the platform and boots the live phone-frame preview.</li>
         </ul>
       </section>
 
       <section id="flutter-rn-setup" class="docs-section">
         <h2>2. Flutter &amp; React Native Setup</h2>
-        <p>Synkro supports both <strong>Flutter</strong> (<code>pubspec.yaml</code>) and <strong>React Native / Expo</strong> (<code>package.json</code>) out of the box.</p>
+        <p>Atomvs supports both <strong>Flutter</strong> (<code>pubspec.yaml</code>) and <strong>React Native / Expo</strong> (<code>package.json</code>) out of the box.</p>
         <ul>
-          <li><strong>Flutter SDK Path:</strong> If <code>flutter</code> is not on your system <code>PATH</code>, set the Flutter SDK directory in <strong>Settings → SDK Paths</strong>. Synkro automatically injects it into integrated terminals and analyzer runs.</li>
-          <li><strong>Live Phone-Frame Preview:</strong> When a project opens, Synkro starts the web/preview server, renders it inside a selectable device frame (iPhone 15, Pixel 8, Galaxy S24), and triggers hot-reload automatically whenever you or the AI Agent save a file.</li>
+          <li><strong>Flutter SDK Path:</strong> If <code>flutter</code> is not on your system <code>PATH</code>, set the Flutter SDK directory in <strong>Settings → SDK Paths</strong>. Atomvs automatically injects it into integrated terminals and analyzer runs.</li>
+          <li><strong>Live Phone-Frame Preview:</strong> When a project opens, Atomvs starts the web/preview server, renders it inside a selectable device frame (iPhone 15, Pixel 8, Galaxy S24), and triggers hot-reload automatically whenever you or the AI Agent save a file.</li>
           <li><strong>Physical &amp; Emulator Devices:</strong> Use the top Device Selector to deploy directly to connected Android/iOS devices via <code>flutter run -d &lt;deviceId&gt;</code> or <code>react-native run-android</code>.</li>
         </ul>
       </section>
@@ -96,13 +96,13 @@
         <p>Give the AI Agent explicit architectural guardrails and context:</p>
         <ul>
           <li><strong><code>@file</code> Mentions:</strong> Type <code>@</code> in the chat input to attach specific files or folders to your prompt.</li>
-          <li><strong><code>.synkro/rules.md</code>:</strong> Create a <code>.synkro/rules.md</code> (or <code>CLAUDE.md</code>) file in your project root to define state-management conventions (e.g., Riverpod, Bloc, Zustand), folder structure, and design tokens. Synkro automatically injects these rules into every agent turn.</li>
+          <li><strong><code>.synkro/rules.md</code>:</strong> Create a <code>.synkro/rules.md</code> (or <code>CLAUDE.md</code>) file in your project root to define state-management conventions (e.g., Riverpod, Bloc, Zustand), folder structure, and design tokens. Atomvs automatically injects these rules into every agent turn.</li>
         </ul>
       </section>
 
       <section id="claude-bridge" class="docs-section">
         <h2>6. Claude Code IDE Bridge</h2>
-        <p>Synkro includes a built-in WebSocket/SSE IDE server compatible with the <code>claude</code> CLI. Any terminal opened inside Synkro automatically exports <code>CLAUDE_CODE_SSE_PORT</code> and <code>ENABLE_IDE_INTEGRATION=true</code> so running <code>claude</code> in the integrated terminal connects directly to your open editor tabs and selection.</p>
+        <p>Atomvs includes a built-in WebSocket/SSE IDE server compatible with the <code>claude</code> CLI. Any terminal opened inside Atomvs automatically exports <code>CLAUDE_CODE_SSE_PORT</code> and <code>ENABLE_IDE_INTEGRATION=true</code> so running <code>claude</code> in the integrated terminal connects directly to your open editor tabs and selection.</p>
       </section>
 
       <section id="cloud-build" class="docs-section">
@@ -111,7 +111,7 @@
         <ol>
           <li>Open the <strong>Cloud Build</strong> panel in the sidebar.</li>
           <li>Select your framework (<code>flutter</code> or <code>react-native</code>) and target (<code>apk</code> or <code>aab</code>).</li>
-          <li>Click <strong>Start Cloud Build</strong>. Synkro zips your project, validates the archive, runs the build inside an isolated Docker container, streams live logs over SSE, and provides a one-click download link when complete.</li>
+          <li>Click <strong>Start Cloud Build</strong>. Atomvs zips your project, validates the archive, runs the build inside an isolated Docker container, streams live logs over SSE, and provides a one-click download link when complete.</li>
         </ol>
       </section>
 
@@ -141,7 +141,7 @@
 
       <section id="usage-limits" class="docs-section">
         <h2>9. Plans &amp; Usage Quotas</h2>
-        <p>Synkro enforces transparent weekly AI model pools (`usage-limits.ts`):</p>
+        <p>Atomvs enforces transparent weekly AI model pools (`usage-limits.ts`):</p>
         <ul>
           <li><strong>Free Plan ($0/mo):</strong> $0.50/week model pool (resets Mondays 00:00 UTC), 2,000 Tab completions/month, Auto model routing, 10 chat req/min.</li>
           <li><strong>Pro Plan ($20/mo):</strong> $5.00/week model pool, unlimited Tab completions, manual model selection, graceful fallback to Auto when the weekly pool is exhausted, 40 chat req/min.</li>
@@ -156,7 +156,7 @@
       <div class="footer__brand">
         <a class="nav__logo" href="/">
           <span class="nav__logo-icon">⚡</span>
-          <span>Synkro</span>
+          <span>Atomvs</span>
         </a>
         <p>The AI desktop IDE for Flutter &amp; React Native developers.</p>
       </div>
@@ -176,13 +176,13 @@
         </div>
         <div>
           <strong>Community</strong>
-          <a href="mailto:support@synkro.com">Support</a>
+          <a href="mailto:support@atomvs.com">Support</a>
           <a href="https://github.com/ahmedalouzi/synkro" target="_blank" rel="noopener">GitHub</a>
         </div>
       </div>
     </div>
     <div class="container footer__bottom">
-      <span>© 2026 Synkro. All rights reserved.</span>
+      <span>© 2026 Atomvs. All rights reserved.</span>
       <span>Built for Flutter &amp; React Native engineers</span>
     </div>
   </footer>

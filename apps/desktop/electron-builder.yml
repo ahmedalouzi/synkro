@@ -1,5 +1,5 @@
-appId: com.synkro.desktop
-productName: Synkro
+appId: com.atomvs.desktop
+productName: Atomvs
 directories:
   output: release
 files:

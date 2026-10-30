@@ -139,7 +139,7 @@ export function HomeScreen() {
               </g>
               <circle cx="16" cy="16" r="1.6" fill="currentColor" />
             </svg>
-            <span className="home__wordmark">SYNKRO</span>
+            <span className="home__wordmark">ATOMVS</span>
           </div>
 
           {user && (
@@ -148,7 +148,7 @@ export function HomeScreen() {
               {isFreePlan && (
                 <>
                   <span className="home__plan-dot">·</span>
-                  <button type="button" className="home__link" title="Opens Synkro pricing" onClick={() => openWebPage('pricing')}>Upgrade</button>
+                  <button type="button" className="home__link" title="Opens Atomvs pricing" onClick={() => openWebPage('pricing')}>Upgrade</button>
                 </>
               )}
             </div>

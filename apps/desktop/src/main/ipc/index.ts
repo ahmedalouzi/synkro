@@ -404,8 +404,8 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
     const win = BrowserWindow.fromWebContents(event.sender);
     const options = {
       type: 'info' as const,
-      title: 'Synkro',
-      message: 'Synkro',
+      title: 'Atomvs',
+      message: 'Atomvs',
       detail,
       buttons: ['Copy', 'OK'],
       defaultId: 1,
@@ -707,7 +707,7 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
       height: size.height,
       minWidth: 240,
       minHeight: 320,
-      title: 'Synkro Mobile Preview',
+      title: 'Atomvs Mobile Preview',
       backgroundColor: '#00000000',
       transparent: true,
       frame: false,

@@ -81,7 +81,7 @@ export function NoProjectEmptyState({
               <circle cx="6.9" cy="21.25" r="2" fill="#93c5fd" />
               <circle cx="25.1" cy="21.25" r="2" fill="#93c5fd" />
             </svg>
-            <h1 className="synkro-title">SYNKRO</h1>
+            <h1 className="synkro-title">ATOMVS</h1>
           </div>
           {user && (
             <div className="synkro-subtitle" style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-muted)', marginTop: '4px' }}>

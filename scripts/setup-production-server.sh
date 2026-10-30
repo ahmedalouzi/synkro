@@ -15,7 +15,7 @@ fi
 
 # Environment & Config
 export DEBIAN_FRONTEND=noninteractive
-SYNKRO_DOMAIN="${SYNKRO_DOMAIN:-api.synkro.com}"
+SYNKRO_DOMAIN="${SYNKRO_DOMAIN:-api.atomvs.com}"
 SYNKRO_USER="synkro"
 SYNKRO_HOME="/opt/synkro"
 NODE_VERSION="20"

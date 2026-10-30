@@ -92,7 +92,7 @@ export function TitleBar() {
       {/* ── Left: logo, menus, navigation ── */}
       <div className="topbar__left">
         {!IS_MAC && (
-          <svg className="topbar__logo" width="16" height="16" viewBox="0 0 32 32" fill="none" aria-label="Synkro">
+          <svg className="topbar__logo" width="16" height="16" viewBox="0 0 32 32" fill="none" aria-label="Atomvs">
             <g stroke="currentColor" strokeWidth="2.4" fill="none" strokeLinecap="round">
               <ellipse cx="16" cy="16" rx="5" ry="11" />
               <ellipse cx="16" cy="16" rx="5" ry="11" transform="rotate(60 16 16)" />
@@ -124,7 +124,7 @@ export function TitleBar() {
       {/* ── Right: build, layout, settings, account ── */}
       <div className="topbar__right">
         {user && isFreePlan && (
-          <button type="button" className="topbar__upgrade" title="Opens Synkro pricing" onClick={() => openWebPage('pricing')}>Upgrade to Pro</button>
+          <button type="button" className="topbar__upgrade" title="Opens Atomvs pricing" onClick={() => openWebPage('pricing')}>Upgrade to Pro</button>
         )}
 
         {canBuild && (

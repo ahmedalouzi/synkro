@@ -4,7 +4,7 @@
  * applies to installed builds); the fallback is only a placeholder until the site exists.
  */
 export const SYNKRO_WEB_URL = (
-  ((import.meta as { env?: Record<string, string | undefined> }).env?.VITE_SYNKRO_WEB_URL || 'https://synkro.com')
+  ((import.meta as { env?: Record<string, string | undefined> }).env?.VITE_SYNKRO_WEB_URL || 'https://atomvs.com')
 ).replace(/\/+$/, '');
 
 /** Pages the app links to; the website needs to serve these paths. */

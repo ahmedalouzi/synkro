@@ -2,9 +2,9 @@
   "name": "@peep/desktop",
   "version": "0.1.0",
   "private": true,
-  "productName": "Synkro",
-  "description": "Synkro desktop application",
-  "author": "Synkro",
+  "productName": "Atomvs",
+  "description": "Atomvs desktop application",
+  "author": "Atomvs",
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",

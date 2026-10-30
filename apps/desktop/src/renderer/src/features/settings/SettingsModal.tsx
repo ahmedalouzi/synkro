@@ -342,14 +342,14 @@ export function SettingsModal({ open, onClose, initialSection }: SettingsModalPr
   /* ── Sections ── */
 
   const accountRow = accountLoading ? (
-    <Row title="Synkro Account" description="Loading account…" query={query} />
+    <Row title="Atomvs Account" description="Loading account…" query={query} />
   ) : signedIn ? (
-    <Row title="Synkro Account" description={`Manage your account and billing · ${account!.email}`} query={query}>
-      <button type="button" className="sx-btn" title="Opens the Synkro website" onClick={() => openWebPage('account')}>Open ↗</button>
+    <Row title="Atomvs Account" description={`Manage your account and billing · ${account!.email}`} query={query}>
+      <button type="button" className="sx-btn" title="Opens the Atomvs website" onClick={() => openWebPage('account')}>Open ↗</button>
       <button type="button" className="sx-btn" onClick={() => void handleSignOut()}>Sign out</button>
     </Row>
   ) : (
-    <Row title="Synkro Account" description="Sign in to use the AI agent, chat and Tab completions." query={query}>
+    <Row title="Atomvs Account" description="Sign in to use the AI agent, chat and Tab completions." query={query}>
       <button type="button" className="sx-btn" onClick={() => setAuthMode('signup')}>Sign up</button>
       <button type="button" className="sx-btn sx-btn--primary" onClick={() => setAuthMode('signin')}>Sign in</button>
     </Row>
@@ -357,13 +357,13 @@ export function SettingsModal({ open, onClose, initialSection }: SettingsModalPr
 
   const upgradeRow = (
     <Row title="Upgrade to Pro" description="More weekly AI usage, unlimited Tab completions, and the most capable models." query={query}>
-      <button type="button" className="sx-btn sx-btn--upgrade" title="Opens Synkro pricing" onClick={() => openWebPage('pricing')}>↑ Upgrade</button>
+      <button type="button" className="sx-btn sx-btn--upgrade" title="Opens Atomvs pricing" onClick={() => openWebPage('pricing')}>↑ Upgrade</button>
     </Row>
   );
 
   const authForm = authMode && (
     <form className="sx-auth" onSubmit={handleAuthSubmit}>
-      <div className="sx-auth__title">{authMode === 'signin' ? 'Sign in to Synkro' : 'Create a Synkro account'}</div>
+      <div className="sx-auth__title">{authMode === 'signin' ? 'Sign in to Atomvs' : 'Create an Atomvs account'}</div>
       {authError && <div className="sx-error">{authError}</div>}
       <input className="sx-input" type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required disabled={authBusy} autoFocus />
       <input className="sx-input" type="password" placeholder="Password (8+ characters)" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={8} disabled={authBusy} />
@@ -440,7 +440,7 @@ export function SettingsModal({ open, onClose, initialSection }: SettingsModalPr
             </Row>
             <Row
               title="Included Usage"
-              description={account?.weekResetsAt ? `Refreshes weekly · next reset ${formatDate(account.weekResetsAt)}` : 'Usage is tracked and enforced by the Synkro server.'}
+              description={account?.weekResetsAt ? `Refreshes weekly · next reset ${formatDate(account.weekResetsAt)}` : 'Usage is tracked and enforced by the Atomvs server.'}
               query={query}
             >
               <div className="sx-meter">
@@ -461,7 +461,7 @@ export function SettingsModal({ open, onClose, initialSection }: SettingsModalPr
             </Row>
             {isFreePlan && upgradeRow}
             <Row title="Billing" description="Manage your subscription, payment method and invoices" query={query}>
-              <button type="button" className="sx-btn" title="Opens the Synkro website" onClick={() => openWebPage('billing')}>Open ↗</button>
+              <button type="button" className="sx-btn" title="Opens the Atomvs website" onClick={() => openWebPage('billing')}>Open ↗</button>
             </Row>
             <Row title="Refresh" description="Fetch the latest usage from the server" query={query}>
               <button type="button" className="sx-btn" onClick={() => void loadAccount()} disabled={accountLoading}>
@@ -482,7 +482,7 @@ export function SettingsModal({ open, onClose, initialSection }: SettingsModalPr
           return (
             <Row key={m.label} title={m.label} description={locked ? `${m.hint} · available on paid plans` : m.hint} query={query}>
               {locked ? (
-                <button type="button" className="sx-btn" title="Opens Synkro pricing" onClick={() => openWebPage('pricing')}>🔒 Upgrade</button>
+                <button type="button" className="sx-btn" title="Opens Atomvs pricing" onClick={() => openWebPage('pricing')}>🔒 Upgrade</button>
               ) : (
                 <button
                   type="button"
@@ -520,7 +520,7 @@ export function SettingsModal({ open, onClose, initialSection }: SettingsModalPr
 
     tab: (
       <Card>
-        <Row title="Synkro Tab" description="AI suggestions as you type. Tab accepts, Esc dismisses, Ctrl+→ accepts word by word." query={query}>
+        <Row title="Atomvs Tab" description="AI suggestions as you type. Tab accepts, Esc dismisses, Ctrl+→ accepts word by word." query={query}>
           <CommandToggle id="peep.toggleAICompletions" onToggled={refresh} />
         </Row>
         <Row title="Trigger Suggestion" description="Ask for a suggestion at the cursor at any time with Alt+\" query={query} />
@@ -561,7 +561,7 @@ export function SettingsModal({ open, onClose, initialSection }: SettingsModalPr
       <Card>
         <Row
           title="Anonymous Usage Data"
-          description="Share feature usage and crash counts to help improve Synkro. Never includes code, file names or personal data."
+          description="Share feature usage and crash counts to help improve Atomvs. Never includes code, file names or personal data."
           query={query}
         >
           <Toggle checked={telemetryEnabled} onChange={(v) => void handleTelemetry(v)} />
@@ -572,7 +572,7 @@ export function SettingsModal({ open, onClose, initialSection }: SettingsModalPr
     beta: (
       <>
         <Card>
-          <Row title="Developer Mode" description="Use your own AI provider key instead of a Synkro account" query={query}>
+          <Row title="Developer Mode" description="Use your own AI provider key instead of an Atomvs account" query={query}>
             <Toggle checked={developerMode} onChange={(v) => void handleDeveloperMode(v)} />
           </Row>
           <Row title="Developer Tools" description="Open Chromium developer tools for this window (Ctrl+Shift+I)" query={query}>
@@ -604,7 +604,7 @@ export function SettingsModal({ open, onClose, initialSection }: SettingsModalPr
 
     about: (
       <Card>
-        <Row title="Version" description={`Synkro ${version || '—'} · ${navigator.platform}`} query={query} />
+        <Row title="Version" description={`Atomvs ${version || '—'} · ${navigator.platform}`} query={query} />
         <Row
           title="Software Update"
           description={
@@ -614,7 +614,7 @@ export function SettingsModal({ open, onClose, initialSection }: SettingsModalPr
               : updateInfo.status === 'ready' ? `Version ${updateInfo.version} is ready to install.`
               : updateInfo.status === 'not-available' ? 'You are on the latest version.'
               : updateInfo.status === 'error' ? `Update failed: ${updateInfo.error}`
-              : 'Check for a newer version of Synkro.'
+              : 'Check for a newer version of Atomvs.'
           }
           query={query}
         >
@@ -641,11 +641,11 @@ export function SettingsModal({ open, onClose, initialSection }: SettingsModalPr
   const initial = account?.email?.charAt(0).toUpperCase() ?? '?';
 
   return (
-    <div className="sx-page" style={{ top: 35 }} role="dialog" aria-label="Synkro Settings">
+    <div className="sx-page" style={{ top: 35 }} role="dialog" aria-label="Atomvs Settings">
       <div className="sx-tabbar">
         <div className="sx-tab">
           <Icon name="settings" />
-          <span>Synkro Settings</span>
+          <span>Atomvs Settings</span>
           <button type="button" className="sx-tab__close" title="Close (Esc)" onClick={handleClose}>×</button>
         </div>
       </div>
@@ -685,7 +685,7 @@ export function SettingsModal({ open, onClose, initialSection }: SettingsModalPr
           ))}
 
           <div className="sx-nav__group">
-            <button type="button" className="sx-nav__item" title="Opens the Synkro docs" onClick={() => openWebPage('docs')}>
+            <button type="button" className="sx-nav__item" title="Opens the Atomvs docs" onClick={() => openWebPage('docs')}>
               <Icon name="rules" />
               Docs ↗
             </button>

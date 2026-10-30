@@ -1,6 +1,6 @@
-# Synkro Desktop Release Packaging Runbook
+# Atomvs Desktop Release Packaging Runbook
 
-This document details the exact process for building, signing, validating, and distributing production installers for Synkro Desktop (`com.synkro.desktop`) on Windows and macOS.
+This document details the exact process for building, signing, validating, and distributing production installers for Atomvs Desktop (`com.atomvs.desktop`) on Windows and macOS.
 
 ---
 
@@ -12,14 +12,14 @@ All release packaging commands run from the root or the `apps/desktop` package d
 Copy `apps/desktop/.env.production.example` to `apps/desktop/.env` and verify gateway URL:
 ```bash
 cp apps/desktop/.env.production.example apps/desktop/.env
-# Verify SYNKRO_GATEWAY_URL=https://api.synkro.com
+# Verify SYNKRO_GATEWAY_URL=https://api.atomvs.com
 ```
 
 ### Packaging Commands
 | Target Platform | Package Manager Command | Output Artifact |
 |---|---|---|
-| **Windows (x64)** | `pnpm --filter @peep/desktop build:win` | `apps/desktop/release/Synkro Setup <version>.exe` |
-| **macOS (Universal/Apple Silicon/x64)** | `pnpm --filter @peep/desktop build:mac` | `apps/desktop/release/Synkro-<version>.dmg`, `.zip` |
+| **Windows (x64)** | `pnpm --filter @peep/desktop build:win` | `apps/desktop/release/Atomvs Setup <version>.exe` |
+| **macOS (Universal/Apple Silicon/x64)** | `pnpm --filter @peep/desktop build:mac` | `apps/desktop/release/Atomvs-<version>.dmg`, `.zip` |
 | **Current Host Platform** | `pnpm package` | Local platform target binary |
 
 ---
@@ -40,13 +40,13 @@ pnpm --filter @peep/desktop build:win
 Until reputation is established in Microsoft SmartScreen, Windows Defender prompts with "Windows protected your PC":
 1. Instruct cohort users to click **"More info"**.
 2. Click **"Run anyway"**.
-3. The Synkro NSIS installer runs cleanly.
+3. The Atomvs NSIS installer runs cleanly.
 
 ### 2.2 macOS Code Signing & Notarization
 Prerequisites: Apple Developer Account ($99/yr), Developer ID Application Certificate, and App-Specific Password.
 ```bash
 export CSC_NAME="Developer ID Application: Your Org (TEAMID)"
-export APPLE_ID="developer@synkro.com"
+export APPLE_ID="developer@atomvs.com"
 export APPLE_APP_SPECIFIC_PASSWORD="abcd-efgh-ijkl-mnop"
 export APPLE_TEAM_ID="TEAMID1234"
 
@@ -57,7 +57,7 @@ pnpm --filter @peep/desktop build:mac
 If testing an unsigned `.dmg` build on macOS:
 1. Open Terminal and run:
    ```bash
-   xattr -d com.apple.quarantine /Applications/Synkro.app
+   xattr -d com.apple.quarantine /Applications/Atomvs.app
    ```
 2. Or navigate to **System Settings > Privacy & Security**, scroll down to the security section, and click **"Open Anyway"**.
 
@@ -68,13 +68,13 @@ If testing an unsigned `.dmg` build on macOS:
 Before publishing any release to GitHub or notifying the first cohort, verify the installer on a pristine VM or test machine:
 
 - [ ] **Installer Execution**: Installer executes without unhandled errors or missing DLL dependencies (VC++ runtime, conpty).
-- [ ] **Installation Directory**: NSIS custom directory selector functions and installs to `%LOCALAPPDATA%\Programs\Synkro` (user-level without admin prompts).
-- [ ] **Desktop & Start Menu Shortcuts**: Desktop shortcut and Start Menu entry created with correct Synkro icon.
+- [ ] **Installation Directory**: NSIS custom directory selector functions and installs to `%LOCALAPPDATA%\Programs\Atomvs` (user-level without admin prompts).
+- [ ] **Desktop & Start Menu Shortcuts**: Desktop shortcut and Start Menu entry created with correct Atomvs icon.
 - [ ] **First Launch**: Application boots within 3 seconds, shows loading state, and transitions to workspace.
 - [ ] **DevTools Disabled**: Chrome DevTools are NOT opened automatically on launch in production mode.
-- [ ] **Production Gateway Connection**: Verify network requests hit `https://api.synkro.com` (no `localhost` or dev mocks).
+- [ ] **Production Gateway Connection**: Verify network requests hit `https://api.atomvs.com` (no `localhost` or dev mocks).
 - [ ] **Integrated Terminal**: Embedded xterm terminal spawns shell (`powershell.exe` on Windows / `bash` on macOS) via `@lydell/node-pty`.
-- [ ] **Uninstallation**: Control Panel / Settings "Uninstall Synkro" cleanly removes binary directory while retaining user workspaces.
+- [ ] **Uninstallation**: Control Panel / Settings "Uninstall Atomvs" cleanly removes binary directory while retaining user workspaces.
 
 ---
 
@@ -98,7 +98,7 @@ Get-FileHash -Algorithm SHA256 *.exe, *.dmg, *.zip | ForEach-Object { "$($_.Hash
 
 ## 5. GitHub Releases Publishing & Auto-Updater Compatibility
 
-Synkro uses `electron-updater` with the GitHub provider configured in `electron-builder.yml`:
+Atomvs uses `electron-updater` with the GitHub provider configured in `electron-builder.yml`:
 ```yaml
 publish:
   provider: github
@@ -115,11 +115,11 @@ publish:
    ```
 3. Create a GitHub Release in the repository corresponding to tag `v0.1.0`.
 4. Upload all build assets from `apps/desktop/release/`:
-   - `Synkro Setup 0.1.0.exe` (Installer)
-   - `Synkro Setup 0.1.0.exe.blockmap` (Delta updater)
+   - `Atomvs Setup 0.1.0.exe` (Installer)
+   - `Atomvs Setup 0.1.0.exe.blockmap` (Delta updater)
    - `latest.yml` (Windows update metadata — **REQUIRED** for auto-updater)
-   - `Synkro-0.1.0.dmg`
-   - `Synkro-0.1.0-mac.zip`
+   - `Atomvs-0.1.0.dmg`
+   - `Atomvs-0.1.0-mac.zip`
    - `latest-mac.yml` (macOS update metadata — **REQUIRED** for auto-updater)
    - `SHA256SUMS.txt` (Integrity checksums)
 5. Publish release as public or draft for cohort staging.

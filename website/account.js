@@ -1,4 +1,4 @@
-/* Synkro Account & Billing Portal — account.js */
+/* Atomvs Account & Billing Portal — account.js */
 (function () {
   const STORAGE_TOKEN_KEY = 'synkro_session_token';
   const STORAGE_API_KEY = 'synkro_api_url';
@@ -6,7 +6,7 @@
   const defaultApiUrl =
     window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
       ? 'http://localhost:3000'
-      : 'https://api.synkro.com';
+      : 'https://api.atomvs.com';
 
   const loginSection = document.getElementById('accountLoginSection');
   const dashboardSection = document.getElementById('accountDashboardSection');
@@ -138,7 +138,7 @@
       await loadAccountStatus();
     } catch (err) {
       if (loginError) {
-        loginError.textContent = err.message || 'Unable to sign in. Verify the Synkro Gateway URL and credentials.';
+        loginError.textContent = err.message || 'Unable to sign in. Verify the Atomvs Gateway URL and credentials.';
         loginError.hidden = false;
       }
     }
@@ -153,7 +153,7 @@
   upgradeBtn?.addEventListener('click', () => {
     if (billingNotice) {
       billingNotice.textContent =
-        'Redirecting to Synkro Pro ($20/mo) checkout… Once completed, our billing webhook (/v1/billing/webhook) upgrades your account to Pro automatically.';
+        'Redirecting to Atomvs Pro ($20/mo) checkout… Once completed, our billing webhook (/v1/billing/webhook) upgrades your account to Pro automatically.';
       billingNotice.hidden = false;
     }
   });

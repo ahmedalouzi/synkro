@@ -92,7 +92,7 @@ export function StatusBar() {
         <span style={{ color: warningCount > 0 ? 'var(--yellow)' : 'inherit' }}>{warningCount}</span>
       </div>
       <span className="status-sep">|</span>
-      <div className="status-item">{project ? `Synkro Ready - ${project.name}` : 'Synkro Ready'}</div>
+      <div className="status-item">{project ? `Atomvs Ready - ${project.name}` : 'Atomvs Ready'}</div>
 
       <div className="status-right">
         {editor && (

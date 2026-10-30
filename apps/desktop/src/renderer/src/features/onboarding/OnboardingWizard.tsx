@@ -75,7 +75,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
           <div className="onboarding-step">
             <div className="onboarding-logo">
               <span className="logo-icon">👁</span>
-              <h1>Welcome to Synkro</h1>
+              <h1>Welcome to Atomvs</h1>
             </div>
             <p className="onboarding-subtitle">
               The AI desktop IDE built for Flutter developers.
@@ -98,7 +98,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
           <div className="onboarding-step">
             <h2>Flutter SDK</h2>
             <p className="onboarding-desc">
-              Synkro needs the Flutter SDK to run previews, analyze code, and scaffold projects.
+              Atomvs needs the Flutter SDK to run previews, analyze code, and scaffold projects.
             </p>
 
             {sdk.status === 'checking' && (
@@ -124,7 +124,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
                   Flutter SDK not found in PATH
                 </div>
                 <p className="onboarding-desc small">
-                  Point Synkro to your Flutter SDK folder, or{' '}
+                  Point Atomvs to your Flutter SDK folder, or{' '}
                   <a
                     href="https://docs.flutter.dev/get-started/install"
                     target="_blank"
@@ -168,7 +168,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
           <div className="onboarding-step">
             <h2>Privacy &amp; Analytics</h2>
             <p className="onboarding-desc">
-              Help improve Synkro by sharing anonymous usage data. This is completely optional.
+              Help improve Atomvs by sharing anonymous usage data. This is completely optional.
             </p>
             <div className="onboarding-telemetry-cards">
               <button
@@ -225,7 +225,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
               onClick={() => void handleFinish()}
               disabled={isFinishing}
             >
-              {isFinishing ? 'Setting up…' : 'Open Synkro →'}
+              {isFinishing ? 'Setting up…' : 'Open Atomvs →'}
             </button>
           </div>
         )}

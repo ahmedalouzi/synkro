@@ -1,6 +1,6 @@
-# Welcome to Synkro — First-Cohort Developer & Data-Handling Guide
+# Welcome to Atomvs — First-Cohort Developer & Data-Handling Guide
 
-Welcome to the Synkro Alpha Cohort! Synkro is the AI-native desktop IDE designed specifically for mobile and web cross-platform engineering (Flutter and React Native).
+Welcome to the Atomvs Alpha Cohort! Atomvs is the AI-native desktop IDE designed specifically for mobile and web cross-platform engineering (Flutter and React Native).
 
 This guide walks you through setup, our core workflows, supported frameworks, and our transparent privacy and data-handling policies.
 
@@ -10,16 +10,16 @@ This guide walks you through setup, our core workflows, supported frameworks, an
 
 ### 1.1 Download & Install
 1. Download the latest installer from the official release link provided in your cohort invitation:
-   - **Windows**: `Synkro Setup <version>.exe`
-   - **macOS**: `Synkro-<version>.dmg`
+   - **Windows**: `Atomvs Setup <version>.exe`
+   - **macOS**: `Atomvs-<version>.dmg`
 2. Run the installer:
    - *Windows Note*: If prompted by Windows Defender SmartScreen ("Windows protected your PC"), click **"More info"** and then **"Run anyway"**.
    - *macOS Note*: If prompted by Gatekeeper, right-click and open, or go to **System Settings > Privacy & Security > Open Anyway**.
-3. Launch Synkro from your Start Menu or Applications folder.
+3. Launch Atomvs from your Start Menu or Applications folder.
 
 ### 1.2 Sign In & Token Authentication
-- Open Synkro and sign in with your cohort account credentials, or create a new account directly from the onboarding prompt.
-- Your session is securely stored in local OS-level encrypted storage and connects directly to the Synkro Gateway (`https://api.synkro.com`).
+- Open Atomvs and sign in with your cohort account credentials, or create a new account directly from the onboarding prompt.
+- Your session is securely stored in local OS-level encrypted storage and connects directly to the Atomvs Gateway (`https://api.atomvs.com`).
 
 ---
 
@@ -37,12 +37,12 @@ This guide walks you through setup, our core workflows, supported frameworks, an
 
 ## 3. Transparent Data-Handling, Security & Privacy Facts
 
-We believe developer tools must have complete privacy transparency. Here is exactly how Synkro handles your code and data:
+We believe developer tools must have complete privacy transparency. Here is exactly how Atomvs handles your code and data:
 
 ### 3.1 AI Code Context
-- **Selective Transmission**: Synkro transmits code snippets to LLM providers (Google Gemini, Anthropic Claude, OpenAI) **only when you explicitly trigger an AI action** (chat message, code generation, refactor, or tab completion).
-- **No Background Indexing**: Synkro **never** silently uploads your entire repository or unreferenced files.
-- **Zero Model Training**: Synkro's commercial enterprise API agreements with AI providers guarantee that **your code is never used to train or fine-tune public AI models**.
+- **Selective Transmission**: Atomvs transmits code snippets to LLM providers (Google Gemini, Anthropic Claude, OpenAI) **only when you explicitly trigger an AI action** (chat message, code generation, refactor, or tab completion).
+- **No Background Indexing**: Atomvs **never** silently uploads your entire repository or unreferenced files.
+- **Zero Model Training**: Atomvs's commercial enterprise API agreements with AI providers guarantee that **your code is never used to train or fine-tune public AI models**.
 
 ### 3.2 Cloud Build Uploads & Sandboxing
 - **Secure Transfer**: When you click **"Cloud Build"**, your project files are zipped locally and sent over encrypted TLS 1.3 to our dedicated build cluster.
@@ -66,7 +66,7 @@ We believe developer tools must have complete privacy transparency. Here is exac
 2. **Code & Visual Editing**: Use the Monaco-powered editor with syntax highlighting, IntelliSense, and multi-cursor editing.
 3. **AI Assistant & Claude Code Bridge**:
    - Open the AI panel on the right sidebar (`Ctrl+L` or `Cmd+L`).
-   - Ask Synkro to generate components, fix bugs, or optimize state management.
+   - Ask Atomvs to generate components, fix bugs, or optimize state management.
    - Use the built-in terminal to interact with `claude-code` or the Flutter/React Native CLI directly.
 4. **Cloud Build Deployment**:
    - Navigate to the **Build** tab.
@@ -78,8 +78,8 @@ We believe developer tools must have complete privacy transparency. Here is exac
 
 ## 5. Feedback & Support Channels
 
-As part of the initial cohort, your feedback directly shapes Synkro's roadmap:
+As part of the initial cohort, your feedback directly shapes Atomvs's roadmap:
 
-- **Discord Cohort Channel**: Join our private `#alpha-cohort` channel on [Discord](https://discord.gg/synkro).
+- **Community**: coming soon.
 - **Issue Tracker**: Submit bug reports and feature requests on [GitHub Issues](https://github.com/ahmedalouzi/synkro/issues).
-- **Direct Email**: Reach our engineering team directly at `support@synkro.com`.
+- **Direct Email**: Reach our engineering team directly at `support@atomvs.com`.

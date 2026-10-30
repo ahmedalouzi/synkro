@@ -44,9 +44,9 @@ export function UpdateBanner() {
       </span>
 
       <span className="update-banner__text">
-        {info.status === 'available' && `Synkro ${info.version} is available`}
+        {info.status === 'available' && `Atomvs ${info.version} is available`}
         {info.status === 'downloading' && `Downloading update… ${info.percent ?? 0}%`}
-        {info.status === 'ready' && `Synkro ${info.version} ready to install`}
+        {info.status === 'ready' && `Atomvs ${info.version} ready to install`}
         {info.status === 'error' && `Update error: ${info.error ?? 'unknown'}`}
       </span>
 

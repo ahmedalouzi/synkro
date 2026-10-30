@@ -165,7 +165,7 @@ export class ClaudeIdeServer {
     writeFileSync(this.lockPath, JSON.stringify({
       pid: process.pid,
       workspaceFolders: this.workspaceFolders,
-      ideName: 'Synkro',
+      ideName: 'Atomvs',
       transport: 'ws',
       runningInWindows: process.platform === 'win32',
       authToken: this.authToken,
@@ -180,7 +180,8 @@ export class ClaudeIdeServer {
       const file = join(LOCK_DIR, name);
       try {
         const lock = JSON.parse(readFileSync(file, 'utf8'));
-        if (lock.ideName !== 'Synkro' || typeof lock.pid !== 'number') continue;
+        // 'Synkro': lock files written before the rename.
+        if ((lock.ideName !== 'Atomvs' && lock.ideName !== 'Synkro') || typeof lock.pid !== 'number') continue;
         try { process.kill(lock.pid, 0); } catch { unlinkSync(file); }
       } catch { /* unreadable lock: not ours to judge */ }
     }
@@ -215,7 +216,7 @@ export class ClaudeIdeServer {
         return ok({
           protocolVersion: params?.protocolVersion ?? PROTOCOL_VERSION,
           capabilities: { tools: { listChanged: true } },
-          serverInfo: { name: 'synkro', version: '1.0.0' },
+          serverInfo: { name: 'atomvs', version: '1.0.0' },
         });
       case 'ping':
         return ok({});
@@ -252,7 +253,7 @@ export class ClaudeIdeServer {
       });
     }
     if (!RENDERER_TOOLS.has(name)) throw new Error(`Unknown tool: ${name}`);
-    if (!this.mainWindow || this.mainWindow.isDestroyed()) throw new Error('Synkro window is not available');
+    if (!this.mainWindow || this.mainWindow.isDestroyed()) throw new Error('Atomvs window is not available');
 
     const request: ClaudeIdeRequest = { requestId: randomUUID(), tool: name, args };
     return new Promise<ClaudeIdeToolResult>((resolve) => {
@@ -260,7 +261,7 @@ export class ClaudeIdeServer {
       this.mainWindow!.webContents.send(IPC_EVENTS.CLAUDE_IDE_REQUEST, request);
       // openDiff waits for the user; everything else should answer right away.
       if (name !== 'openDiff') {
-        setTimeout(() => this.respond(request.requestId, text('Error: Synkro did not answer in time')), 15_000);
+        setTimeout(() => this.respond(request.requestId, text('Error: Atomvs did not answer in time')), 15_000);
       }
     });
   }
