@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Synkro — The AI Desktop IDE for Mobile Developers</title>
+  <meta name="description" content="Synkro unifies your Flutter and React Native workflow: live phone-frame preview, AI that reads and writes your code, Monaco editor, Git, and terminal — all in one app." />
+  <meta property="og:title" content="Synkro — AI IDE for Flutter & React Native" />
+  <meta property="og:description" content="Build mobile apps 10x faster with an AI that actually sees your app running in a phone frame." />
+  <meta property="og:type" content="website" />
+  <meta name="twitter:card" content="summary_large_image" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ── NAV ──────────────────────────────────────────────────────────── -->
+  <nav class="nav">
+    <div class="nav__inner container">
+      <a class="nav__logo" href="/">
+        <span class="nav__logo-icon">⚡</span>
+        <span>Synkro</span>
+      </a>
+      <div class="nav__links">
+        <a href="#features">Features</a>
+        <a href="#how">How it works</a>
+        <a href="/pricing">Pricing</a>
+        <a href="/docs">Docs</a>
+        <a href="/account">Account</a>
+        <a href="/download" class="btn btn--ghost">Download App</a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ── HERO ─────────────────────────────────────────────────────────── -->
+  <section class="hero">
+    <div class="container hero__inner">
+      <div class="hero__badge">🚀 Synkro v1.0 is now available!</div>
+      <h1 class="hero__title">
+        The AI IDE that<br />
+        <span class="gradient-text">sees your app</span> as you code
+      </h1>
+      <p class="hero__subtitle">
+        Synkro unifies Flutter &amp; React Native development: live phone-frame preview,
+        an AI agent that reads, writes &amp; fixes your code, Monaco editor, Git, Cloud Build, and
+        terminal — all in one local-first desktop app.
+      </p>
+      <div class="hero__cta">
+        <a href="/download" class="btn btn--primary btn--lg">Download for Windows →</a>
+        <a href="/docs" class="btn btn--ghost btn--lg">Read the Docs</a>
+      </div>
+
+      <!-- Pill badges -->
+      <div class="hero__pills">
+        <span class="pill">🐦 Flutter</span>
+        <span class="pill">⚛️ React Native</span>
+        <span class="pill">🤖 AI Agent</span>
+        <span class="pill">📱 Live Preview</span>
+        <span class="pill">☁️ Cloud Build</span>
+        <span class="pill">🔒 Local-first</span>
+      </div>
+    </div>
+
+    <!-- Mockup -->
+    <div class="hero__mockup container">
+      <div class="app-mockup">
+        <div class="app-mockup__bar">
+          <span class="dot dot--red"></span>
+          <span class="dot dot--yellow"></span>
+          <span class="dot dot--green"></span>
+          <span class="app-mockup__title">Synkro — my_flutter_app</span>
+        </div>
+        <div class="app-mockup__body">
+          <div class="app-mockup__sidebar">
+            <div class="tree-item tree-item--active">📁 lib</div>
+            <div class="tree-item indent">📄 main.dart</div>
+            <div class="tree-item indent active">📄 home_screen.dart</div>
+            <div class="tree-item indent">📄 settings_screen.dart</div>
+            <div class="tree-item">📁 widgets</div>
+            <div class="tree-item indent">📄 product_card.dart</div>
+            <div class="tree-item">📄 pubspec.yaml</div>
+          </div>
+          <div class="app-mockup__editor">
+            <div class="code-line"><span class="c-kw">class</span> <span class="c-cls">HomeScreen</span> <span class="c-kw">extends</span> <span class="c-cls">StatelessWidget</span> {</div>
+            <div class="code-line">  <span class="c-kw">const</span> HomeScreen({<span class="c-kw">super</span>.key});</div>
+            <div class="code-line"></div>
+            <div class="code-line">  <span class="c-an">@override</span></div>
+            <div class="code-line">  <span class="c-cls">Widget</span> build(<span class="c-cls">BuildContext</span> ctx) {</div>
+            <div class="code-line hl">    <span class="c-kw">return</span> <span class="c-cls">Scaffold</span>(</div>
+            <div class="code-line hl">      body: <span class="c-cls">ProductList</span>(),</div>
+            <div class="code-line">    );</div>
+            <div class="code-line">  }</div>
+            <div class="code-line">}</div>
+          </div>
+          <div class="app-mockup__preview">
+            <div class="phone-mini">
+              <div class="phone-mini__notch"></div>
+              <div class="phone-mini__screen">
+                <div class="phone-mini__app">
+                  <div class="mock-appbar">My App</div>
+                  <div class="mock-card"></div>
+                  <div class="mock-card mock-card--sm"></div>
+                  <div class="mock-card mock-card--sm"></div>
+                </div>
+              </div>
+              <div class="phone-mini__home"></div>
+            </div>
+            <div class="preview-badge">📱 Live Preview</div>
+          </div>
+          <div class="app-mockup__chat">
+            <div class="chat-title">AI Agent</div>
+            <div class="chat-bubble chat-bubble--user">Add a settings screen with dark mode toggle</div>
+            <div class="chat-bubble chat-bubble--ai">
+              <span class="chat-thinking">Creating settings_screen.dart…</span><br/>
+              Added <code>SettingsScreen</code> with <code>Switch</code> for dark mode. 2 files changed.
+            </div>
+            <div class="chat-diff">
+              <div class="diff-line diff-line--add">+ settings_screen.dart</div>
+              <div class="diff-line diff-line--mod">~ main.dart (route added)</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── LOGOS / SOCIAL PROOF ──────────────────────────────────────────── -->
+  <section class="social-proof">
+    <div class="container">
+      <p class="social-proof__label">Built for developers who use</p>
+      <div class="social-proof__logos">
+        <span>Flutter SDK</span>
+        <span>Expo</span>
+        <span>React Native</span>
+        <span>Google Gemini</span>
+        <span>OpenAI</span>
+        <span>Anthropic Claude</span>
+        <span>Monaco Editor</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── FEATURES ──────────────────────────────────────────────────────── -->
+  <section id="features" class="features">
+    <div class="container">
+      <div class="section-header">
+        <div class="section-badge">Features</div>
+        <h2>Everything in one window</h2>
+        <p>Stop switching between 4 tools. Synkro brings them together.</p>
+      </div>
+
+      <div class="features__grid">
+        <div class="feature-card feature-card--hero">
+          <div class="feature-card__icon">📱</div>
+          <h3>Live Phone-Frame Preview</h3>
+          <p>See your app running in a realistic iPhone or Android frame as you type. Auto-refreshes on save. No emulator needed for design iteration.</p>
+          <div class="feature-card__devices">
+            <span class="device-chip">iPhone 15</span>
+            <span class="device-chip">Pixel 8</span>
+            <span class="device-chip">Galaxy S24</span>
+            <span class="device-chip">+ more</span>
+          </div>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-card__icon">🤖</div>
+          <h3>Platform-Aware AI Agent</h3>
+          <p>The agent knows Flutter widget trees <em>and</em> React Native component hierarchies. It reads your code, proposes diffs, and verifies changes automatically.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-card__icon">🔍</div>
+          <h3>Monaco Editor + Tab &amp; Ctrl+K</h3>
+          <p>VS Code's editor engine with Dart, TypeScript, and JSX support, ghost-text Tab completions, inline <code>Ctrl+K</code> edits, and multi-tab navigation.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-card__icon">⚠️</div>
+          <h3>Inline Error Fixing</h3>
+          <p>Errors from <code>flutter analyze</code> or TypeScript compiler appear in the bottom panel. Click any error → "Fix this" → agent patches and verifies it.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-card__icon">☁️</div>
+          <h3>Sandboxed Cloud Build</h3>
+          <p>Build signed Android APKs in isolated Docker containers without configuring local Java/Gradle toolchains, with live log streaming in the IDE.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-card__icon">🔒</div>
+          <h3>Local-First &amp; Private</h3>
+          <p>Your workspace files stay on your machine. Telemetry is strictly opt-in and scrubbed of keys and paths. Works offline for editing and local preview.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── HOW IT WORKS ──────────────────────────────────────────────────── -->
+  <section id="how" class="how">
+    <div class="container">
+      <div class="section-header">
+        <div class="section-badge">How it works</div>
+        <h2>Three golden paths</h2>
+        <p>The workflows Synkro was designed around.</p>
+      </div>
+
+      <div class="how__steps">
+        <div class="how-step">
+          <div class="how-step__num">01</div>
+          <div class="how-step__content">
+            <h3>Open app → see it running</h3>
+            <p>Open any Flutter or React Native project. Synkro detects the platform, runs <code>pub get</code> or <code>npm install</code>, starts the dev server, and shows your app in the phone frame — in under 60 seconds.</p>
+          </div>
+        </div>
+
+        <div class="how-step">
+          <div class="how-step__num">02</div>
+          <div class="how-step__content">
+            <h3>Prompt → diff → preview</h3>
+            <p>Type <em>"Add a settings screen with dark mode toggle"</em>. The agent reads your project, writes the code, shows a unified diff, and updates the live preview automatically.</p>
+          </div>
+        </div>
+
+        <div class="how-step">
+          <div class="how-step__num">03</div>
+          <div class="how-step__content">
+            <h3>Error → fix → green analyze</h3>
+            <p>Build fails? The error appears in the panel with a file link. Click "Fix this" — the agent patches the file, runs <code>flutter analyze</code>, and confirms it's clean.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── COMPARISON ───────────────────────────────────────────────────── -->
+  <section class="compare">
+    <div class="container">
+      <div class="section-header">
+        <div class="section-badge">vs. Cursor</div>
+        <h2>Why not just use Cursor?</h2>
+      </div>
+      <div class="compare__table-wrap">
+        <table class="compare__table">
+          <thead>
+            <tr>
+              <th>Capability</th>
+              <th>Cursor</th>
+              <th class="ours">Synkro</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>Live phone preview + widget inspector</td><td>✗</td><td class="ours">✅ Built-in</td></tr>
+            <tr><td>Flutter / RN domain knowledge</td><td>Generic</td><td class="ours">Deep</td></tr>
+            <tr><td>Platform-aware AI prompts &amp; scaffolds</td><td>✗</td><td class="ours">✅</td></tr>
+            <tr><td>Analyze errors → one-click AI fix</td><td>Partial</td><td class="ours">✅ Built-in</td></tr>
+            <tr><td>One-click Cloud APK Build</td><td>✗</td><td class="ours">✅ Built-in</td></tr>
+            <tr><td>Claude Code IDE Bridge compatible</td><td>✅</td><td class="ours">✅</td></tr>
+            <tr><td>Local-first workspace</td><td>✅</td><td class="ours">✅</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── PRICING ───────────────────────────────────────────────────────── -->
+  <section id="pricing" class="pricing">
+    <div class="container">
+      <div class="section-header">
+        <div class="section-badge">Pricing</div>
+        <h2>Simple, usage-transparent pricing</h2>
+        <p>Start free with weekly AI model credits, or upgrade to Pro for 10x weekly capacity and unlimited Tab completions.</p>
+      </div>
+
+      <div class="pricing__cards">
+        <div class="pricing-card">
+          <div class="pricing-card__name">Free</div>
+          <div class="pricing-card__price">$0<span>/mo</span></div>
+          <ul class="pricing-card__features">
+            <li>✓ Full Monaco editor &amp; Live Preview (Flutter + RN)</li>
+            <li>✓ <strong>$0.50 / week</strong> included AI model pool (resets Mondays 00:00 UTC)</li>
+            <li>✓ <strong>2,000 / month</strong> Tab completions</li>
+            <li>✓ Auto model routing (10 chat req/min, 30 completions/min)</li>
+            <li>✓ Up to $0.05 max single request cost</li>
+          </ul>
+          <a href="https://github.com/ahmedalouzi/synkro/releases/latest" class="btn btn--ghost" target="_blank" rel="noopener">Download Free</a>
+        </div>
+
+        <div class="pricing-card pricing-card--featured">
+          <div class="pricing-card__badge">Most popular</div>
+          <div class="pricing-card__name">Pro</div>
+          <div class="pricing-card__price">$20<span>/mo</span></div>
+          <ul class="pricing-card__features">
+            <li>✓ Everything in Free</li>
+            <li>✓ <strong>$5.00 / week</strong> AI model pool (10× Free, ~$20+/mo value)</li>
+            <li>✓ <strong>Unlimited</strong> monthly Tab completions</li>
+            <li>✓ Full model selection (Gemini 2.5 Pro, Claude, GPT-4o)</li>
+            <li>✓ Graceful Auto fallback when weekly pool is exhausted (never blocked)</li>
+            <li>✓ Higher burst limits (40 chat/min, 120 completions/min, $0.50 max/req)</li>
+          </ul>
+          <a href="/pricing" class="btn btn--primary">Upgrade to Pro →</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── BETA FORM ─────────────────────────────────────────────────────── -->
+  <section id="beta" class="beta">
+    <div class="container beta__inner">
+      <div class="beta__text">
+        <div class="section-badge">Community &amp; Updates</div>
+        <h2>Stay in the loop</h2>
+        <p>Join mobile engineers building production Flutter and React Native apps with Synkro. Get release notes, tips, and early access to new agent capabilities.</p>
+        <ul class="beta__perks">
+          <li>⚡ Weekly AI pool resets every Monday 00:00 UTC</li>
+          <li>💬 Direct access to the engineering team on Discord</li>
+          <li>🗺 Vote on roadmap features &amp; mobile templates</li>
+          <li>☁️ Priority Cloud Build runners for Pro members</li>
+        </ul>
+      </div>
+      <div class="beta__form-wrap">
+        <form class="beta__form" id="betaForm" novalidate>
+          <label class="form-field">
+            <span>Full name</span>
+            <input type="text" id="name" name="name" placeholder="Jane Smith" required />
+          </label>
+          <label class="form-field">
+            <span>Work email</span>
+            <input type="email" id="email" name="email" placeholder="jane@company.com" required />
+          </label>
+          <label class="form-field">
+            <span>Primary framework</span>
+            <select id="framework" name="framework">
+              <option value="">Select…</option>
+              <option value="flutter">Flutter</option>
+              <option value="react-native">React Native</option>
+              <option value="both">Both Flutter &amp; React Native</option>
+              <option value="other">Other / exploring</option>
+            </select>
+          </label>
+          <label class="form-field">
+            <span>Years of mobile dev experience</span>
+            <select id="experience" name="experience">
+              <option value="">Select…</option>
+              <option value="&lt;1">&lt; 1 year</option>
+              <option value="1-3">1–3 years</option>
+              <option value="3-5">3–5 years</option>
+              <option value="5+">5+ years</option>
+            </select>
+          </label>
+          <label class="form-field">
+            <span>What's your biggest pain point today?</span>
+            <textarea id="pain" name="pain" rows="3" placeholder="Switching between 4 apps, slow preview cycle…"></textarea>
+          </label>
+          <div class="form-field__row">
+            <label class="form-check">
+              <input type="checkbox" id="newsletter" name="newsletter" checked />
+              <span>Send me product updates</span>
+            </label>
+          </div>
+          <button type="submit" class="btn btn--primary btn--full" id="submitBtn">
+            Join Updates List →
+          </button>
+          <div class="form-success" id="formSuccess" hidden>
+            🎉 You're on the list! We'll be in touch within 48 hours.
+          </div>
+          <div class="form-error" id="formError" hidden>
+            Something went wrong. Email us at <a href="mailto:support@synkro.com">support@synkro.com</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── FOOTER ────────────────────────────────────────────────────────── -->
+  <footer class="footer">
+    <div class="container footer__inner">
+      <div class="footer__brand">
+        <a class="nav__logo" href="/">
+          <span class="nav__logo-icon">⚡</span>
+          <span>Synkro</span>
+        </a>
+        <p>The AI desktop IDE for Flutter &amp; React Native developers.</p>
+      </div>
+      <div class="footer__links">
+        <div>
+          <strong>Product</strong>
+          <a href="/#features">Features</a>
+          <a href="/pricing">Pricing</a>
+          <a href="/docs">Documentation</a>
+          <a href="/download">Download</a>
+        </div>
+        <div>
+          <strong>Account &amp; Legal</strong>
+          <a href="/account">Account</a>
+          <a href="/account/billing">Billing</a>
+          <a href="/privacy">Privacy Policy</a>
+          <a href="/terms">Terms of Service</a>
+        </div>
+        <div>
+          <strong>Community</strong>
+          <a href="mailto:support@synkro.com">Support</a>
+          <a href="https://github.com/ahmedalouzi/synkro" target="_blank" rel="noopener">GitHub</a>
+        </div>
+      </div>
+    </div>
+    <div class="container footer__bottom">
+      <span>© 2026 Synkro. All rights reserved.</span>
+      <span>Built for Flutter &amp; React Native engineers</span>
+    </div>
+  </footer>
+
+  <script src="main.js"></script>
+</body>
+</html>

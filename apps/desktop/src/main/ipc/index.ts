@@ -190,6 +190,13 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
   cloudBuildService = new CloudBuildService(db);
 
   await telemetryService.init();
+  if (telemetryService.isEnabled()) {
+    try {
+      syncSentryOptIn(true);
+    } catch (err) {
+      console.error('[Telemetry] Failed to initialize Sentry on startup:', err);
+    }
+  }
   autoUpdateService = new AutoUpdateService(telemetryService);
   autoUpdateService.init();
 

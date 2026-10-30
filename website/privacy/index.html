@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Privacy Policy — Synkro</title>
+  <meta name="description" content="How Synkro handles your local source code, AI prompt context, Cloud Build uploads, account data, Merchant of Record transactions, and opt-in telemetry." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+
+  <nav class="nav">
+    <div class="nav__inner container">
+      <a class="nav__logo" href="/">
+        <span class="nav__logo-icon">⚡</span>
+        <span>Synkro</span>
+      </a>
+      <div class="nav__links">
+        <a href="/#features">Features</a>
+        <a href="/pricing">Pricing</a>
+        <a href="/docs">Docs</a>
+        <a href="/account">Account</a>
+        <a href="/download" class="btn btn--ghost">Download App</a>
+      </div>
+    </div>
+  </nav>
+
+  <header class="page-hero">
+    <div class="container">
+      <div class="section-badge">Legal &amp; Trust</div>
+      <h1>Privacy Policy</h1>
+      <p>Effective Date: October 28, 2026 • Last Updated: October 30, 2026</p>
+    </div>
+  </header>
+
+  <main class="prose">
+    <p>Synkro ("we", "our", or "us") builds a local-first AI desktop IDE for Flutter and React Native developers. This Privacy Policy explains precisely what data stays on your computer, what data is transmitted when you use cloud features, how payment processing is managed by our Merchant of Record, and how you can control or permanently delete your information.</p>
+
+    <h2>1. Local-First Workspace &amp; Source Code Storage</h2>
+    <p>By default, your project files, Git repositories, local SQLite settings database, and build outputs remain on your local machine:</p>
+    <ul>
+      <li>Synkro does <strong>not</strong> continuously upload, scan, or index your hard drive to our servers.</li>
+      <li>When you edit files, run local phone-frame previews, or use the built-in Git UI and terminal, operations execute entirely on your device.</li>
+      <li>Your local project configurations and secrets (such as custom API keys saved in local settings) are stored solely in your local SQLite database on your device.</li>
+    </ul>
+
+    <h2>2. Account &amp; Billing Data We Collect</h2>
+    <p>When you create a Synkro account or subscribe to Synkro Pro, we collect and store only what is essential to provide service:</p>
+    <ul>
+      <li><strong>Account Credentials:</strong> Your email address, bcrypt-salted password hash, and rotating session/refresh tokens.</li>
+      <li><strong>Token Accounting Ledger:</strong> Usage timestamps, model names, prompt/completion token quantities, and estimated dollar costs recorded in our PostgreSQL <code>usage_records</code> ledger. This data is strictly used to enforce transparent weekly AI plan pools and quota ceilings.</li>
+      <li><strong>Merchant of Record &amp; Zero Payment Data:</strong> International subscriptions are processed through our Merchant of Record (MoR) partners, <strong>Lemon Squeezy</strong> and <strong>Paddle</strong>. As the legal resellers, our MoR partners calculate, file, and remit global VAT, GST, and sales taxes across 100+ countries. Synkro stores only customer/subscription reference IDs (e.g., <code>billing_customer_id</code>, <code>billing_subscription_id</code>) and current subscription status. <strong>Synkro never collects, transmits, or stores credit card numbers, CVVs, or bank details.</strong></li>
+      <li><strong>Cloud-Synced Chat Threads:</strong> When you are signed in, conversation threads and run metadata saved via <code>/v1/threads</code> are synchronized to your account so you can resume sessions across machines. You can purge threads anytime from within the IDE.</li>
+    </ul>
+
+    <h2>3. AI Prompts, Code Context &amp; Zero Foundation Model Training</h2>
+    <p>When you trigger an AI feature (Agent chat, inline <code>Ctrl+K</code> edits, or ghost-text Tab completions):</p>
+    <ul>
+      <li>Synkro packages only the relevant prompt, selected code snippets, open file context, and project rules (<code>.synkro/rules.md</code>) and transmits them over TLS 1.3 to the Synkro AI Gateway.</li>
+      <li>Our gateway routes the request to commercial frontier model providers — <strong>Google Gemini</strong> and <strong>Anthropic</strong>.</li>
+      <li><strong>Zero-Training Guarantee:</strong> All queries are dispatched under commercial zero-data-retention terms. <strong>Your source code, prompts, and completions are never retained by LLM providers, never inspected by human evaluators, and never used to train public foundation models.</strong></li>
+    </ul>
+
+    <h2>4. Cloud Build Source Uploads &amp; Immediate Ephemeral Cleanup</h2>
+    <p>When you explicitly trigger a <strong>Cloud Build</strong> to compile an Android APK/AAB:</p>
+    <ul>
+      <li>The desktop app archives your project workspace (excluding <code>node_modules</code>, <code>.git</code>, and local build folders) into a ZIP archive and uploads it over HTTPS to <code>/api/build/upload</code>.</li>
+      <li>Our server validates the archive against directory traversal (zip-slip attacks), extracts it into an isolated ephemeral directory (<code>/tmp/builds/&lt;jobId&gt;_extracted</code>), and executes compilation inside a network-restricted, non-root Docker container.</li>
+      <li><strong>Mandatory Cleanup:</strong> In a strict <code>finally</code> block immediately after the build succeeds, fails, or is cancelled, the uploaded source ZIP, the extracted source directory, and temporary local build files are permanently deleted from the build server disk. Compiled APK artifacts are stored in private object storage solely for your authenticated download and auto-expire based on retention settings.</li>
+    </ul>
+
+    <h2>5. Opt-In Telemetry &amp; Sentry Client-Side Data Scrubbing</h2>
+    <p>Telemetry and crash reporting in Synkro are <strong>strictly opt-in (disabled by default)</strong>:</p>
+    <ul>
+      <li><strong>Local Event Buffer:</strong> When enabled, anonymous diagnostic telemetry is written locally to <code>%USERDATA%/telemetry/events.jsonl</code>, capped in a 2,000-line FIFO ring buffer. No telemetry pings occur in the background when disabled.</li>
+      <li><strong>Sentry Crash Reporting:</strong> Crash reporting is inactive unless telemetry is toggled on in Settings.</li>
+      <li><strong>Client-Side Scrubber:</strong> Before any crash report, breadcrumb, or error payload leaves your computer, our client-side regex scrubber (<code>sentry-scrubber</code>) actively strips:
+        <ul>
+          <li>Authentication headers and <code>Bearer</code> tokens</li>
+          <li><code>session_token</code> and authentication cookies</li>
+          <li>Google API keys (<code>AIza…</code>), OpenAI keys (<code>sk-…</code>), and Anthropic keys (<code>sk-ant-…</code>)</li>
+          <li>Local operating system user file paths (e.g., <code>C:\Users\username\...</code> or <code>/Users/username/...</code>)</li>
+        </ul>
+      </li>
+    </ul>
+
+    <h2>6. Right to Erasure, Data Export &amp; GDPR / CCPA Compliance</h2>
+    <p>You maintain complete ownership and control over your personal information:</p>
+    <ul>
+      <li><strong>Right to Erasure:</strong> You may request complete account deletion and permanent erasure of all associated database records (credentials, threads, usage logs) by emailing <a href="mailto:privacy@synkro.com" style="color: var(--accent-2);">privacy@synkro.com</a>. Verified account deletion requests are permanently executed on all active databases and disks within <strong>14 days</strong>.</li>
+      <li><strong>Data Portability:</strong> You may request a machine-readable export of your account metadata and usage records at any time.</li>
+    </ul>
+
+    <h2>7. Security Practices &amp; Vulnerability Disclosure</h2>
+    <p>Synkro enforces strict transport security (TLS 1.3), PostgreSQL Row-Level Security (RLS) isolation between tenants, and containerized build sandboxing. If you discover a potential security vulnerability, please report it directly to <a href="mailto:security@synkro.com" style="color: var(--accent-2);">security@synkro.com</a> for prioritized triage.</p>
+
+    <h2>8. Contact Us</h2>
+    <p>For privacy questions, data requests, or compliance inquiries, reach out to our team at <a href="mailto:privacy@synkro.com" style="color: var(--accent-2);">privacy@synkro.com</a>.</p>
+  </main>
+
+  <footer class="footer">
+    <div class="container footer__inner">
+      <div class="footer__brand">
+        <a class="nav__logo" href="/">
+          <span class="nav__logo-icon">⚡</span>
+          <span>Synkro</span>
+        </a>
+        <p>The AI desktop IDE for Flutter &amp; React Native developers.</p>
+      </div>
+      <div class="footer__links">
+        <div>
+          <strong>Product</strong>
+          <a href="/#features">Features</a>
+          <a href="/pricing">Pricing</a>
+          <a href="/docs">Documentation</a>
+          <a href="/download">Download</a>
+        </div>
+        <div>
+          <strong>Account &amp; Legal</strong>
+          <a href="/account">Account</a>
+          <a href="/account/billing">Billing</a>
+          <a href="/privacy">Privacy Policy</a>
+          <a href="/terms">Terms of Service</a>
+        </div>
+        <div>
+          <strong>Community</strong>
+          <a href="mailto:support@synkro.com">Support</a>
+          <a href="https://github.com/ahmedalouzi/synkro" target="_blank" rel="noopener">GitHub</a>
+        </div>
+      </div>
+    </div>
+    <div class="container footer__bottom">
+      <span>© 2026 Synkro. All rights reserved.</span>
+      <span>Built for Flutter &amp; React Native engineers</span>
+    </div>
+  </footer>
+
+  <script src="../main.js"></script>
+</body>
+</html>
