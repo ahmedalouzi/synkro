@@ -55,7 +55,6 @@ Row-level security on build_jobs and chat tables; isolation relies on `SET LOCAL
 - CI (`.github/workflows/production-pipeline.yml`): audit, typecheck, build, `pnpm -r test`; deploy jobs are placeholders. pnpm caching order looks wrong **(unverified)**.
 
 ## 7. Known risks (tracked on Trello)
-- Session tokens are logged in plain text: `models/production-gateway.ts` (`[HTTP_TRACE] ... Session=`) and the server's request log in `apps/server/src/index.ts` (the `session` header).
 - Electron accepts any TLS certificate (`certificate-error` handler) and `.npmrc` has `strict-ssl=false`.
 - The build worker runs in the same process as the public API, as a user in the `docker` group (root-equivalent).
 - Download/stream links carry the session token in the query string.

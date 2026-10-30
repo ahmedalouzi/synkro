@@ -17,6 +17,7 @@ import { execSync } from 'node:child_process';
 import { buildRouter } from './build-router';
 import { threadsRouter } from './threads-router';
 import { billingRouter } from './billing-router';
+import { requestLogLine, authLogLine } from './log-redact';
 
 async function bootstrap() {
   if (process.env.SENTRY_DSN) {
@@ -117,7 +118,7 @@ async function bootstrap() {
 
   const app = express();
   app.use((req, _res, next) => {
-    console.log("[REQUEST ARRIVED]", req.method, req.url);
+    console.log(requestLogLine(req));
     _res.setHeader('X-Synkro-Server-Version', commitHash);
     next();
   });
@@ -217,7 +218,7 @@ async function bootstrap() {
   app.post('/v1/ai/generate', apiRateLimiter, async (req, res) => {
     const requestId = Math.random().toString(36).slice(2, 10);
     console.log(`\n[BACKEND_RECEIVED] [${requestId}] POST /v1/ai/generate`);
-    console.log(`[BACKEND_RECEIVED] [${requestId}] Authorization: Bearer ***  Session: ${req.headers['session'] ?? '(none)'}`);
+    console.log(`[BACKEND_RECEIVED] [${requestId}] ${authLogLine(req)}`);
     console.log(`[BACKEND_RECEIVED] [${requestId}] Tier: ${req.body?.capabilityTier ?? 'unset'}  Messages: ${req.body?.messages?.length ?? 0}`);
     try {
       const headers = req.headers as Record<string, string>;
@@ -236,7 +237,7 @@ async function bootstrap() {
   app.post('/v1/ai/stream', apiRateLimiter, async (req, res) => {
     const requestId = Math.random().toString(36).slice(2, 10);
     console.log(`\n[BACKEND_RECEIVED] [${requestId}] POST /v1/ai/stream`);
-    console.log(`[BACKEND_RECEIVED] [${requestId}] Authorization: Bearer ***  Session: ${req.headers['session'] ?? '(none)'}`);
+    console.log(`[BACKEND_RECEIVED] [${requestId}] ${authLogLine(req)}`);
     try {
       const headers = req.headers as Record<string, string>;
       headers['x-request-id'] = requestId;

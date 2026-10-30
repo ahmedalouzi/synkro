@@ -97,7 +97,7 @@ export class ProductionAIGateway implements AIGateway {
     }
 
     console.log(`\n[HTTP_TRACE] POST URL: ${url}`);
-    console.log(`[HTTP_TRACE] Headers: Content-Type=application/json, Authorization=Bearer ***, Session=${this.options.sessionToken}`);
+    console.log(`[HTTP_TRACE] Headers: Content-Type=application/json, Authorization=Bearer ***, Session=***`);
 
     let response: Response;
     const fetchStart = Date.now();
