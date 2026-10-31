@@ -59,6 +59,17 @@ function stepsForRun(activities: AgentTimelineActivity[], runId: string | undefi
   return [...byKey.values()];
 }
 
+/** Seconds from the run's first timeline event to its last, for the "Worked for" line. */
+function runSeconds(activities: AgentTimelineActivity[], runId: string | undefined): number | null {
+  const times = activities.filter((a) => a.runId === runId).map((a) => Date.parse(a.timestamp)).filter(Number.isFinite);
+  if (times.length < 2) return null;
+  return (Math.max(...times) - Math.min(...times)) / 1000;
+}
+
+// Older agent versions wrote their activity log into the message text as HTML. Messages are rendered as
+// markdown, so that block showed up as raw markup; drop it from messages saved before the fix.
+const LEGACY_ACTIVITY_HTML = /<details class="agent-activity-dropdown"[\s\S]*?<\/details>\s*/g;
+
 function stepLabel(a: AgentTimelineActivity): { verb: string; target: string } {
   const done = a.status !== 'in_progress';
   const target = a.file ? fileName(a.file) : a.command ?? '';
@@ -487,28 +498,39 @@ export function ChatPane({ onOpenSettings: _onOpenSettings }: ChatPaneProps) {
     const steps = stepsForRun(timelineActivities, message.runId);
     const isLive = message.id === streamingMessageId;
     const showEdits = message.id === lastAssistantId && editSummaries.length > 0;
+    const content = message.content.replace(LEGACY_ACTIVITY_HTML, '');
+    const stepList = (
+      <div className="cx-steps">
+        {steps.map((a) => {
+          const { verb, target } = stepLabel(a);
+          return (
+            <div key={a.id} className={`cx-step cx-step--${a.status}`} title={a.message}>
+              <span className="cx-step__verb">{verb}</span>
+              {target && <span className="cx-step__target">{target}</span>}
+              {a.status === 'failed' && <span className="cx-step__failed">failed</span>}
+            </div>
+          );
+        })}
+      </div>
+    );
+    const seconds = runSeconds(timelineActivities, message.runId);
 
     return (
       <div className="cx-turn cx-turn--assistant">
-        {steps.length > 0 && (
-          <div className="cx-steps">
-            {steps.map((a) => {
-              const { verb, target } = stepLabel(a);
-              return (
-                <div key={a.id} className={`cx-step cx-step--${a.status}`} title={a.message}>
-                  <span className="cx-step__verb">{verb}</span>
-                  {target && <span className="cx-step__target">{target}</span>}
-                  {a.status === 'failed' && <span className="cx-step__failed">failed</span>}
-                </div>
-              );
-            })}
-          </div>
-        )}
+        {/* Live: the steps stream in open. Finished: one collapsed "Worked for …" line. */}
+        {steps.length > 0 && (isLive ? stepList : (
+          <details className="cx-worked">
+            <summary className="cx-worked__summary">
+              {seconds !== null ? `Worked for ${seconds.toFixed(1)}s` : 'Worked'} · {steps.length} {steps.length === 1 ? 'step' : 'steps'}
+            </summary>
+            {stepList}
+          </details>
+        ))}
 
-        {message.content ? (
+        {content ? (
           // Rendered as markdown, never raw HTML: model output can contain injected markup.
           <div className="cx-markdown">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
           </div>
         ) : isLive ? (
           <div className="cx-thinking">{streamStatus || 'Thinking…'}</div>

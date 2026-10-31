@@ -264,6 +264,42 @@
   margin-bottom: 8px;
 }
 
+/* A finished run's steps, collapsed behind one "Worked for 12.3s · 5 steps" line. */
+.cx-worked {
+  margin-bottom: 8px;
+}
+
+.cx-worked__summary {
+  cursor: pointer;
+  list-style: none;
+  font-size: 12px;
+  color: var(--text-secondary);
+  user-select: none;
+}
+
+.cx-worked__summary::-webkit-details-marker {
+  display: none;
+}
+
+.cx-worked__summary::before {
+  content: '▸';
+  display: inline-block;
+  width: 12px;
+  transition: transform 0.15s ease;
+}
+
+.cx-worked[open] > .cx-worked__summary::before {
+  transform: rotate(90deg);
+}
+
+.cx-worked[open] > .cx-worked__summary {
+  margin-bottom: 6px;
+}
+
+.cx-worked__summary:hover {
+  color: var(--text-primary);
+}
+
 .cx-step {
   display: flex;
   align-items: baseline;
