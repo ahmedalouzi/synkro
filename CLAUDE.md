@@ -33,6 +33,7 @@ Local dev backend: sign up a normal account against it. There is no auth bypass 
 6. DB schema lives in `initDbSchema()` (idempotent `CREATE ... IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS`). There is no migrations folder — keep changes backward compatible.
 7. Build/job data access: API uses `SET LOCAL ROLE api_user` + `app.current_user_id`; the worker uses `worker_user`. Keep that pattern for new queries.
 8. Update the Trello card (comment + move) when work changes state.
+9. After any UI change, don't rely on your own screenshots. Give Ahmad a short numbered test checklist (what to open, what to click, what it should look like), then wait: he runs `pnpm dev`, tests, and sends screenshots. Commit only after he confirms.
 
 ## Known traps (see Trello backlog)
 - Tests that need Postgres are reported as skipped (not failed) when the DB is unreachable locally; CI fails instead. Start the test DB first (`pnpm test:env:up`).
