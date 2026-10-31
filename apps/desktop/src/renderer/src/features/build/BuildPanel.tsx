@@ -1,3 +1,4 @@
+import QRCode from 'qrcode';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { useBuildStore } from '../../stores/build-store';
@@ -22,6 +23,8 @@ const ICON = {
   stop: 'M6 6h12v12H6z',
   download: 'M12 3v12M7 10l5 5 5-5M5 21h14',
   build: 'M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z',
+  phone: 'M17 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2zM12 18h.01',
+  refresh: 'M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67',
 };
 
 export function BuildPanel() {
@@ -32,6 +35,77 @@ export function BuildPanel() {
   const termInstance = useRef<Terminal | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'failed'>('idle');
+  const [qrDataUrl, setQrDataUrl] = useState<string>('');
+  const [downloadUrl, setDownloadUrl] = useState<string>(currentBuild?.artifactUrl || '');
+  const [expiresAt, setExpiresAt] = useState<number>(currentBuild?.downloadExpiresAt || (Date.now() + 15 * 60 * 1000));
+  const [isRefreshingQr, setIsRefreshingQr] = useState(false);
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    if (currentBuild?.status === 'success' && currentBuild.artifactUrl) {
+      setDownloadUrl(currentBuild.artifactUrl);
+      if (currentBuild.downloadExpiresAt) {
+        setExpiresAt(currentBuild.downloadExpiresAt);
+      }
+    }
+  }, [currentBuild?.id, currentBuild?.status, currentBuild?.artifactUrl, currentBuild?.downloadExpiresAt]);
+
+  useEffect(() => {
+    if (currentBuild?.status !== 'success') return;
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, [currentBuild?.status]);
+
+  useEffect(() => {
+    if (!downloadUrl) {
+      setQrDataUrl('');
+      return;
+    }
+    let active = true;
+    QRCode.toDataURL(downloadUrl, {
+      width: 140,
+      margin: 1,
+      color: {
+        dark: '#0f172a',
+        light: '#ffffff',
+      },
+    }).then((url) => {
+      if (active) setQrDataUrl(url);
+    }).catch((err) => {
+      console.error('Failed to generate QR code', err);
+    });
+    return () => { active = false; };
+  }, [downloadUrl]);
+
+  const remainingSec = Math.max(0, Math.floor((expiresAt - now) / 1000));
+  const isExpired = remainingSec <= 0;
+  const remainingMin = Math.ceil(remainingSec / 60);
+
+  const handleRefreshQr = useCallback(async () => {
+    if (!currentBuild) return;
+    setIsRefreshingQr(true);
+    try {
+      if (buildApi.getDownloadToken) {
+        const res = await buildApi.getDownloadToken(currentBuild.id);
+        setDownloadUrl(res.downloadUrl);
+        setExpiresAt(res.expiresAt);
+        updateCurrentBuild({
+          artifactUrl: res.downloadUrl,
+          downloadToken: res.token,
+          downloadExpiresAt: res.expiresAt,
+        });
+      } else {
+        const updated = await buildApi.getBuild(currentBuild.id);
+        updateCurrentBuild(updated);
+        if (updated.artifactUrl) setDownloadUrl(updated.artifactUrl);
+        if (updated.downloadExpiresAt) setExpiresAt(updated.downloadExpiresAt);
+      }
+    } catch (err) {
+      console.error('Failed to refresh download token', err);
+    } finally {
+      setIsRefreshingQr(false);
+    }
+  }, [currentBuild?.id, updateCurrentBuild]);
 
   // Status polling timer
   useEffect(() => {
@@ -115,8 +189,9 @@ export function BuildPanel() {
   }, [currentBuild]);
 
   const handleDownload = useCallback(() => {
-    if (currentBuild?.artifactUrl) window.open(currentBuild.artifactUrl, '_blank');
-  }, [currentBuild]);
+    const url = downloadUrl || currentBuild?.artifactUrl;
+    if (url) window.open(url, '_blank');
+  }, [downloadUrl, currentBuild?.artifactUrl]);
 
   const handleCopyLog = useCallback(() => {
     const term = termInstance.current;
@@ -194,6 +269,46 @@ export function BuildPanel() {
         <div id="build-error-banner" className="build-error-banner">
           <div className="error-title">{t('build.buildFailed')}</div>
           <pre id="build-error-log" className="error-log">{currentBuild.errorLog}</pre>
+        </div>
+      )}
+
+      {currentBuild.status === 'success' && (downloadUrl || currentBuild.artifactUrl) && (
+        <div id="build-qr-banner" className="build-qr-banner">
+          <div className="build-qr-preview">
+            {qrDataUrl ? (
+              <img id="build-qr-img" className="build-qr-img" src={qrDataUrl} alt="APK Download QR Code" />
+            ) : (
+              <div className="build-qr-skeleton" />
+            )}
+          </div>
+          <div className="build-qr-details">
+            <div className="build-qr-title">
+              <Icon d={ICON.phone} />
+              <span>{t('build.scanWithPhone')}</span>
+            </div>
+            <div className="build-qr-expiry">
+              {isExpired ? (
+                <span className="build-qr-expired-badge">{t('build.qrExpired')}</span>
+              ) : (
+                <span className="build-qr-expiry-text">
+                  {t('build.qrExpiresIn', { time: `${remainingMin}m` })}
+                </span>
+              )}
+            </div>
+            <div className="build-qr-actions">
+              <button
+                id="build-qr-refresh-btn"
+                type="button"
+                className="btn-qr-refresh"
+                onClick={handleRefreshQr}
+                disabled={isRefreshingQr}
+                title={t('build.refreshQr')}
+              >
+                <Icon d={ICON.refresh} />
+                {isRefreshingQr ? t('build.refreshing') : t('build.refreshQr')}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -306,6 +421,17 @@ export function renderBuildPanel(opts: BuildPanelOpts, doc: Document): HTMLEleme
     banner.append(errLog);
 
     root.append(banner);
+  }
+
+  if (currentBuild.status === 'success' && currentBuild.artifactUrl) {
+    const qrBanner = doc.createElement('div');
+    qrBanner.id = 'build-qr-banner';
+    qrBanner.className = 'build-qr-banner';
+    const qrTitle = doc.createElement('div');
+    qrTitle.className = 'build-qr-title';
+    qrTitle.textContent = i18nT('build.scanWithPhone');
+    qrBanner.append(qrTitle);
+    root.append(qrBanner);
   }
 
   // Log container (xterm target in real React; a <div> in test harness)

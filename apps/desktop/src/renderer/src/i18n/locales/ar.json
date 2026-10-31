@@ -69,7 +69,12 @@
     "statusRunning": "جارٍ التنفيذ",
     "statusSuccess": "ناجح",
     "statusFailed": "فشل",
-    "statusCancelled": "تم الإلغاء"
+    "statusCancelled": "تم الإلغاء",
+    "scanWithPhone": "امسح بالهاتف لتنزيل الـ APK",
+    "qrExpiresIn": "تنتهي صلاحية الرابط خلال {time}",
+    "qrExpired": "انتهت صلاحية الرابط",
+    "refreshQr": "تحديث رمز QR",
+    "refreshing": "جارٍ التحديث..."
   },
   "titlebar": {
     "search": "بحث",

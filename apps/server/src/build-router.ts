@@ -1,3 +1,5 @@
+import crypto from 'node:crypto';
+import pino from 'pino';
 import express, { Router } from 'express';
 import multer from 'multer';
 import { db as client, validateZipBuffer, AuthenticationRouter, readSigningKey } from '@peep/agent/server';
@@ -18,6 +20,63 @@ const upload = multer({
 });
 
 const authService = new AuthenticationRouter();
+
+const logger = pino({ name: 'build-download' });
+
+const DOWNLOAD_TOKEN_SECRET = process.env.DOWNLOAD_TOKEN_SECRET || process.env.JWT_SECRET || process.env.SESSION_SECRET || 'synkro-download-secret-fallback-key-32b';
+const DOWNLOAD_TOKEN_TTL_MS = 15 * 60 * 1000; // 15 minutes
+
+export interface DownloadTokenPayload {
+  jobId: string;
+  userId: string;
+  purpose: 'apk-download';
+  exp: number; // timestamp in ms
+  tokenId: string;
+}
+
+export function createDownloadToken(jobId: string, userId: string): { token: string; expiresAt: number } {
+  const expiresAt = Date.now() + DOWNLOAD_TOKEN_TTL_MS;
+  const payload: DownloadTokenPayload = {
+    jobId,
+    userId,
+    purpose: 'apk-download',
+    exp: expiresAt,
+    tokenId: crypto.randomBytes(8).toString('hex'),
+  };
+  const data = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const sig = crypto.createHmac('sha256', DOWNLOAD_TOKEN_SECRET).update(data).digest('base64url');
+  return { token: `${data}.${sig}`, expiresAt };
+}
+
+export function verifyDownloadToken(token: string, expectedJobId: string): { valid: boolean; payload?: DownloadTokenPayload; reason?: string } {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 2) {
+      return { valid: false, reason: 'Malformed token format' };
+    }
+    const [data, sig] = parts;
+    const expectedSig = crypto.createHmac('sha256', DOWNLOAD_TOKEN_SECRET).update(data).digest('base64url');
+    const sigBuf = Buffer.from(sig);
+    const expBuf = Buffer.from(expectedSig);
+    if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
+      return { valid: false, reason: 'Invalid signature' };
+    }
+    const payload: DownloadTokenPayload = JSON.parse(Buffer.from(data, 'base64url').toString('utf8'));
+    if (payload.purpose !== 'apk-download') {
+      return { valid: false, reason: 'Invalid token purpose' };
+    }
+    if (payload.jobId !== expectedJobId) {
+      return { valid: false, reason: 'Token is not bound to this job' };
+    }
+    if (Date.now() > payload.exp) {
+      return { valid: false, reason: 'Download token has expired' };
+    }
+    return { valid: true, payload };
+  } catch (err: any) {
+    return { valid: false, reason: err?.message || 'Token verification failed' };
+  }
+}
+
 
 // Middleware for true authentication
 const requireAuth = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -167,7 +226,19 @@ buildRouter.get('/history', requireAuth, async (req, res) => {
       `, [userId]);
       
       await dbClient.query('COMMIT');
-      res.json(result.rows);
+      const rows = result.rows.map((row: any) => {
+        if (row.status === 'success' && row.artifactUrl) {
+          const { token, expiresAt } = createDownloadToken(row.id, userId);
+          return {
+            ...row,
+            downloadToken: token,
+            downloadExpiresAt: expiresAt,
+            artifactUrl: `/api/build/${row.id}/download?token=${token}`,
+          };
+        }
+        return row;
+      });
+      res.json(rows);
     } catch (e) {
       await dbClient.query('ROLLBACK');
       throw e;
@@ -208,7 +279,14 @@ buildRouter.get('/:jobId', requireAuth, async (req, res) => {
         res.status(404).json({ error: 'Build job not found' });
         return;
       }
-      res.json(result.rows[0]);
+      const job = result.rows[0];
+      if (job.status === 'success' && job.artifactUrl) {
+        const { token, expiresAt } = createDownloadToken(job.id, userId);
+        job.downloadToken = token;
+        job.downloadExpiresAt = expiresAt;
+        job.artifactUrl = `/api/build/${job.id}/download?token=${token}`;
+      }
+      res.json(job);
     } catch (e) {
       await dbClient.query('ROLLBACK');
       throw e;
@@ -221,7 +299,7 @@ buildRouter.get('/:jobId', requireAuth, async (req, res) => {
   }
 });
 
-buildRouter.get('/:jobId/download', requireAuth, async (req, res) => {
+buildRouter.get('/:jobId/download-token', requireAuth, async (req, res) => {
   try {
     const userId = (req as any).user.userId;
     const jobId = req.params.jobId;
@@ -263,6 +341,95 @@ buildRouter.get('/:jobId/download', requireAuth, async (req, res) => {
       return;
     }
 
+    const { token, expiresAt } = createDownloadToken(job.id, userId);
+    res.json({
+      token,
+      downloadUrl: `/api/build/${job.id}/download?token=${token}`,
+      expiresAt,
+    });
+  } catch (err) {
+    console.error('[GET /build/:jobId/download-token]', err);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+buildRouter.get('/:jobId/download', async (req, res) => {
+  const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0].trim() || req.ip || req.socket.remoteAddress || 'unknown';
+  const userAgent = req.headers['user-agent'] || 'unknown';
+  const jobId = req.params.jobId;
+
+  if (!isValidJobId(jobId)) {
+    res.status(400).json({ error: 'Invalid jobId: must be a valid UUID' });
+    return;
+  }
+
+  const rawToken = (req.query.token as string) || (req.headers['authorization'] || '').replace('Bearer ', '') || (req.headers['session'] as string);
+  if (!rawToken) {
+    logger.warn({ event: 'apk_download_rejected', jobId, ip: clientIp, userAgent, reason: 'Missing token' }, 'APK download missing token');
+    res.status(401).json({ error: 'Unauthorized: Missing download token' });
+    return;
+  }
+
+  let userId: string;
+  let tokenId: string;
+
+  if (rawToken.includes('.')) {
+    const verified = verifyDownloadToken(rawToken, jobId);
+    if (!verified.valid || !verified.payload) {
+      logger.warn({ event: 'apk_download_rejected', jobId, ip: clientIp, userAgent, reason: verified.reason }, 'APK download token verification failed');
+      res.status(401).json({ error: `Unauthorized: ${verified.reason}` });
+      return;
+    }
+    userId = verified.payload.userId;
+    tokenId = verified.payload.tokenId;
+  } else {
+    // Session token fallback
+    try {
+      const session = await authService.validateSession(rawToken);
+      userId = session.userId;
+      tokenId = 'session';
+    } catch (err: any) {
+      logger.warn({ event: 'apk_download_rejected', jobId, ip: clientIp, userAgent, reason: 'Invalid session token' }, 'APK download session invalid');
+      res.status(401).json({ error: 'Unauthorized: ' + (err.message || 'Invalid session') });
+      return;
+    }
+  }
+
+  try {
+    const dbClient = await client.connect();
+    let job;
+    try {
+      await dbClient.query('BEGIN');
+      await dbClient.query('SET LOCAL ROLE api_user');
+      await dbClient.query('SELECT set_config($1, $2, true)', ['app.current_user_id', userId]);
+      
+      const result = await dbClient.query(`
+        SELECT id, status, artifact_url
+        FROM build_jobs
+        WHERE id = $1
+      `, [jobId]);
+      
+      await dbClient.query('COMMIT');
+      job = result.rows[0];
+    } catch (e) {
+      await dbClient.query('ROLLBACK');
+      throw e;
+    } finally {
+      dbClient.release();
+    }
+
+    if (!job) {
+      logger.warn({ event: 'apk_download_rejected', jobId, userId, ip: clientIp, reason: 'Job not found' }, 'APK download job not found');
+      res.status(404).json({ error: 'Build job not found' });
+      return;
+    }
+    
+    if (job.status !== 'success') {
+      logger.warn({ event: 'apk_download_rejected', jobId, userId, ip: clientIp, reason: 'Artifact not ready' }, 'APK artifact not ready');
+      res.status(400).json({ error: 'Artifact not ready or build failed' });
+      return;
+    }
+
     const fs = await import('node:fs');
     const path = await import('node:path');
     const destDir = process.env.ARTIFACT_DIR || '/var/lib/synkro/artifacts';
@@ -275,15 +442,27 @@ buildRouter.get('/:jobId/download', requireAuth, async (req, res) => {
     }
 
     if (!fs.existsSync(artifactPath)) {
+      logger.warn({ event: 'apk_download_rejected', jobId, userId, artifactPath, ip: clientIp, reason: 'File not found on disk' }, 'APK file missing');
       res.status(404).json({ error: 'Artifact file not found on disk' });
       return;
     }
+
+    logger.info({
+      event: 'apk_download_started',
+      timestamp: new Date().toISOString(),
+      jobId,
+      userId,
+      tokenId,
+      ip: clientIp,
+      userAgent,
+      artifactPath,
+    }, `Serving APK download for job ${jobId}`);
 
     res.setHeader('Content-Type', 'application/vnd.android.package-archive');
     res.setHeader('Content-Disposition', 'attachment; filename="app-release.apk"');
     const stream = fs.createReadStream(artifactPath);
     stream.on('error', (err) => {
-      console.error('[Download Stream Error]', err);
+      logger.error({ event: 'apk_download_stream_error', jobId, error: err.message }, 'Download stream error');
       if (!res.headersSent) {
         res.status(500).json({ error: 'Failed to stream artifact' });
       } else {
@@ -295,7 +474,7 @@ buildRouter.get('/:jobId/download', requireAuth, async (req, res) => {
     });
     stream.pipe(res);
   } catch (err) {
-    console.error('[GET /build/:jobId/download]', err);
+    logger.error({ event: 'apk_download_error', jobId, error: String(err) }, 'Error in download route');
     res.status(500).json({ error: 'Internal Server Error' });
   }
 });

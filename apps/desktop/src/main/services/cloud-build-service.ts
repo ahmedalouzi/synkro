@@ -112,8 +112,7 @@ export class CloudBuildService {
     }
     const data = await res.json();
     if (data.artifactUrl && data.artifactUrl.startsWith('/')) {
-      const settings = this.db.getSettingsRaw();
-      data.artifactUrl = `${this.getGatewayUrl()}${data.artifactUrl}?token=${encodeURIComponent(settings.sessionToken || '')}`;
+      data.artifactUrl = `${this.getGatewayUrl()}${data.artifactUrl}`;
     }
     return data;
   }
@@ -129,13 +128,29 @@ export class CloudBuildService {
       throw new Error(`Cloud Build History Failed: ${errData.error || res.statusText}`);
     }
     const data = await res.json();
-    const settings = this.db.getSettingsRaw();
     return data.map((job: any) => {
       if (job.artifactUrl && job.artifactUrl.startsWith('/')) {
-        job.artifactUrl = `${this.getGatewayUrl()}${job.artifactUrl}?token=${encodeURIComponent(settings.sessionToken || '')}`;
+        job.artifactUrl = `${this.getGatewayUrl()}${job.artifactUrl}`;
       }
       return job;
     });
+  }
+
+  async getDownloadToken(id: string) {
+    const headers = await this.getAuthHeaders();
+    const res = await fetch(`${this.getGatewayUrl()}/api/build/${id}/download-token`, {
+      method: 'GET',
+      headers,
+    });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(`Cloud Build Download Token Failed: ${errData.error || res.statusText}`);
+    }
+    const data = await res.json();
+    if (data.downloadUrl && data.downloadUrl.startsWith('/')) {
+      data.downloadUrl = `${this.getGatewayUrl()}${data.downloadUrl}`;
+    }
+    return data;
   }
 
   async cancelBuild(id: string) {

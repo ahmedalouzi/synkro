@@ -5,6 +5,7 @@ export interface IBuildApi {
   getBuild(id: string): Promise<CloudBuildJob>;
   cancelBuild(id: string): Promise<CloudBuildJob>;
   streamLogs(id: string, onChunk: (chunk: string) => void): () => void;
+  getDownloadToken?(id: string): Promise<{ token: string; downloadUrl: string; expiresAt: number }>;
 }
 
 export class MockBuildApi implements IBuildApi {
@@ -89,6 +90,17 @@ export class MockBuildApi implements IBuildApi {
     this.logListeners = [];
     this.startBuildCalls = [];
     this.simulateFailure = false;
+  }
+
+  async getDownloadToken(id: string): Promise<{ token: string; downloadUrl: string; expiresAt: number }> {
+    const downloadUrl = (this.currentJob && this.currentJob.id === id && this.currentJob.artifactUrl)
+      ? this.currentJob.artifactUrl
+      : 'https://example.com/mock-artifact.apk';
+    return {
+      token: 'mock-signed-token',
+      downloadUrl,
+      expiresAt: Date.now() + 15 * 60 * 1000,
+    };
   }
 
   getCurrentJob(): CloudBuildJob | null {

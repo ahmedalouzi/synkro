@@ -69,7 +69,12 @@
     "statusRunning": "RUNNING",
     "statusSuccess": "SUCCESS",
     "statusFailed": "FAILED",
-    "statusCancelled": "CANCELLED"
+    "statusCancelled": "CANCELLED",
+    "scanWithPhone": "Scan with phone to download APK",
+    "qrExpiresIn": "Link expires in {time}",
+    "qrExpired": "Link expired",
+    "refreshQr": "Refresh QR link",
+    "refreshing": "Refreshing..."
   },
   "titlebar": {
     "search": "Search",

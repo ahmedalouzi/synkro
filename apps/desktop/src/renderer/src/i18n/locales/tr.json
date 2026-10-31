@@ -69,7 +69,12 @@
     "statusRunning": "ÇALIŞIYOR",
     "statusSuccess": "BAŞARILI",
     "statusFailed": "BAŞARISIZ",
-    "statusCancelled": "İPTAL EDİLDİ"
+    "statusCancelled": "İPTAL EDİLDİ",
+    "scanWithPhone": "APK'yı indirmek için telefonunuzla tarayın",
+    "qrExpiresIn": "Bağlantı süresi: {time}",
+    "qrExpired": "Bağlantının süresi doldu",
+    "refreshQr": "QR bağlantısını yenile",
+    "refreshing": "Yenileniyor..."
   },
   "titlebar": {
     "search": "Ara",
