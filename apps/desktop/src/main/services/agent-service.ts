@@ -396,7 +396,12 @@ export class AgentService {
             );
           }
           case 'run_command': {
-            const commandStr = String(args.command);
+            // In an Expo project, adding packages goes through expo install (versions that match the SDK).
+            const expoProject = !!projectPath && await isExpoProject(projectPath);
+            const requested = String(args.command);
+            const rewritten = expoProject ? toExpoInstall(requested) : null;
+            const commandStr = rewritten ?? requested;
+            const rewriteNote = rewritten ? `Rewrote "${requested}" to "${rewritten}" (Expo project: versions that match its SDK).\n` : '';
             const safety = classifyCommand(commandStr);
 
             if (safety.level === 'blocked') {
@@ -426,53 +431,62 @@ export class AgentService {
               }
             }
 
-            // Task 6: Stream command output live to the Terminal UI panel via
-            // TerminalService.streamCommand(), while also accumulating a bounded
-            // copy of the output to return to the LLM as tool-result context.
-            const sessionId = `agent-cmd-${Date.now()}-${randomUUID().slice(0, 8)}`;
-            this.agentCommandSessionId = sessionId;
+            const runCaptured = async (cmd: string): Promise<string> => {
+              // Task 6: Stream command output live to the Terminal UI panel via
+              // TerminalService.streamCommand(), while also accumulating a bounded
+              // copy of the output to return to the LLM as tool-result context.
+              const sessionId = `agent-cmd-${Date.now()}-${randomUUID().slice(0, 8)}`;
+              this.agentCommandSessionId = sessionId;
 
-            // Accumulated LLM output buffer
-            let llmOutputBuffer = '';
-            let llmOutputTruncated = false;
+              // Accumulated LLM output buffer
+              let llmOutputBuffer = '';
+              let llmOutputTruncated = false;
 
-            // Intercept TERMINAL_OUTPUT emissions by hooking the session with a
-            // custom listener before streamCommand() is called.
-            const originalEmitOutput = (this.terminal as any).emitOutput.bind(this.terminal);
-            (this.terminal as any).emitOutput = (id: string, data: string) => {
-              originalEmitOutput(id, data);
-              if (id === sessionId) {
-                llmOutputBuffer += data;
-                if (llmOutputBuffer.length > RUN_COMMAND_LLM_OUTPUT_LIMIT) {
-                  // Keep only the tail (last RUN_COMMAND_LLM_OUTPUT_LIMIT bytes)
-                  llmOutputBuffer = llmOutputBuffer.slice(-RUN_COMMAND_LLM_OUTPUT_LIMIT);
-                  llmOutputTruncated = true;
+              // Intercept TERMINAL_OUTPUT emissions by hooking the session with a
+              // custom listener before streamCommand() is called.
+              const originalEmitOutput = (this.terminal as any).emitOutput.bind(this.terminal);
+              (this.terminal as any).emitOutput = (id: string, data: string) => {
+                originalEmitOutput(id, data);
+                if (id === sessionId) {
+                  llmOutputBuffer += data;
+                  if (llmOutputBuffer.length > RUN_COMMAND_LLM_OUTPUT_LIMIT) {
+                    // Keep only the tail (last RUN_COMMAND_LLM_OUTPUT_LIMIT bytes)
+                    llmOutputBuffer = llmOutputBuffer.slice(-RUN_COMMAND_LLM_OUTPUT_LIMIT);
+                    llmOutputTruncated = true;
+                  }
                 }
+              };
+
+              let exitCode: number;
+              let commandError: string | null = null;
+              try {
+                exitCode = await this.terminal.streamCommand(sessionId, cmd, projectPath);
+              } catch (err: any) {
+                exitCode = 1;
+                commandError = err.message || String(err);
+              } finally {
+                // Restore original emitOutput
+                (this.terminal as any).emitOutput = originalEmitOutput;
+                this.agentCommandSessionId = null;
               }
+
+              const truncationNotice = llmOutputTruncated
+                ? `...[output truncated; full output is available in the Terminal panel]...\n`
+                : '';
+
+              if (commandError) {
+                return `Command error: ${commandError}\nPartial output:\n${truncationNotice}${llmOutputBuffer}`;
+              }
+
+              return `Command exited with code ${exitCode}.\nOutput:\n${truncationNotice}${llmOutputBuffer}`;
             };
 
-            let exitCode: number;
-            let commandError: string | null = null;
-            try {
-              exitCode = await this.terminal.streamCommand(sessionId, commandStr, projectPath);
-            } catch (err: any) {
-              exitCode = 1;
-              commandError = err.message || String(err);
-            } finally {
-              // Restore original emitOutput
-              (this.terminal as any).emitOutput = originalEmitOutput;
-              this.agentCommandSessionId = null;
+            let result = rewriteNote + await runCaptured(commandStr);
+            // After a dependency change in an Expo project, check every package against the SDK.
+            if (expoProject && changesDependencies(commandStr)) {
+              result += `\n\n${EXPO_DEPS_CHECK}:\n${await runCaptured(EXPO_DEPS_CHECK)}`;
             }
-
-            const truncationNotice = llmOutputTruncated
-              ? `...[output truncated; full output is available in the Terminal panel]...\n`
-              : '';
-
-            if (commandError) {
-              return `Command error: ${commandError}\nPartial output:\n${truncationNotice}${llmOutputBuffer}`;
-            }
-
-            return `Command exited with code ${exitCode}.\nOutput:\n${truncationNotice}${llmOutputBuffer}`;
+            return result;
           }
           case 'delete_file': {
             const path = this.resolvePath(projectPath, String(args.path));
