@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { ProcessManager, escapeCmdArgument, windowsSpawnArgs } from '../../../apps/desktop/src/main/services/process-manager';
+import { ProcessManager, escapeCmdArgument, windowsSpawnArgs, userProjectEnv } from '../../../apps/desktop/src/main/services/process-manager';
 import { PlatformRegistry } from '../../../apps/desktop/src/main/services/platform-registry';
 import { ProjectService } from '../../../apps/desktop/src/main/services/project-service';
 import { managedFlutterFiles } from '../../../apps/desktop/src/main/services/providers/flutter-managed';
@@ -20,6 +20,12 @@ export default async function run() {
   assert.equal(npm.verbatim, true);
   assert.equal(escapeCmdArgument('C:\\a b\\'), '^"C:\\a^ b\\\\^"');
   assert.equal(escapeCmdArgument('say "hi"'), '^"say^ \\^"hi\\^"^"');
+
+  // pnpm's npm_* settings (pnpm dev) do not reach the user's npm/npx/expo processes; the rest does.
+  assert.deepEqual(
+    userProjectEnv({ PATH: 'p', npm_config_recursive: 'true', NPM_CONFIG_USER_AGENT: 'pnpm/9', npm_lifecycle_event: 'dev' }).env,
+    { PATH: 'p' },
+  );
 
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'managed-create-'));
   try {

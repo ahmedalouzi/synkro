@@ -6,6 +6,7 @@ import type { BrowserWindow } from 'electron';
 import { IPC_EVENTS } from '@peep/shared';
 import type { RunCommandResult } from '@peep/shared';
 import { globalIpcBatcher } from '../utils/ipc-batcher';
+import { cleanUserProjectEnv } from './process-manager';
 
 const ALLOWED_PREFIXES = [
   'flutter ',
@@ -117,7 +118,7 @@ export class TerminalService {
     console.log(`[TerminalService] Creating terminal session for id: ${id}, cwd: ${cwd}`);
     this.destroy(id);
 
-    const customEnv = { ...process.env };
+    const customEnv = { ...cleanUserProjectEnv() };
     if (this.flutterSdkPath) {
       const binPath = join(this.flutterSdkPath, 'bin');
       const pathKeyActual = Object.keys(customEnv).find(k => k.toLowerCase() === 'path') || 'PATH';
@@ -329,7 +330,7 @@ export class TerminalService {
 
     return new Promise((resolve, reject) => {
       const shell = platform() === 'win32';
-      const customEnv = { ...process.env };
+      const customEnv = { ...cleanUserProjectEnv() };
       if (this.flutterSdkPath) {
         const binPath = join(this.flutterSdkPath, 'bin');
         const pathKeyActual = Object.keys(customEnv).find(k => k.toLowerCase() === 'path') || 'PATH';
@@ -372,7 +373,7 @@ export class TerminalService {
 
     return new Promise((resolve, reject) => {
       const shell = platform() === 'win32';
-      const customEnv = { ...process.env };
+      const customEnv = { ...cleanUserProjectEnv() };
       if (this.flutterSdkPath) {
         const binPath = join(this.flutterSdkPath, 'bin');
         const pathKeyActual = Object.keys(customEnv).find(k => k.toLowerCase() === 'path') || 'PATH';

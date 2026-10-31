@@ -37,6 +37,52 @@ export function windowsSpawnArgs(command: string, args: string[]): { file: strin
   return { file: process.env.ComSpec || 'cmd.exe', args: ['/d', '/s', '/c', `"${line}"`], verbatim: true };
 }
 
+/** Variables a package manager sets when it runs Atomvs itself (`pnpm dev`), all pointing into the Atomvs repo. */
+const LEAKED_VARIABLE = /^(NODE_PATH|INIT_CWD|npm_.*|PNPM_.*)$/i;
+/** PATH entries the package manager prepends for the same run: the repo's node_modules/.bin folders. */
+const LEAKED_PATH_ENTRY = /[\\/]node_modules[\\/](\.bin|\.pnpm)([\\/]|$)|[\\/]node-gyp-bin([\\/]|$)/i;
+
+/**
+ * The environment for processes run in a user's project (npm, npx, expo, flutter, the agent's commands).
+ * Under `pnpm dev`, pnpm passes NODE_PATH (the repo's .pnpm/node_modules), its settings as npm_config_*,
+ * npm_* / PNPM_* variables and the repo's node_modules/.bin on PATH to every child process. A project then
+ * resolves packages from the Atomvs repo (Metro 0.84 instead of the project's own: ERR_PACKAGE_PATH_NOT_EXPORTED)
+ * and npm/Expo read pnpm's settings. All of it is removed; `removed` names what was (keys only, never values).
+ * Exported for tests.
+ */
+export function userProjectEnv(env: NodeJS.ProcessEnv): { env: NodeJS.ProcessEnv; removed: string[] } {
+  const removed: string[] = [];
+  const clean: NodeJS.ProcessEnv = {};
+  for (const [key, value] of Object.entries(env)) {
+    if (LEAKED_VARIABLE.test(key)) {
+      removed.push(key);
+      continue;
+    }
+    if (key.toLowerCase() === 'path' && value) {
+      const separator = platform() === 'win32' ? ';' : ':';
+      const entries = value.split(separator);
+      const kept = entries.filter((entry) => !LEAKED_PATH_ENTRY.test(entry));
+      if (kept.length !== entries.length) removed.push(`${key} (${entries.length - kept.length} node_modules entries)`);
+      clean[key] = kept.join(separator);
+      continue;
+    }
+    clean[key] = value;
+  }
+  return { env: clean, removed };
+}
+
+let loggedRemoved = '';
+/** userProjectEnv(process.env), logging in dev what it removed (once per distinct set). */
+export function cleanUserProjectEnv(): NodeJS.ProcessEnv {
+  const { env, removed } = userProjectEnv(process.env);
+  const summary = removed.sort().join(', ');
+  if (summary && summary !== loggedRemoved && process.env.ELECTRON_RENDERER_URL) {
+    loggedRemoved = summary;
+    console.info(`[env] removed from processes run in user projects: ${summary}`);
+  }
+  return env;
+}
+
 export class ProcessManager {
   private processes = new Map<number, ProcessInfo>();
   private nextId = 1;
@@ -51,7 +97,7 @@ export class ProcessManager {
    * windowsSpawnArgs(). Elsewhere `shell: true` is honored for callers that ask for it.
    */
   spawn(command: string, args: string[], cwd: string, envOverrides?: Record<string, string>, spawnOpts?: { shell?: boolean }): ProcessInfo {
-    const customEnv = { ...process.env, ...envOverrides };
+    const customEnv = { ...cleanUserProjectEnv(), ...envOverrides };
     if (this.flutterSdkPath) {
       const binPath = join(this.flutterSdkPath, 'bin');
       const pathKeyActual = Object.keys(customEnv).find(k => k.toLowerCase() === 'path') || 'PATH';
