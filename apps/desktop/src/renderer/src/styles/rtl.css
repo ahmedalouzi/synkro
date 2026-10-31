@@ -1,0 +1,169 @@
+/* ── RTL Support for Arabic (dir="rtl") ── */
+
+/* 1. Never mirror code blocks, terminals, Monaco editor, or technical identifiers */
+[dir="rtl"] pre,
+[dir="rtl"] code,
+[dir="rtl"] kbd,
+[dir="rtl"] .monaco-editor,
+[dir="rtl"] .xterm,
+[dir="rtl"] .terminal,
+[dir="rtl"] .build-logs-container,
+[dir="rtl"] .error-log,
+[dir="rtl"] .lx-terminal,
+[dir="rtl"] input[type="email"],
+[dir="rtl"] input[type="password"],
+[dir="rtl"] .sdk-path,
+[dir="rtl"] .onboarding-input,
+[dir="rtl"] .build-target,
+[dir="rtl"] .build-time {
+  direction: ltr !important;
+  text-align: left !important;
+}
+
+/* 2. Settings Modal RTL adjustments */
+[dir="rtl"] .sx-nav {
+  padding: 28px 24px 16px 12px;
+}
+
+[dir="rtl"] .sx-nav__item {
+  text-align: right;
+}
+
+[dir="rtl"] .sx-tab {
+  border-right: none;
+  border-left: 1px solid var(--border);
+  padding: 0 12px 0 8px;
+}
+
+[dir="rtl"] .sx-card-label {
+  margin: 0 4px 8px 0;
+}
+
+[dir="rtl"] .sx-content {
+  padding: 28px 32px 48px 40px;
+}
+
+[dir="rtl"] .sx-lang-picker {
+  display: flex;
+  gap: 6px;
+}
+
+/* 3. Login Screen RTL adjustments */
+[dir="rtl"] .lx-tabs .lx-tab-indicator.is-right {
+  left: auto;
+  right: calc(50% + 2px);
+}
+
+[dir="rtl"] .login-form .lx-input-icon {
+  left: auto;
+  right: 14px;
+}
+
+[dir="rtl"] .login-form .lx-input {
+  padding-left: 14px;
+  padding-right: 42px;
+}
+
+[dir="rtl"] .login-form .lx-eye {
+  right: auto;
+  left: 14px;
+}
+
+[dir="rtl"] .login-error-alert {
+  flex-direction: row;
+}
+
+[dir="rtl"] .login-error-icon {
+  margin-right: 0;
+  margin-left: 8px;
+}
+
+/* 4. Onboarding Wizard RTL adjustments */
+[dir="rtl"] .onboarding-feature-list li {
+  text-align: right;
+}
+
+[dir="rtl"] .onboarding-status {
+  text-align: right;
+}
+
+[dir="rtl"] .onboarding-status .status-icon {
+  margin-right: 0;
+  margin-left: 8px;
+}
+
+[dir="rtl"] .telemetry-card {
+  text-align: right;
+}
+
+[dir="rtl"] .tc-icon {
+  margin-right: 0;
+  margin-left: 12px;
+}
+
+/* 5. Build Panel RTL adjustments */
+[dir="rtl"] .build-info {
+  flex-direction: row;
+}
+
+[dir="rtl"] .build-actions {
+  flex-direction: row;
+}
+
+[dir="rtl"] .build-error-banner {
+  text-align: right;
+}
+
+
+/* Keep native window controls and topbar strictly LTR */
+[dir="rtl"] .topbar,
+.topbar {
+  direction: ltr !important;
+}
+
+/* RTL Menu Bar dropdown & submenu chevron mirroring */
+[dir="rtl"] .mb-chevron {
+  display: inline-block;
+  transform: scaleX(-1);
+}
+
+[dir="rtl"] .mb-keybinding {
+  direction: ltr !important;
+  unicode-bidi: isolate;
+}
+
+/* File explorer tree list: file and folder names strictly LTR */
+[dir="rtl"] .tree-item,
+[dir="rtl"] .sidebar-tree,
+[dir="rtl"] .tree-label {
+  direction: ltr !important;
+  text-align: start !important;
+}
+
+/* RTL Menu Bar dropdown rows */
+.mb-dropdown[dir="rtl"] {
+  direction: rtl;
+  text-align: right;
+}
+
+.mb-dropdown[dir="rtl"] .mb-item {
+  padding: 0 2px 0 10px;
+}
+
+.mb-dropdown[dir="rtl"] .mb-label {
+  text-align: right;
+}
+
+.mb-dropdown[dir="rtl"] .mb-keybinding {
+  margin-left: 0;
+  margin-right: 32px;
+  direction: ltr !important;
+  text-align: left !important;
+}
+
+.mb-dropdown[dir="rtl"] .mb-chevron {
+  margin-left: 0;
+  margin-right: 24px;
+  display: inline-block;
+  transform: scaleX(-1);
+}

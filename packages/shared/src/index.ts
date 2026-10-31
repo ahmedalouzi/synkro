@@ -252,6 +252,8 @@ export interface Settings {
   aiProviderApiKeyConfigured?: boolean;
   /** Developer Mode enables advanced or experimental settings, like Local AI. */
   developerMode?: boolean;
+  /** Active UI and Agent language locale ('en' default, 'ar', or 'tr'). */
+  locale?: 'en' | 'ar' | 'tr';
 }
 
 export type UpdateStatus = 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'ready' | 'error';
@@ -425,6 +427,7 @@ export interface AgentSendOptions {
    * - 'normal'   → default, no special handling
    */
   planApprovalMode?: 'approve' | 'refine' | 'normal' | 'auto';
+  locale?: 'en' | 'ar' | 'tr';
 }
 
 export interface ProjectTemplateInfo {
@@ -586,6 +589,7 @@ export const IPC_CHANNELS = {
   CHAT_DELETE_THREAD: 'chat:deleteThread',
   SETTINGS_GET: 'settings:get',
   SETTINGS_SET: 'settings:set',
+  SETTINGS_OPEN_WINDOW: 'settings:openWindow',
   APP_GET_VERSION: 'app:getVersion',
   APP_NEW_WINDOW: 'app:newWindow',
   APP_EXIT: 'app:exit',
@@ -822,6 +826,7 @@ export const IPC_EVENTS = {
   FILE_CHANGED: 'file:changed',
   // Cloud Build
   BUILD_LOG_CHUNK: 'build:logChunk',
+  SETTINGS_UPDATED: 'settings:updated',
 } as const;
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];
@@ -1004,6 +1009,9 @@ export interface IpcApi {
   cancelCloudBuild?: (id: string) => Promise<any>;
   getCloudBuildHistory?: () => Promise<any[]>;
   onBuildLogChunk?: (callback: (payload: { id: string; chunk: string }) => void) => () => void;
+  openSettingsWindow?: (section?: string) => Promise<void>;
+  onSettingsUpdated?: (callback: (settings: Partial<Settings>) => void) => () => void;
+  onSettingsSection?: (callback: (section: string) => void) => () => void;
 }
 
 declare global {

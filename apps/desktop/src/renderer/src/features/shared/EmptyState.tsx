@@ -1,3 +1,4 @@
+import { useI18n } from '../../i18n';
 import './EmptyState.css';
 import { useState } from 'react';
 import { useWorkspaceStore } from '../../stores/workspace-store';
@@ -51,6 +52,7 @@ export function NoProjectEmptyState({
   onOpen: () => void;
   onNew: () => void;
 }) {
+  const { t } = useI18n();
   const { user } = useAuthStore();
   const recentProjects = useWorkspaceStore((s) => s.recentProjects);
   const { openProjectByPath } = useWorkspace();
@@ -86,12 +88,12 @@ export function NoProjectEmptyState({
           {user && (
             <div className="synkro-subtitle" style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-muted)', marginTop: '4px' }}>
               <span style={{ fontSize: '10px', background: 'rgba(255,255,255,0.06)', padding: '2px 8px', borderRadius: '10px', color: '#a78bfa', fontWeight: 'bold' }}>
-                {(user.plan || user.tier || 'Free Plan').toUpperCase()}
+                {((user.plan || user.tier) ?? t('welcome.freePlan')).toUpperCase()}
               </span>
               <span className="synkro-dot">•</span>
               <span style={{ fontSize: '12px' }}>{user.email}</span>
               <span className="synkro-dot">•</span>
-              <a href="#" onClick={(e) => { e.preventDefault(); openWebPage('pricing'); }} className="synkro-link" style={{ color: '#60a5fa', textDecoration: 'underline' }}>Upgrade</a>
+              <a href="#" onClick={(e) => { e.preventDefault(); openWebPage('pricing'); }} className="synkro-link" style={{ color: '#60a5fa', textDecoration: 'underline' }}>{t('welcome.upgrade')}</a>
             </div>
           )}
         </div>
@@ -102,7 +104,7 @@ export function NoProjectEmptyState({
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
               <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
             </svg>
-            <span>Open project</span>
+            <span>{t('welcome.openProject')}</span>
           </button>
           
           <button className="synkro-action-card" onClick={onNew}>
@@ -110,7 +112,7 @@ export function NoProjectEmptyState({
               <line x1="12" y1="5" x2="12" y2="19" />
               <line x1="5" y1="12" x2="19" y2="12" />
             </svg>
-            <span>New project</span>
+            <span>{t('welcome.newProject')}</span>
           </button>
 
           <button className="synkro-action-card" onClick={() => window.dispatchEvent(new CustomEvent('peep:clone-repo'))}>
@@ -119,7 +121,7 @@ export function NoProjectEmptyState({
               <polyline points="7 10 12 15 17 10" />
               <line x1="12" y1="15" x2="12" y2="3" />
             </svg>
-            <span>Clone repo</span>
+            <span>{t('welcome.cloneRepo')}</span>
           </button>
           
           <button className="synkro-action-card" onClick={() => window.dispatchEvent(new CustomEvent('peep:ssh-connect'))}>
@@ -127,24 +129,24 @@ export function NoProjectEmptyState({
               <polyline points="4 17 10 11 4 5"></polyline>
               <line x1="12" y1="19" x2="20" y2="19"></line>
             </svg>
-            <span>Connect via SSH</span>
+            <span>{t('welcome.connectSsh')}</span>
           </button>
         </div>
 
         {/* Recent Projects List */}
         <div className="synkro-recent-section">
           <div className="synkro-recent-header">
-            <h3>Recent projects</h3>
+            <h3>{t('welcome.recentProjects')}</h3>
             {recentProjects.length > 5 && (
               <button className="synkro-view-all" onClick={() => setShowAllRecent(!showAllRecent)}>
-                {showAllRecent ? 'Show less' : `View all (${recentProjects.length})`}
+                {showAllRecent ? t('welcome.showLess') : t('welcome.viewAll', { count: recentProjects.length })}
               </button>
             )}
           </div>
           
           <div className="synkro-recent-list">
             {recentProjects.length === 0 && (
-              <div className="synkro-recent-item empty">No recent projects</div>
+              <div className="synkro-recent-item empty">{t('welcome.noRecentProjects')}</div>
             )}
             {(showAllRecent ? recentProjects : recentProjects.slice(0, 5)).map((p) => (
               <button
@@ -153,8 +155,8 @@ export function NoProjectEmptyState({
                 title={p.path}
                 onClick={() => void openProjectByPath(p.path)}
               >
-                <span className="synkro-recent-name">{p.name}</span>
-                <span className="synkro-recent-path">{p.path}</span>
+                <span className="synkro-recent-name" dir="ltr">{p.name}</span>
+                <span className="synkro-recent-path" dir="ltr">{p.path}</span>
               </button>
             ))}
           </div>
@@ -163,7 +165,7 @@ export function NoProjectEmptyState({
         {/* Bottom Banner */}
         <div className="synkro-bottom-banner">
           <button onClick={() => void window.peep.newWindow()} className="synkro-banner-link" style={{ background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 'inherit' }}>
-            Try a new window for running parallel agents ↗
+            {t('welcome.tryNewWindow')} ↗
           </button>
         </div>
 
@@ -172,9 +174,8 @@ export function NoProjectEmptyState({
   );
 }
 
-/* ── Other presets ──────────────────────────────────────────────────── */
-
 export function NoFileOpenEmptyState() {
+  const { t } = useI18n();
   return (
     <div className="synkro-empty-state" style={{ 
       display: 'flex', flexDirection: 'column', alignItems: 'center', 
@@ -197,18 +198,18 @@ export function NoFileOpenEmptyState() {
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
         {[
-          { label: 'New Agent', shortcut: 'Ctrl + Shift + L' },
-          { label: 'Hide Terminal', shortcut: 'Ctrl + `' },
-          { label: 'Search Files', shortcut: 'Ctrl + P' },
-          { label: 'Open Browser', shortcut: 'Ctrl + Shift + B' },
-          { label: 'Maximize Chat', shortcut: 'Ctrl + Alt + E' },
+          { key: 'newAgent', label: t('emptyState.newAgent'), shortcut: 'Ctrl + Shift + L' },
+          { key: 'hideTerminal', label: t('emptyState.hideTerminal'), shortcut: 'Ctrl + `' },
+          { key: 'searchFiles', label: t('emptyState.searchFiles'), shortcut: 'Ctrl + P' },
+          { key: 'openBrowser', label: t('emptyState.openBrowser'), shortcut: 'Ctrl + Shift + B' },
+          { key: 'maximizeChat', label: t('emptyState.maximizeChat'), shortcut: 'Ctrl + Alt + E' },
         ].map(item => (
-          <div key={item.label} style={{ 
+          <div key={item.key} style={{ 
             display: 'flex', justifyContent: 'space-between', 
             width: '280px', fontSize: '13px', color: 'var(--text-muted)' 
           }}>
             <span>{item.label}</span>
-            <span style={{ opacity: 0.7 }}>{item.shortcut}</span>
+            <span dir="ltr" style={{ opacity: 0.7 }}>{item.shortcut}</span>
           </div>
         ))}
       </div>

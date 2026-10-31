@@ -6,6 +6,7 @@ import type { ProjectInfo, Settings } from '@peep/shared';
 const DEFAULT_SETTINGS: Settings = {
   theme: 'dark',
   autoSave: true,
+  locale: 'en',
 };
 
 interface StoreData {

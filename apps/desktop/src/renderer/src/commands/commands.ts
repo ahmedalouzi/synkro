@@ -380,7 +380,7 @@ const commandList: Command[] = [
   { id: 'workbench.action.closeFolder', category: 'Workspaces', title: 'Close Folder', keybinding: 'Ctrl+K F', run: closeFolder, enabled: hasProject },
   { id: 'workbench.action.closeWindow', category: 'View', title: 'Close Window', keybinding: 'Alt+F4', run: () => window.peep.closeWindow() },
   { id: 'workbench.action.quit', category: 'File', title: 'Exit', run: () => window.peep.exitApp() },
-  { id: 'workbench.action.openSettings', category: 'Preferences', title: 'Open Settings', keybinding: 'Ctrl+,', run: () => emit('peep:open-settings') },
+  { id: 'workbench.action.openSettings', category: 'Preferences', title: 'Open Settings', keybinding: 'Ctrl+,', run: () => { if (window.peep?.openSettingsWindow) { void window.peep.openSettingsWindow(); } else { emit('peep:open-settings'); } } },
   { id: 'workbench.action.openGlobalKeybindings', category: 'Preferences', title: 'Keyboard Shortcuts', keybinding: 'Ctrl+K Ctrl+S', run: () => emit('peep:open-keyboard-help') },
 
   // Edit

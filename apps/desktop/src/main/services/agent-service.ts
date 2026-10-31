@@ -296,11 +296,19 @@ export class AgentService {
     }
 
     const rnAddendum = isReactNative ? RN_SYSTEM_ADDENDUM : '';
+    const activeLocale = options.locale || settings.locale || 'en';
+    let localeInstruction = '';
+    if (activeLocale === 'ar') {
+      localeInstruction = `\n\n[LOCALIZATION INSTRUCTION]\nThe user's active language is Arabic (العربية).\n- You MUST converse, explain, plan, and answer the user in Arabic.\n- All generated code, variable and function names, file paths, git commit messages, terminal commands, and inline code comments MUST remain strictly in English.\n`;
+    } else if (activeLocale === 'tr') {
+      localeInstruction = `\n\n[LOCALIZATION INSTRUCTION]\nThe user's active language is Turkish (Türkçe).\n- You MUST converse, explain, plan, and answer the user in Turkish.\n- All generated code, variable and function names, file paths, git commit messages, terminal commands, and inline code comments MUST remain strictly in English.\n`;
+    }
       console.log(`[E2E_VERIFICATION] 5. Building System Prompt...`);
       const systemContext =
         (options.scaffoldMode ? `${SCAFFOLD_SYSTEM_ADDENDUM}\n\n` : '') +
         `\n[ACTIVE PROJECT ROOT]\n${projectPath ? (await this.registry.detect(projectPath)).projectRoot : 'None'}\n` +
         rnAddendum +
+        localeInstruction +
         providerDetails +
         intelligenceContext +
         memoryContext +

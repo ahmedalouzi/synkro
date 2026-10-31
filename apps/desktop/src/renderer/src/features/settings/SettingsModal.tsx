@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useReducer, useState, type ReactNode } from 'react';
 import type { Settings } from '@peep/shared';
+import { useI18n, SUPPORTED_LOCALES } from '../../i18n';
 import { getCommand, isCommandEnabled, runCommand } from '../../commands/commands';
 import { useWorkspaceStore } from '../../stores/workspace-store';
 import { MODELS } from '../chat/models';
@@ -129,10 +130,12 @@ interface SettingsModalProps {
   onClose: () => void;
   /** Section to show first, e.g. 'usage' from an Upgrade button. */
   initialSection?: string;
+  standalone?: boolean;
 }
 
-export function SettingsModal({ open, onClose, initialSection }: SettingsModalProps) {
+export function SettingsModal({ open, onClose, initialSection, standalone }: SettingsModalProps) {
   const project = useWorkspaceStore((s) => s.project);
+  const { locale, setLocale, t } = useI18n();
   // Re-render on any workspace change so command-backed toggles stay in sync.
   useWorkspaceStore();
   const [, refresh] = useReducer((n: number) => n + 1, 0);
@@ -342,22 +345,22 @@ export function SettingsModal({ open, onClose, initialSection }: SettingsModalPr
   /* ── Sections ── */
 
   const accountRow = accountLoading ? (
-    <Row title="Atomvs Account" description="Loading account…" query={query} />
+    <Row title={t('settings.account.title')} description={t('settings.account.loading')} query={query} />
   ) : signedIn ? (
-    <Row title="Atomvs Account" description={`Manage your account and billing · ${account!.email}`} query={query}>
-      <button type="button" className="sx-btn" title="Opens the Atomvs website" onClick={() => openWebPage('account')}>Open ↗</button>
-      <button type="button" className="sx-btn" onClick={() => void handleSignOut()}>Sign out</button>
+    <Row title={t('settings.account.title')} description={t('settings.account.manageDesc', { email: account!.email })} query={query}>
+      <button type="button" className="sx-btn" title={t('settings.account.openSiteTooltip')} onClick={() => openWebPage('account')}>{t('settings.account.open')}</button>
+      <button type="button" className="sx-btn" onClick={() => void handleSignOut()}>{t('settings.account.signOut')}</button>
     </Row>
   ) : (
-    <Row title="Atomvs Account" description="Sign in to use the AI agent, chat and Tab completions." query={query}>
-      <button type="button" className="sx-btn" onClick={() => setAuthMode('signup')}>Sign up</button>
-      <button type="button" className="sx-btn sx-btn--primary" onClick={() => setAuthMode('signin')}>Sign in</button>
+    <Row title={t('settings.account.title')} description={t('settings.account.signInDesc')} query={query}>
+      <button type="button" className="sx-btn" onClick={() => setAuthMode('signup')}>{t('settings.account.signUp')}</button>
+      <button type="button" className="sx-btn sx-btn--primary" onClick={() => setAuthMode('signin')}>{t('settings.account.signIn')}</button>
     </Row>
   );
 
   const upgradeRow = (
-    <Row title="Upgrade to Pro" description="More weekly AI usage, unlimited Tab completions, and the most capable models." query={query}>
-      <button type="button" className="sx-btn sx-btn--upgrade" title="Opens Atomvs pricing" onClick={() => openWebPage('pricing')}>↑ Upgrade</button>
+    <Row title={t('settings.upgrade.title')} description={t('settings.upgrade.desc')} query={query}>
+      <button type="button" className="sx-btn sx-btn--upgrade" title={t('settings.upgrade.pricingTooltip')} onClick={() => openWebPage('pricing')}>{t('settings.upgrade.btn')}</button>
     </Row>
   );
 
@@ -384,43 +387,57 @@ export function SettingsModal({ open, onClose, initialSection }: SettingsModalPr
           {authForm}
           {signedIn && isFreePlan && upgradeRow}
         </Card>
-        <Card label="Preferences">
-          <Row title="Editor Settings" description="Configure auto save, word wrap and the minimap" query={query}>
-            <button type="button" className="sx-btn" onClick={() => setSection('editor')}>Open</button>
+        <Card label={t('settings.preferences')}>
+          <Row title={t('settings.language')} description={t('settings.languageDesc')} query={query}>
+            <div className="sx-lang-picker" style={{ display: 'inline-flex', gap: '4px' }}>
+              {SUPPORTED_LOCALES.map((item) => (
+                <button
+                  key={item.code}
+                  type="button"
+                  className={`sx-btn ${locale === item.code ? 'sx-btn--primary' : ''}`}
+                  onClick={() => setLocale(item.code)}
+                >
+                  {item.nativeName}
+                </button>
+              ))}
+            </div>
           </Row>
-          <Row title="Keyboard Shortcuts" description="See every keyboard shortcut" query={query}>
-            <button type="button" className="sx-btn" onClick={() => closeThen(() => runCommand('workbench.action.openGlobalKeybindings'))}>Open</button>
+          <Row title={t('settings.general.editorSettings')} description={t('settings.general.editorSettingsDesc')} query={query}>
+            <button type="button" className="sx-btn" onClick={() => setSection('editor')}>{t('settings.general.open')}</button>
           </Row>
-          <Row title="Command Palette" description="Search and run any command (Ctrl+Shift+P)" query={query}>
-            <button type="button" className="sx-btn" onClick={() => closeThen(() => runCommand('workbench.action.showCommands'))}>Open</button>
+          <Row title={t('settings.general.keyboardShortcuts')} description={t('settings.general.keyboardShortcutsDesc')} query={query}>
+            <button type="button" className="sx-btn" onClick={() => closeThen(() => runCommand('workbench.action.openGlobalKeybindings'))}>{t('settings.general.open')}</button>
           </Row>
-          <Row title="Zoom" description="Make the whole interface larger or smaller" query={query}>
-            <button type="button" className="sx-btn" title="Zoom Out (Ctrl+-)" onClick={() => runCommand('workbench.action.zoomOut')}>−</button>
-            <button type="button" className="sx-btn" title="Reset Zoom (Ctrl+0)" onClick={() => runCommand('workbench.action.zoomReset')}>Reset</button>
-            <button type="button" className="sx-btn" title="Zoom In (Ctrl+=)" onClick={() => runCommand('workbench.action.zoomIn')}>+</button>
+          <Row title={t('settings.general.commandPalette')} description={t('settings.general.commandPaletteDesc')} query={query}>
+            <button type="button" className="sx-btn" onClick={() => closeThen(() => runCommand('workbench.action.showCommands'))}>{t('settings.general.open')}</button>
           </Row>
-          <Row title="Full Screen" description="Toggle full screen mode (F11)" query={query}>
-            <button type="button" className="sx-btn" onClick={() => runCommand('workbench.action.toggleFullScreen')}>Toggle</button>
+          <Row title={t('settings.general.zoom')} description={t('settings.general.zoomDesc')} query={query}>
+            <button type="button" className="sx-btn" title={t('settings.general.zoomOut')} onClick={() => runCommand('workbench.action.zoomOut')}>−</button>
+            <button type="button" className="sx-btn" title={t('settings.general.zoomReset')} onClick={() => runCommand('workbench.action.zoomReset')}>{t('settings.general.reset')}</button>
+            <button type="button" className="sx-btn" title={t('settings.general.zoomIn')} onClick={() => runCommand('workbench.action.zoomIn')}>+</button>
           </Row>
-          <Row title="Import Settings from VS Code" description="Bring over your VS Code auto save, word wrap and minimap settings" query={query}>
-            <button type="button" className="sx-btn" onClick={() => void handleImportVsCode()}>Import</button>
+          <Row title={t('settings.general.fullScreen')} description={t('settings.general.fullScreenDesc')} query={query}>
+            <button type="button" className="sx-btn" onClick={() => runCommand('workbench.action.toggleFullScreen')}>{t('settings.general.toggle')}</button>
+          </Row>
+          <Row title={t('settings.general.importVsCode')} description={t('settings.general.importVsCodeDesc')} query={query}>
+            <button type="button" className="sx-btn" onClick={() => void handleImportVsCode()}>{t('settings.general.import')}</button>
           </Row>
           {importStatus && <div className="sx-note">{importStatus}</div>}
         </Card>
-        <Card label="Layout">
-          <Row title="Primary Side Bar" description="Show the explorer, search and source control side bar (Ctrl+B)" query={query}>
+        <Card label={t('settings.general.layout')}>
+          <Row title={t('settings.general.primarySidebar')} description={t('settings.general.primarySidebarDesc')} query={query}>
             <CommandToggle id="workbench.action.toggleSidebarVisibility" onToggled={refresh} />
           </Row>
-          <Row title="Chat" description="Show the AI chat pane (Ctrl+Alt+B)" query={query}>
+          <Row title={t('settings.general.chat')} description={t('settings.general.chatDesc')} query={query}>
             <CommandToggle id="peep.toggleChat" onToggled={refresh} />
           </Row>
-          <Row title="Preview" description="Show the mobile preview pane" query={query}>
+          <Row title={t('settings.general.preview')} description={t('settings.general.previewDesc')} query={query}>
             <CommandToggle id="peep.togglePreview" onToggled={refresh} />
           </Row>
-          <Row title="Bottom Panel" description="Show the terminal, problems and build panel (Ctrl+J)" query={query}>
+          <Row title={t('settings.general.bottomPanel')} description={t('settings.general.bottomPanelDesc')} query={query}>
             <CommandToggle id="workbench.action.togglePanel" onToggled={refresh} />
           </Row>
-          <Row title="Status Bar" description="Show the status bar at the bottom of the window" query={query}>
+          <Row title={t('settings.general.statusBar')} description={t('settings.general.statusBarDesc')} query={query}>
             <CommandToggle id="workbench.action.toggleStatusbarVisibility" onToggled={refresh} />
           </Row>
         </Card>
@@ -430,17 +447,17 @@ export function SettingsModal({ open, onClose, initialSection }: SettingsModalPr
     usage: (
       <Card>
         {!signedIn ? (
-          <Row title="Not signed in" description="Sign in to see your plan and usage." query={query}>
-            <button type="button" className="sx-btn sx-btn--primary" onClick={() => { setSection('general'); setAuthMode('signin'); }}>Sign in</button>
+          <Row title={t('settings.usage.notSignedInTitle')} description={t('settings.usage.notSignedInDesc')} query={query}>
+            <button type="button" className="sx-btn sx-btn--primary" onClick={() => { setSection('general'); setAuthMode('signin'); }}>{t('settings.account.signIn')}</button>
           </Row>
         ) : (
           <>
-            <Row title="Current Plan" description={`You are on the ${plan.charAt(0).toUpperCase() + plan.slice(1)} plan.`} query={query}>
+            <Row title={t('settings.usage.currentPlan')} description={t('settings.usage.currentPlanDesc', { plan: plan.charAt(0).toUpperCase() + plan.slice(1) })} query={query}>
               <span className="sx-badge">{plan.toUpperCase()}</span>
             </Row>
             <Row
-              title="Included Usage"
-              description={account?.weekResetsAt ? `Refreshes weekly · next reset ${formatDate(account.weekResetsAt)}` : 'Usage is tracked and enforced by the Atomvs server.'}
+              title={t('settings.usage.includedUsage')}
+              description={account?.weekResetsAt ? t('settings.usage.refreshesWeekly', { date: formatDate(account.weekResetsAt) }) : t('settings.usage.usageServerTracked')}
               query={query}
             >
               <div className="sx-meter">
@@ -449,23 +466,23 @@ export function SettingsModal({ open, onClose, initialSection }: SettingsModalPr
               </div>
             </Row>
             <Row
-              title="Tab Completions"
-              description={account?.monthlyCompletions === null ? 'Unlimited on your plan.' : account?.completionsResetAt ? `Resets ${formatDate(account.completionsResetAt)}` : 'Tab completions this month.'}
+              title={t('settings.usage.tabCompletions')}
+              description={account?.monthlyCompletions === null ? t('settings.usage.unlimitedOnPlan') : account?.completionsResetAt ? t('settings.usage.resetsDate', { date: formatDate(account.completionsResetAt) }) : t('settings.usage.tabThisMonth')}
               query={query}
             >
               <span className="sx-value">
                 {account?.monthlyCompletions === null
-                  ? 'Unlimited'
+                  ? t('settings.usage.unlimited')
                   : `${account?.completionsUsed ?? 0} / ${account?.monthlyCompletions ?? '—'}`}
               </span>
             </Row>
             {isFreePlan && upgradeRow}
-            <Row title="Billing" description="Manage your subscription, payment method and invoices" query={query}>
-              <button type="button" className="sx-btn" title="Opens the Atomvs website" onClick={() => openWebPage('billing')}>Open ↗</button>
+            <Row title={t('settings.usage.billing')} description={t('settings.usage.billingDesc')} query={query}>
+              <button type="button" className="sx-btn" title={t('settings.account.openSiteTooltip')} onClick={() => openWebPage('billing')}>{t('settings.account.open')}</button>
             </Row>
-            <Row title="Refresh" description="Fetch the latest usage from the server" query={query}>
+            <Row title={t('settings.usage.refresh')} description={t('settings.usage.refreshDesc')} query={query}>
               <button type="button" className="sx-btn" onClick={() => void loadAccount()} disabled={accountLoading}>
-                {accountLoading ? 'Refreshing…' : 'Refresh'}
+                {accountLoading ? t('settings.usage.refreshing') : t('settings.usage.refresh')}
               </button>
             </Row>
           </>
@@ -480,9 +497,9 @@ export function SettingsModal({ open, onClose, initialSection }: SettingsModalPr
           const locked = (!signedIn || isFreePlan) && m.id !== undefined;
           const selected = locked ? false : (!signedIn || isFreePlan) ? m.id === undefined : model === m.id;
           return (
-            <Row key={m.label} title={m.label} description={locked ? `${m.hint} · available on paid plans` : m.hint} query={query}>
+            <Row key={m.label} title={m.label} description={locked ? `${m.hint} · ${t('settings.models.availableOnPaid')}` : m.hint} query={query}>
               {locked ? (
-                <button type="button" className="sx-btn" title="Opens Atomvs pricing" onClick={() => openWebPage('pricing')}>🔒 Upgrade</button>
+                <button type="button" className="sx-btn" title={t('settings.upgrade.pricingTooltip')} onClick={() => openWebPage('pricing')}>{t('settings.models.upgrade')}</button>
               ) : (
                 <button
                   type="button"
@@ -490,29 +507,27 @@ export function SettingsModal({ open, onClose, initialSection }: SettingsModalPr
                   aria-checked={selected}
                   className={`sx-radio ${selected ? 'sx-radio--on' : ''}`}
                   onClick={() => void chooseModel(m.id)}
-                  title={`Use ${m.label}`}
+                  title={t('settings.models.useModel', { model: m.label })}
                 />
               )}
             </Row>
           );
         })}
         <div className="sx-note">
-          {signedIn && !isFreePlan
-            ? 'Also available from the model menu under the chat input.'
-            : 'On the Free plan, Auto picks a fast model for each task. Upgrade to Pro to choose a model.'}
+          {signedIn && !isFreePlan ? t('settings.models.paidNote') : t('settings.models.freeNote')}
         </div>
       </Card>
     ),
 
     editor: (
       <Card>
-        <Row title="Auto Save" description="Save files automatically shortly after you stop typing" query={query}>
+        <Row title={t('settings.editor.autoSave')} description={t('settings.editor.autoSaveDesc')} query={query}>
           <CommandToggle id="workbench.action.toggleAutoSave" onToggled={refresh} />
         </Row>
-        <Row title="Word Wrap" description="Wrap long lines to fit the editor width (Alt+Z)" query={query}>
+        <Row title={t('settings.editor.wordWrap')} description={t('settings.editor.wordWrapDesc')} query={query}>
           <CommandToggle id="editor.action.toggleWordWrap" onToggled={refresh} />
         </Row>
-        <Row title="Minimap" description="Show the code overview on the right side of the editor" query={query}>
+        <Row title={t('settings.editor.minimap')} description={t('settings.editor.minimapDesc')} query={query}>
           <CommandToggle id="editor.action.toggleMinimap" onToggled={refresh} />
         </Row>
       </Card>
@@ -520,21 +535,21 @@ export function SettingsModal({ open, onClose, initialSection }: SettingsModalPr
 
     tab: (
       <Card>
-        <Row title="Atomvs Tab" description="AI suggestions as you type. Tab accepts, Esc dismisses, Ctrl+→ accepts word by word." query={query}>
+        <Row title={t('settings.tab.title')} description={t('settings.tab.desc')} query={query}>
           <CommandToggle id="peep.toggleAICompletions" onToggled={refresh} />
         </Row>
-        <Row title="Trigger Suggestion" description="Ask for a suggestion at the cursor at any time with Alt+\" query={query} />
+        <Row title={t('settings.tab.trigger')} description={t('settings.tab.triggerDesc')} query={query} />
       </Card>
     ),
 
     rules: (
       <Card>
         <Row
-          title="Project Rules"
-          description={project ? 'Instructions the AI follows in this project (.synkro/rules.md)' : 'Open a project to edit its rules.'}
+          title={t('settings.rules.title')}
+          description={project ? t('settings.rules.descWithProject') : t('settings.rules.descNoProject')}
           query={query}
         >
-          <button type="button" className="sx-btn" disabled={!project} onClick={() => closeThen(() => runCommand('synkro.openProjectRules'))}>Open</button>
+          <button type="button" className="sx-btn" disabled={!project} onClick={() => closeThen(() => runCommand('synkro.openProjectRules'))}>{t('settings.general.open')}</button>
         </Row>
       </Card>
     ),
@@ -542,16 +557,16 @@ export function SettingsModal({ open, onClose, initialSection }: SettingsModalPr
     sdk: (
       <Card>
         <Row
-          title="Flutter SDK"
-          description={sdkVersion ? `Flutter ${sdkVersion} detected` : 'Flutter was not detected. Choose its folder, or leave empty to use PATH.'}
+          title={t('settings.sdk.title')}
+          description={sdkVersion ? t('settings.sdk.detectedDesc', { version: sdkVersion }) : t('settings.sdk.notDetectedDesc')}
           query={query}
         >
-          <span className={`sx-status ${sdkVersion ? 'sx-status--ok' : 'sx-status--warn'}`}>{sdkVersion ? 'Detected' : 'Not found'}</span>
+          <span className={`sx-status ${sdkVersion ? 'sx-status--ok' : 'sx-status--warn'}`}>{sdkVersion ? t('settings.sdk.detected') : t('settings.sdk.notFound')}</span>
         </Row>
-        <Row title="Flutter SDK Path" description="Leave empty to auto-detect from PATH" query={query}>
+        <Row title={t('settings.sdk.pathTitle')} description={t('settings.sdk.pathDesc')} query={query}>
           <input className="sx-input sx-input--wide" placeholder="C:\src\flutter" value={flutterPath} onChange={(e) => setFlutterPath(e.target.value)} />
-          <button type="button" className="sx-btn" onClick={() => void handleBrowseSdk()}>Browse</button>
-          <button type="button" className="sx-btn sx-btn--primary" disabled={flutterPath.trim() === savedFlutterPath} onClick={() => void handleSaveSdk()}>Save</button>
+          <button type="button" className="sx-btn" onClick={() => void handleBrowseSdk()}>{t('settings.sdk.browse')}</button>
+          <button type="button" className="sx-btn sx-btn--primary" disabled={flutterPath.trim() === savedFlutterPath} onClick={() => void handleSaveSdk()}>{t('settings.sdk.save')}</button>
         </Row>
         {sdkStatus && <div className="sx-note">{sdkStatus}</div>}
       </Card>
@@ -560,8 +575,8 @@ export function SettingsModal({ open, onClose, initialSection }: SettingsModalPr
     privacy: (
       <Card>
         <Row
-          title="Anonymous Usage Data"
-          description="Share feature usage and crash counts to help improve Atomvs. Never includes code, file names or personal data."
+          title={t('settings.privacy.title')}
+          description={t('settings.privacy.desc')}
           query={query}
         >
           <Toggle checked={telemetryEnabled} onChange={(v) => void handleTelemetry(v)} />
@@ -572,29 +587,29 @@ export function SettingsModal({ open, onClose, initialSection }: SettingsModalPr
     beta: (
       <>
         <Card>
-          <Row title="Developer Mode" description="Use your own AI provider key instead of an Atomvs account" query={query}>
+          <Row title={t('settings.beta.devMode')} description={t('settings.beta.devModeDesc')} query={query}>
             <Toggle checked={developerMode} onChange={(v) => void handleDeveloperMode(v)} />
           </Row>
-          <Row title="Developer Tools" description="Open Chromium developer tools for this window (Ctrl+Shift+I)" query={query}>
-            <button type="button" className="sx-btn" onClick={() => runCommand('workbench.action.toggleDevTools')}>Toggle</button>
+          <Row title={t('settings.beta.devTools')} description={t('settings.beta.devToolsDesc')} query={query}>
+            <button type="button" className="sx-btn" onClick={() => runCommand('workbench.action.toggleDevTools')}>{t('settings.general.toggle')}</button>
           </Row>
         </Card>
         {developerMode && (
-          <Card label="Local AI Provider">
-            <Row title="Provider" description="Only Google Gemini is supported for now" query={query}>
+          <Card label={t('settings.beta.localAiProvider')}>
+            <Row title={t('settings.beta.provider')} description={t('settings.beta.providerDesc')} query={query}>
               <select className="sx-input" value={aiProvider} onChange={(e) => setAiProvider(e.target.value)}>
                 <option value="gemini">Google Gemini</option>
               </select>
             </Row>
-            <Row title="API Key" description="Encrypted and stored only on this device" query={query}>
+            <Row title={t('settings.beta.apiKey')} description={t('settings.beta.apiKeyDesc')} query={query}>
               <input
                 className="sx-input sx-input--wide"
                 type="password"
-                placeholder={aiKeyConfigured ? '•••••••• (configured)' : 'Paste API key'}
+                placeholder={aiKeyConfigured ? t('settings.beta.configured') : t('settings.beta.pasteApiKey')}
                 value={aiKey}
                 onChange={(e) => setAiKey(e.target.value)}
               />
-              <button type="button" className="sx-btn sx-btn--primary" onClick={() => void handleSaveLocalAi()}>Save</button>
+              <button type="button" className="sx-btn sx-btn--primary" onClick={() => void handleSaveLocalAi()}>{t('settings.sdk.save')}</button>
             </Row>
             {aiStatus && <div className="sx-note">{aiStatus}</div>}
           </Card>
@@ -604,22 +619,22 @@ export function SettingsModal({ open, onClose, initialSection }: SettingsModalPr
 
     about: (
       <Card>
-        <Row title="Version" description={`Atomvs ${version || '—'} · ${navigator.platform}`} query={query} />
+        <Row title={t('settings.about.version')} description={`Atomvs ${version || '—'} · ${navigator.platform}`} query={query} />
         <Row
-          title="Software Update"
+          title={t('settings.about.softwareUpdate')}
           description={
-            updateInfo.status === 'checking' ? 'Checking for updates…'
-              : updateInfo.status === 'available' ? `Version ${updateInfo.version} is available — downloading…`
-              : updateInfo.status === 'downloading' ? `Downloading update… ${updateInfo.percent ?? 0}%`
-              : updateInfo.status === 'ready' ? `Version ${updateInfo.version} is ready to install.`
-              : updateInfo.status === 'not-available' ? 'You are on the latest version.'
-              : updateInfo.status === 'error' ? `Update failed: ${updateInfo.error}`
-              : 'Check for a newer version of Atomvs.'
+            updateInfo.status === 'checking' ? t('settings.about.checking')
+              : updateInfo.status === 'available' ? t('settings.about.available', { version: updateInfo.version })
+              : updateInfo.status === 'downloading' ? t('settings.about.downloading', { percent: updateInfo.percent ?? 0 })
+              : updateInfo.status === 'ready' ? t('settings.about.ready', { version: updateInfo.version })
+              : updateInfo.status === 'not-available' ? t('settings.about.notAvailable')
+              : updateInfo.status === 'error' ? t('settings.about.error', { error: updateInfo.error })
+              : t('settings.about.checkDesc')
           }
           query={query}
         >
           {updateInfo.status === 'ready' ? (
-            <button type="button" className="sx-btn sx-btn--primary" onClick={() => void window.peep.downloadAndInstall?.()}>Restart to Install</button>
+            <button type="button" className="sx-btn sx-btn--primary" onClick={() => void window.peep.downloadAndInstall?.()}>{t('settings.about.restartToInstall')}</button>
           ) : (
             <button
               type="button"
@@ -627,12 +642,12 @@ export function SettingsModal({ open, onClose, initialSection }: SettingsModalPr
               disabled={['checking', 'available', 'downloading'].includes(updateInfo.status)}
               onClick={() => void window.peep.checkForUpdates?.()}
             >
-              Check for Updates
+              {t('settings.about.checkForUpdates')}
             </button>
           )}
         </Row>
         {perfInfo && (
-          <Row title="Memory" description={`Heap ${perfInfo.heapUsedMB} MB · Resident ${perfInfo.rssMemMB} MB`} query={query} />
+          <Row title={t('settings.about.memory')} description={t('settings.about.memoryDesc', { heap: perfInfo.heapUsedMB, rss: perfInfo.rssMemMB })} query={query} />
         )}
       </Card>
     ),
@@ -641,28 +656,30 @@ export function SettingsModal({ open, onClose, initialSection }: SettingsModalPr
   const initial = account?.email?.charAt(0).toUpperCase() ?? '?';
 
   return (
-    <div className="sx-page" style={{ top: 35 }} role="dialog" aria-label="Atomvs Settings">
-      <div className="sx-tabbar">
-        <div className="sx-tab">
-          <Icon name="settings" />
-          <span>Atomvs Settings</span>
-          <button type="button" className="sx-tab__close" title="Close (Esc)" onClick={handleClose}>×</button>
+    <div className="sx-page" style={standalone ? { top: 0, height: '100%', position: 'absolute' } : { top: 35 }} role="dialog" aria-label={t('settings.modalTitle')}>
+      {!standalone && (
+        <div className="sx-tabbar">
+          <div className="sx-tab">
+            <Icon name="settings" />
+            <span>{t('settings.modalTitle')}</span>
+            <button type="button" className="sx-tab__close" title="Close (Esc)" onClick={handleClose}>×</button>
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="sx-body">
         <aside className="sx-nav">
           <div className="sx-profile">
             <div className="sx-avatar">{initial}</div>
             <div className="sx-profile__text">
-              <div className="sx-profile__email">{accountLoading ? 'Loading…' : account?.email ?? 'Not signed in'}</div>
-              <div className="sx-profile__plan">{signedIn ? `${plan.charAt(0).toUpperCase() + plan.slice(1)} Plan` : 'Sign in to use AI'}</div>
+              <div className="sx-profile__email">{accountLoading ? t('settings.account.loading') : account?.email ?? t('settings.notSignedIn')}</div>
+              <div className="sx-profile__plan">{signedIn ? t('settings.planSuffix', { plan: plan.charAt(0).toUpperCase() + plan.slice(1) }) : t('settings.signInToUseAi')}</div>
             </div>
           </div>
 
           <input
             className="sx-search"
-            placeholder="Search settings"
+            placeholder={t('settings.searchPlaceholder')}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Escape' && search) { e.preventDefault(); setSearch(''); } }}
@@ -678,7 +695,7 @@ export function SettingsModal({ open, onClose, initialSection }: SettingsModalPr
                   onClick={() => { setSearch(''); setSection(id); }}
                 >
                   <Icon name={id} />
-                  {SECTION_LABELS[id]}
+                  {t(`settings.sections.${id}`)}
                 </button>
               ))}
             </div>
@@ -687,13 +704,13 @@ export function SettingsModal({ open, onClose, initialSection }: SettingsModalPr
           <div className="sx-nav__group">
             <button type="button" className="sx-nav__item" title="Opens the Atomvs docs" onClick={() => openWebPage('docs')}>
               <Icon name="rules" />
-              Docs ↗
+              {t('settings.docs')}
             </button>
           </div>
           {signedIn && isFreePlan && (
             <button type="button" className="sx-nav__upgrade" onClick={() => openWebPage('pricing')}>
               <Icon name="usage" />
-              Upgrade to Pro
+              {t('settings.upgradeToPro')}
             </button>
           )}
         </aside>
@@ -702,11 +719,11 @@ export function SettingsModal({ open, onClose, initialSection }: SettingsModalPr
           <div className="sx-content__inner">
             {visibleSections.map((id) => (
               <section key={id} className="sx-section">
-                <h2 className="sx-section__title">{SECTION_LABELS[id]}</h2>
+                <h2 className="sx-section__title">{t(`settings.sections.${id}`)}</h2>
                 {sections[id]}
               </section>
             ))}
-            {query && <div className="sx-empty">No settings match “{search}”.</div>}
+            {query && <div className="sx-empty">{t('settings.noMatch', { search })}</div>}
           </div>
         </main>
       </div>

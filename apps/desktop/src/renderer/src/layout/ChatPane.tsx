@@ -15,6 +15,7 @@ import { MODELS, useCanPickModel } from '../features/chat/models';
 import { openWebPage } from '../config/web';
 import './ChatPane.css';
 import { SkyBackdrop } from '../features/shared/SkyBackdrop';
+import { getLocale, useI18n } from '../i18n';
 
 interface ChatPaneProps {
   onOpenSettings: () => void;
@@ -97,6 +98,7 @@ const ICON = {
 };
 
 export function ChatPane({ onOpenSettings: _onOpenSettings }: ChatPaneProps) {
+  const { t } = useI18n();
   const {
     messages,
     input,
@@ -174,7 +176,7 @@ export function ChatPane({ onOpenSettings: _onOpenSettings }: ChatPaneProps) {
   const canPickModel = useCanPickModel();
   // Free plans always run on Auto (the server ignores a picked model), so show that.
   const effectiveModel = canPickModel ? selectedModel : undefined;
-  const modelLabel = MODELS.find((m) => m.id === effectiveModel)?.label ?? effectiveModel ?? 'Auto';
+  const modelLabel = effectiveModel ? (MODELS.find((m) => m.id === effectiveModel)?.label ?? effectiveModel) : t('chat.auto');
   const [upsellOpen, setUpsellOpen] = useState(false);
 
   useEffect(() => {
@@ -373,6 +375,7 @@ export function ChatPane({ onOpenSettings: _onOpenSettings }: ChatPaneProps) {
         diagnostics,
         previewError,
         checkpointId: userMessageId,
+        locale: getLocale(),
       });
     };
 
@@ -412,6 +415,7 @@ export function ChatPane({ onOpenSettings: _onOpenSettings }: ChatPaneProps) {
       diagnostics,
       mentions: attachments.map((a) => a.mention),
       checkpointId: userMessageId,
+      locale: getLocale(),
       images: images.map(({ mimeType, data }) => ({ mimeType, data })),
       autoApplyEdits: true,
     });
@@ -624,7 +628,7 @@ export function ChatPane({ onOpenSettings: _onOpenSettings }: ChatPaneProps) {
       <div className="cx-messages">
         {visibleMessages.length === 0 ? (
           <div className="cx-empty">
-            <div className="cx-empty__title">Plan, build, fix anything</div>
+            <div className="cx-empty__title">{t('chat.planBuildFix')}</div>
             <div className="cx-empty__hint">
               <kbd>@</kbd> to add files and context · <kbd>/</kbd> for commands · paste images to show the agent your screen
             </div>
@@ -739,7 +743,7 @@ export function ChatPane({ onOpenSettings: _onOpenSettings }: ChatPaneProps) {
           <textarea
             ref={textareaRef}
             className="cx-textarea"
-            placeholder={isStreaming ? 'Agent is working…' : 'Plan, build, @ for context'}
+            placeholder={isStreaming ? t('chat.agentWorking') : t('chat.inputPlaceholder')}
             value={input}
             rows={1}
             onChange={(e) => {

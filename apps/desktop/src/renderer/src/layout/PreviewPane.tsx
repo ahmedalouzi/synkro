@@ -1,3 +1,4 @@
+import { useI18n } from '../i18n';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { usePreviewStore } from '../stores/preview-store';
 import { useWorkspaceStore } from '../stores/workspace-store';
@@ -101,6 +102,7 @@ function getStoppedMsg(p: string) {
 }
 
 export function PreviewPane() {
+  const { t } = useI18n();
   const project = useWorkspaceStore((s) => s.project);
   const [scale, setScale] = useState(0.55);
   const [connectedDevices, setConnectedDevices] = useState<any[]>([]);
@@ -367,12 +369,12 @@ Please modify the selected element and its corresponding component files as foll
       {/* ── Header ── */}
       <div className="preview-header">
         <div className="preview-header__left">
-          <span className="preview-header__title">PREVIEW</span>
+          <span className="preview-header__title">{t('preview.title')}</span>
           {project && (
             <span className="preview-header__platform"
               style={{ '--plat-color': platColor } as React.CSSProperties}>
               <span className="preview-header__platform-dot" />
-              {getPlatformLabel(platform).toUpperCase()}
+              {platform === 'flutter' ? 'FLUTTER' : platform === 'react-native' ? 'RN' : platform === 'expo' ? 'EXPO' : t('preview.webOther')}
             </span>
           )}
         </div>
@@ -441,7 +443,7 @@ Please modify the selected element and its corresponding component files as foll
                   disabled={!project || platform === 'unknown'}
                   title={platform === 'unknown' ? 'Previews are not supported' : `Start ${getPlatformLabel(platform)} preview`}
                 >
-                  ▶ Start
+                  ▶ {t('preview.start')}
                 </button>
               )}
 
@@ -451,7 +453,7 @@ Please modify the selected element and its corresponding component files as foll
                 onClick={handleDetach}
                 title="Detach preview to floating window"
               >
-                ↗ Detach
+                ↗ {t('preview.detach')}
               </button>
             </>
           )}
@@ -564,7 +566,7 @@ Please modify the selected element and its corresponding component files as foll
                   {!session && (
                     <div className="preview-placeholder">
                       <span className="preview-placeholder__icon">📱</span>
-                      <h3>Live preview</h3>
+                      <h3>{t('preview.livePreview')}</h3>
                       <p>{getIdleMsg(platform)}</p>
                     </div>
                   )}

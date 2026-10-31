@@ -1,5 +1,5 @@
 // QA Edit Injection Test - Concurrent Modification Triggered!
-import { ipcMain, dialog, app, BrowserWindow, screen } from 'electron';
+import { ipcMain, dialog, app, BrowserWindow, screen, shell } from 'electron';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import { IPC_CHANNELS, IPC_EVENTS } from '@peep/shared';
@@ -36,6 +36,7 @@ import { DeviceService } from '../services/device-service';
 let db: DatabaseService | null = null;
 let mainWindow: BrowserWindow | null = null;
 let previewWindow: BrowserWindow | null = null;
+let settingsWindow: BrowserWindow | null = null;
 let agentService: AgentService | null = null;
 let publishService: PublishService | null = null;
 let cloudBuildService: CloudBuildService | null = null;
@@ -603,6 +604,81 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
 
   ipcMain.handle(IPC_CHANNELS.WORKSPACE_SEARCH_FILES, async (_event, rootPath: string, query: string, includeDirectories?: boolean) => {
     return searchFiles(rootPath, query, 50, includeDirectories === true);
+  });
+
+  
+  const loadStandaloneSettings = (win: BrowserWindow, section?: string) => {
+    const isDev = !app.isPackaged && process.env.ELECTRON_RENDERER_URL;
+    const secParam = section ? `&section=${encodeURIComponent(section)}` : '';
+    if (isDev) {
+      void win.loadURL(`${process.env.ELECTRON_RENDERER_URL}?window=settings&windowType=settings${secParam}#settings`);
+    } else {
+      void win.loadFile(path.join(__dirname, '../renderer/index.html'), {
+        query: { window: 'settings', windowType: 'settings', ...(section ? { section } : {}) },
+        hash: 'settings',
+      });
+    }
+  };
+
+  const openSettingsWindow = (section?: string) => {
+    if (settingsWindow && !settingsWindow.isDestroyed()) {
+      if (section) {
+        settingsWindow.webContents.send('peep:settings-section', section);
+      }
+      if (settingsWindow.isMinimized()) settingsWindow.restore();
+      settingsWindow.show();
+      settingsWindow.focus();
+      return;
+    }
+
+    settingsWindow = new BrowserWindow({
+      width: 1050,
+      height: 750,
+      minWidth: 800,
+      minHeight: 600,
+      show: false,
+      title: 'Atomvs Settings',
+      icon: path.join(__dirname, '../../resources/icons/icon.png'),
+      backgroundColor: '#0d1117',
+      center: true,
+      autoHideMenuBar: true,
+      titleBarStyle: 'hidden',
+      ...(process.platform === 'darwin'
+        ? { trafficLightPosition: { x: 12, y: 11 } }
+        : { titleBarOverlay: { color: '#0f0f12', symbolColor: '#a1a1aa', height: 35 } }),
+      webPreferences: {
+        preload: path.join(__dirname, '../preload/index.js'),
+        sandbox: false,
+        contextIsolation: true,
+        nodeIntegration: false,
+        webviewTag: true,
+      },
+    });
+
+    loadStandaloneSettings(settingsWindow, section);
+
+    settingsWindow.on('ready-to-show', () => {
+      settingsWindow?.show();
+    });
+
+    settingsWindow.on('closed', () => {
+      settingsWindow = null;
+    });
+
+    settingsWindow.webContents.setWindowOpenHandler((details) => {
+      shell.openExternal(details.url);
+      return { action: 'deny' };
+    });
+  };
+
+  ipcMain.handle(IPC_CHANNELS.SETTINGS_OPEN_WINDOW, (_event, section?: string) => {
+    openSettingsWindow(section);
+  });
+  ipcMain.handle('window:open-settings', (_event, section?: string) => {
+    openSettingsWindow(section);
+  });
+  ipcMain.on('window:open-settings', (_event, section?: string) => {
+    openSettingsWindow(section);
   });
 
   ipcMain.handle(IPC_CHANNELS.SETTINGS_GET, () => {

@@ -3,6 +3,7 @@ import { Terminal } from '@xterm/xterm';
 import { useBuildStore } from '../../stores/build-store';
 import { buildApi } from '../../services/build-api';
 import { CloudBuildJob } from '@peep/shared';
+import { useI18n, t as i18nT } from '../../i18n';
 // Styles (BuildPanel.css, xterm.css) are imported by BottomPanel.tsx: this module is also
 // loaded by the Node test harness, which can't import CSS. (An unused `?inline` import here
 // was silently dropped by the TypeScript transform, so the panel rendered unstyled.)
@@ -24,12 +25,13 @@ const ICON = {
 };
 
 export function BuildPanel() {
+  const { t } = useI18n();
   const currentBuild = useBuildStore((s) => s.currentBuild);
   const updateCurrentBuild = useBuildStore((s) => s.updateCurrentBuild);
   const termRef = useRef<HTMLDivElement>(null);
   const termInstance = useRef<Terminal | null>(null);
   const [elapsed, setElapsed] = useState(0);
-  const [copyLabel, setCopyLabel] = useState('Copy Log');
+  const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'failed'>('idle');
 
   // Status polling timer
   useEffect(() => {
@@ -129,11 +131,11 @@ export function BuildPanel() {
       return lines.join('\n').trimEnd();
     })();
     navigator.clipboard.writeText(textToCopy).then(() => {
-      setCopyLabel('Copied!');
-      setTimeout(() => setCopyLabel('Copy Log'), 1500);
+      setCopyStatus('copied');
+      setTimeout(() => setCopyStatus('idle'), 1500);
     }).catch(() => {
-      setCopyLabel('Failed');
-      setTimeout(() => setCopyLabel('Copy Log'), 1500);
+      setCopyStatus('failed');
+      setTimeout(() => setCopyStatus('idle'), 1500);
     });
   }, []);
 
@@ -145,8 +147,8 @@ export function BuildPanel() {
     return (
       <div id="build-panel-empty" className="build-panel empty">
         <div className="build-empty-icon"><Icon d={ICON.build} /></div>
-        <div className="build-empty-title">No active build.</div>
-        <div className="build-empty-hint">Click <strong>Build APK</strong> in the top bar or press <kbd>Ctrl+Shift+B</kbd> in a Flutter or React Native project.</div>
+        <div className="build-empty-title">{t('build.noActiveBuild')}</div>
+        <div className="build-empty-hint">{t('build.emptyHintPre')} <strong>{t('build.buildApk')}</strong> {t('build.emptyHintMid')} <kbd>Ctrl+Shift+B</kbd> {t('build.emptyHintPost')}</div>
       </div>
     );
   }
@@ -168,19 +170,19 @@ export function BuildPanel() {
         </div>
         <div className="build-actions">
           <button id="build-copy-btn" className="btn-copy" onClick={handleCopyLog} title="Copy the build log (or the selected text)">
-            <Icon d={copyLabel === 'Copied!' ? ICON.check : ICON.copy} />
-            {copyLabel}
+            <Icon d={copyStatus === 'copied' ? ICON.check : ICON.copy} />
+            {copyStatus === 'copied' ? t('build.copied') : copyStatus === 'failed' ? t('build.failed') : t('build.copyLog')}
           </button>
           {isActive && (
             <button id="build-cancel-btn" className="btn-cancel" onClick={handleCancel}>
               <Icon d={ICON.stop} />
-              Cancel Build
+              {t('build.cancelBuild')}
             </button>
           )}
           {currentBuild.status === 'success' && currentBuild.artifactUrl && (
             <button id="build-download-btn" className="btn-download" onClick={handleDownload}>
               <Icon d={ICON.download} />
-              Download {currentBuild.target.toUpperCase()}
+              {t('build.downloadTarget', { target: (currentBuild.target || 'apk').toUpperCase() })}
             </button>
           )}
         </div>
@@ -190,7 +192,7 @@ export function BuildPanel() {
 
       {currentBuild.status === 'failed' && currentBuild.errorLog && (
         <div id="build-error-banner" className="build-error-banner">
-          <div className="error-title">Build Failed</div>
+          <div className="error-title">{t('build.buildFailed')}</div>
           <pre id="build-error-log" className="error-log">{currentBuild.errorLog}</pre>
         </div>
       )}
@@ -225,7 +227,7 @@ export function renderBuildPanel(opts: BuildPanelOpts, doc: Document): HTMLEleme
     empty.className = 'build-panel empty';
     const emptyTitle = doc.createElement('div');
     emptyTitle.className = 'build-empty-title';
-    emptyTitle.textContent = 'No active build.';
+    emptyTitle.textContent = i18nT('build.noActiveBuild');
     empty.append(emptyTitle);
     return empty;
   }
@@ -263,7 +265,7 @@ export function renderBuildPanel(opts: BuildPanelOpts, doc: Document): HTMLEleme
     const cancelBtn = doc.createElement('button');
     cancelBtn.id = 'build-cancel-btn';
     cancelBtn.className = 'btn-cancel';
-    cancelBtn.textContent = 'Cancel Build';
+    cancelBtn.textContent = i18nT('build.cancelBuild');
     cancelBtn.onclick = () => onCancel?.();
     actions.append(cancelBtn);
   }
@@ -272,7 +274,7 @@ export function renderBuildPanel(opts: BuildPanelOpts, doc: Document): HTMLEleme
     const downloadBtn = doc.createElement('button');
     downloadBtn.id = 'build-download-btn';
     downloadBtn.className = 'btn-download';
-    downloadBtn.textContent = `Download ${currentBuild.target.toUpperCase()}`;
+    downloadBtn.textContent = i18nT('build.downloadTarget', { target: currentBuild.target.toUpperCase() });
     downloadBtn.onclick = () => onDownload?.();
     actions.append(downloadBtn);
   }

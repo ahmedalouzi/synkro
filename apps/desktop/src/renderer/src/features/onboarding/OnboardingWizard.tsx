@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useI18n } from '../../i18n';
 import './OnboardingWizard.css';
 
 interface OnboardingWizardProps {
@@ -14,6 +15,7 @@ interface SdkState {
 }
 
 export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
+  const { t } = useI18n();
   const [step, setStep] = useState<Step>('welcome');
   const [sdk, setSdk] = useState<SdkState>({ status: 'checking' });
   const [telemetryChoice, setTelemetryChoice] = useState<boolean | null>(null);
@@ -60,12 +62,11 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
           {(['welcome', 'sdk', 'telemetry', 'done'] as Step[]).map((s) => (
             <div
               key={s}
-              className={`onboarding-dot ${step === s ? 'active' : ''} ${
-                ['welcome', 'sdk', 'telemetry', 'done'].indexOf(s) <
+              className={`onboarding-dot ${step === s ? 'active' : ''} ${['welcome', 'sdk', 'telemetry', 'done'].indexOf(s) <
                 ['welcome', 'sdk', 'telemetry', 'done'].indexOf(step)
-                  ? 'passed'
-                  : ''
-              }`}
+                ? 'passed'
+                : ''
+                }`}
             />
           ))}
         </div>
@@ -75,7 +76,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
           <div className="onboarding-step">
             <div className="onboarding-logo">
               <span className="logo-icon">👁</span>
-              <h1>Welcome to Atomvs</h1>
+              <h1>{t('onboarding.welcomeTitle')}</h1>
             </div>
             <p className="onboarding-subtitle">
               The AI desktop IDE built for Flutter developers.
@@ -83,12 +84,12 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
               Let's get you set up in a few quick steps.
             </p>
             <ul className="onboarding-feature-list">
-              <li>✦ Live phone-frame preview as you type</li>
-              <li>✦ AI agent that reads, writes &amp; fixes your Flutter code</li>
-              <li>✦ Monaco editor, Git UI, terminal — all in one place</li>
+              <li>✦ {t('onboarding.feature1')}</li>
+              <li>✦ {t('onboarding.feature2')}</li>
+              <li>✦ {t('onboarding.feature3')}</li>
             </ul>
             <button className="onboarding-btn-primary" onClick={() => setStep('sdk')}>
-              Get Started →
+              {t('onboarding.getStarted')}
             </button>
           </div>
         )}
@@ -96,14 +97,14 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
         {/* ── Step: Flutter SDK ── */}
         {step === 'sdk' && (
           <div className="onboarding-step">
-            <h2>Flutter SDK</h2>
+            <h2>{t('onboarding.sdkTitle')}</h2>
             <p className="onboarding-desc">
-              Atomvs needs the Flutter SDK to run previews, analyze code, and scaffold projects.
+              {t('onboarding.sdkDesc')}
             </p>
 
             {sdk.status === 'checking' && (
               <div className="onboarding-status checking">
-                <span className="spinner" /> Detecting Flutter SDK…
+                <span className="spinner" /> {t('onboarding.sdkDetecting')}
               </div>
             )}
 
@@ -111,7 +112,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
               <div className="onboarding-status found">
                 <span className="status-icon">✓</span>
                 <div>
-                  <strong>Flutter {sdk.version} detected</strong>
+                  <strong>{t('onboarding.sdkDetected', { version: sdk.version || '' })}</strong>
                   <div className="sdk-path">{sdk.path}</div>
                 </div>
               </div>
@@ -121,28 +122,28 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
               <div className="onboarding-sdk-missing">
                 <div className="onboarding-status missing">
                   <span className="status-icon">✗</span>
-                  Flutter SDK not found in PATH
+                  {t('onboarding.sdkMissing')}
                 </div>
                 <p className="onboarding-desc small">
-                  Point Atomvs to your Flutter SDK folder, or{' '}
+                  {t('onboarding.sdkHelp')}{' '}
                   <a
                     href="https://docs.flutter.dev/get-started/install"
                     target="_blank"
                     rel="noreferrer"
                   >
-                    install Flutter
+                    {t('onboarding.sdkInstall')}
                   </a>{' '}
-                  and restart.
+                  {t('onboarding.sdkHelpEnd')}
                 </p>
                 <div className="onboarding-sdk-row">
                   <input
                     className="onboarding-input"
-                    placeholder="/path/to/flutter"
+                    placeholder={t('onboarding.sdkPlaceholder')}
                     value={sdkPath}
                     onChange={(e) => setSdkPath(e.target.value)}
                   />
                   <button className="onboarding-btn-secondary" onClick={() => void handleSdkBrowse()}>
-                    Browse…
+                    {t('onboarding.sdkBrowse')}
                   </button>
                 </div>
               </div>
@@ -150,14 +151,14 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
 
             <div className="onboarding-actions">
               <button className="onboarding-btn-ghost" onClick={() => setStep('welcome')}>
-                ← Back
+                {t('onboarding.back')}
               </button>
               <button
                 className="onboarding-btn-primary"
                 onClick={() => setStep('telemetry')}
                 disabled={sdk.status === 'checking'}
               >
-                Continue →
+                {t('onboarding.continue')}
               </button>
             </div>
           </div>
@@ -166,9 +167,9 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
         {/* ── Step: Telemetry ── */}
         {step === 'telemetry' && (
           <div className="onboarding-step">
-            <h2>Privacy &amp; Analytics</h2>
+            <h2>{t('onboarding.privacyTitle')}</h2>
             <p className="onboarding-desc">
-              Help improve Atomvs by sharing anonymous usage data. This is completely optional.
+              {t('onboarding.privacyDesc')}
             </p>
             <div className="onboarding-telemetry-cards">
               <button
@@ -177,8 +178,8 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
               >
                 <span className="tc-icon">✓</span>
                 <div>
-                  <strong>Enable analytics</strong>
-                  <p>Anonymous events stored locally only. No code or personal data is ever sent.</p>
+                  <strong>{t('onboarding.enableAnalyticsTitle')}</strong>
+                  <p>{t('onboarding.enableAnalyticsDesc')}</p>
                 </div>
               </button>
               <button
@@ -187,21 +188,21 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
               >
                 <span className="tc-icon">✗</span>
                 <div>
-                  <strong>No thanks</strong>
-                  <p>Fully offline. You can change this anytime in Settings.</p>
+                  <strong>{t('onboarding.disableAnalyticsTitle')}</strong>
+                  <p>{t('onboarding.disableAnalyticsDesc')}</p>
                 </div>
               </button>
             </div>
             <div className="onboarding-actions">
               <button className="onboarding-btn-ghost" onClick={() => setStep('sdk')}>
-                ← Back
+                {t('onboarding.back')}
               </button>
               <button
                 className="onboarding-btn-primary"
                 onClick={() => setStep('done')}
                 disabled={telemetryChoice === null}
               >
-                Continue →
+                {t('onboarding.continue')}
               </button>
             </div>
           </div>
@@ -211,21 +212,21 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
         {step === 'done' && (
           <div className="onboarding-step done-step">
             <div className="done-check">🚀</div>
-            <h2>You're all set!</h2>
+            <h2>{t('onboarding.doneTitle')}</h2>
             <p className="onboarding-desc">
-              Open an existing Flutter project or create a new one from a template or prompt.
+              {t('onboarding.doneDesc')}
             </p>
             <ul className="onboarding-tips">
-              <li><kbd>Ctrl+P</kbd> — Quick file open</li>
-              <li><kbd>Ctrl+S</kbd> — Save &amp; refresh preview</li>
-              <li>Chat panel → ask the AI to add a screen</li>
+              <li><kbd>Ctrl+P</kbd> — {t('onboarding.tip1')}</li>
+              <li><kbd>Ctrl+S</kbd> — {t('onboarding.tip2')}</li>
+              <li>{t('onboarding.tip3')}</li>
             </ul>
             <button
               className="onboarding-btn-primary large"
               onClick={() => void handleFinish()}
               disabled={isFinishing}
             >
-              {isFinishing ? 'Setting up…' : 'Open Atomvs →'}
+              {isFinishing ? t('onboarding.settingUp') : t('onboarding.openAtomvs')}
             </button>
           </div>
         )}

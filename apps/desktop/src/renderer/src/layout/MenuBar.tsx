@@ -1,3 +1,4 @@
+import { useI18n } from '../i18n';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { MENUS, resolveMenu, type ResolvedMenuItem } from '../commands/menus';
 import { useWorkspaceStore } from '../stores/workspace-store';
@@ -54,7 +55,7 @@ function MenuList({ items, focused, openSubmenu, subFocused, onHover, onSubHover
             >
               <span className="mb-check">{item.kind === 'item' && item.checked && <CheckIcon />}</span>
               <span className="mb-label">{item.label}</span>
-              {item.kind === 'item' && item.keybinding && <span className="mb-keybinding">{item.keybinding}</span>}
+              {item.kind === 'item' && item.keybinding && <span className="mb-keybinding" dir="ltr">{item.keybinding}</span>}
               {isSubmenu && <span className="mb-chevron">›</span>}
             </div>
             {isSubmenu && openSubmenu === i && (
@@ -77,6 +78,7 @@ function MenuList({ items, focused, openSubmenu, subFocused, onHover, onSubHover
 }
 
 export function MenuBar() {
+  const { t } = useI18n();
   const [openIndex, setOpenIndex] = useState<number | null>(null);
   const [focused, setFocused] = useState(-1);
   const [openSubmenu, setOpenSubmenu] = useState<number | null>(null);
@@ -86,7 +88,7 @@ export function MenuBar() {
   // Re-render while open so "Open Recent" reflects freshly loaded projects.
   useWorkspaceStore((s) => s.recentProjects);
 
-  const items = openIndex !== null ? resolveMenu(MENUS[openIndex].items) : [];
+  const items = openIndex !== null ? resolveMenu(MENUS[openIndex].items, t) : [];
   const submenuItems = openSubmenu !== null && items[openSubmenu]?.kind === 'submenu'
     ? (items[openSubmenu] as Extract<ResolvedMenuItem, { kind: 'submenu' }>).items
     : [];
@@ -102,7 +104,7 @@ export function MenuBar() {
     setOpenIndex(index);
     setOpenSubmenu(null);
     setSubFocused(-1);
-    setFocused(focusFirst ? nextActionable(resolveMenu(MENUS[index].items), -1, 1) : -1);
+    setFocused(focusFirst ? nextActionable(resolveMenu(MENUS[index].items, t), -1, 1) : -1);
     if (MENUS[index].id === 'file') {
       void window.peep.getRecentProjects().then((recent) => useWorkspaceStore.getState().setRecentProjects(recent));
     }
@@ -226,7 +228,7 @@ export function MenuBar() {
             onClick={() => (openIndex === i ? close() : open(i))}
             onMouseEnter={() => { if (openIndex !== null && openIndex !== i) open(i); }}
           >
-            <Mnemonic label={menu.label} mnemonic={menu.mnemonic} show={altHeld || openIndex !== null} />
+            <Mnemonic label={t('menu.' + menu.id) || menu.label} mnemonic={menu.mnemonic} show={altHeld || openIndex !== null} />
           </div>
           {openIndex === i && (
             <MenuList

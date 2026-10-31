@@ -4,6 +4,7 @@ import { useComposerStore } from '../../stores/composer-store';
 import { useWorkspaceStore } from '../../stores/workspace-store';
 import { usePreviewStore } from '../../stores/preview-store';
 import { useChatStore } from '../../stores/chat-store';
+import { getLocale } from '../../i18n';
 import './ComposerOverlay.css';
 
 function fileName(path: string): string {
@@ -80,6 +81,7 @@ export function ComposerOverlay() {
         openFileContent: activeFile?.content,
         selectedCode: activeSelection ?? undefined,
         diagnostics: [],
+        locale: getLocale(),
       });
     } catch (err) {
       setStreamStatus(`Error: ${err}`);

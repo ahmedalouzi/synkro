@@ -4,6 +4,7 @@ import { UpdateBanner } from './features/shared/UpdateBanner';
 import { usePeepEvents } from './hooks/usePeepEvents';
 import { useClaudeIdeBridge } from './features/claude-code/useClaudeIdeBridge';
 import { DetachedPreview } from './features/preview/DetachedPreview';
+import { StandaloneSettingsWindow } from './features/settings/StandaloneSettingsWindow';
 import { useComposerStore } from './stores/composer-store';
 import { handleGlobalKeyDown } from './commands/keybindings';
 import { useAuthStore } from './stores/auth-store';
@@ -14,7 +15,6 @@ import { HomeScreen } from './features/home/HomeScreen';
 import { SignInBurst } from './features/auth/SignInBurst';
 
 const FilePicker = lazy(() => import('./features/explorer/FilePicker').then(m => ({ default: m.FilePicker })));
-const SettingsModal = lazy(() => import('./features/settings/SettingsModal').then(m => ({ default: m.SettingsModal })));
 const NewProjectModal = lazy(() => import('./features/project/NewProjectModal').then(m => ({ default: m.NewProjectModal })));
 const OnboardingWizard = lazy(() => import('./features/onboarding/OnboardingWizard').then(m => ({ default: m.OnboardingWizard })));
 const KeyboardHelp = lazy(() => import('./features/shared/KeyboardHelp').then(m => ({ default: m.KeyboardHelp })));
@@ -34,8 +34,6 @@ export default function App() {
   const { authState, checkSession, setAuthState } = useAuthStore();
   const project = useWorkspaceStore((s) => s.project);
   const [globalPickerOpen, setGlobalPickerOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsSection, setSettingsSection] = useState<string | undefined>();
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [publishOpen, setPublishOpen] = useState(false);
@@ -93,8 +91,10 @@ export default function App() {
   useEffect(() => {
     const onOpenPicker = () => setGlobalPickerOpen(true);
     const onOpenSettings = (e: Event) => {
-      setSettingsSection((e as CustomEvent<{ section?: string } | undefined>).detail?.section);
-      setSettingsOpen(true);
+      const section = (e as CustomEvent<{ section?: string } | undefined>).detail?.section;
+      if (window.peep?.openSettingsWindow) {
+        void window.peep.openSettingsWindow(section);
+      }
     };
     const onOpenPublish = () => setPublishOpen(true);
     const onOpenComposer = (e: Event) => {
@@ -132,7 +132,11 @@ export default function App() {
     };
   }, []);
 
-  // Early return for detached preview window — AFTER all hooks
+  // Early return for standalone settings or detached preview window — AFTER all hooks
+  if (windowType === 'settings' || query.get('window') === 'settings' || window.location.hash.startsWith('#settings-window')) {
+    return <StandaloneSettingsWindow initialSection={query.get('section') || undefined} />;
+  }
+
   if (windowType === 'preview') {
     return <DetachedPreview />;
   }
@@ -160,7 +164,6 @@ export default function App() {
         <HomeScreen />
         {showSignInBurst && <SignInBurst onDone={endSignInBurst} />}
         <Suspense fallback={null}>
-          {settingsOpen && <SettingsModal open={settingsOpen} initialSection={settingsSection} onClose={() => setSettingsOpen(false)} />}
           {newProjectOpen && (
             <NewProjectModal
               open={newProjectOpen}
@@ -186,14 +189,13 @@ export default function App() {
       <UpdateBanner />
 
       <AppShell
-        onOpenSettings={() => { setSettingsSection(undefined); setSettingsOpen(true); }}
+        onOpenSettings={() => { if (window.peep?.openSettingsWindow) { void window.peep.openSettingsWindow(); } }}
         onNewProject={() => setNewProjectOpen(true)}
       />
       {showSignInBurst && <SignInBurst onDone={endSignInBurst} />}
 
       <Suspense fallback={null}>
         {globalPickerOpen && <FilePicker open={globalPickerOpen} onClose={() => setGlobalPickerOpen(false)} />}
-        {settingsOpen && <SettingsModal open={settingsOpen} initialSection={settingsSection} onClose={() => setSettingsOpen(false)} />}
         {newProjectOpen && (
           <NewProjectModal
             open={newProjectOpen}

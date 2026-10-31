@@ -211,7 +211,7 @@ export const MENUS: TopMenu[] = [
 ];
 
 /** Resolves entries against the command registry, dropping leading/trailing/duplicate separators. */
-export function resolveMenu(entries: MenuEntry[]): ResolvedMenuItem[] {
+export function resolveMenu(entries: MenuEntry[], t?: (key: string) => string): ResolvedMenuItem[] {
   const out: ResolvedMenuItem[] = [];
   for (const entry of entries) {
     if (entry === '-') {
@@ -219,17 +219,23 @@ export function resolveMenu(entries: MenuEntry[]): ResolvedMenuItem[] {
     } else if (typeof entry === 'string') {
       const cmd = getCommand(entry);
       if (!cmd) continue;
+      const translated = t ? t('commands.' + cmd.id) : cmd.title;
+      const label = (translated && translated !== 'commands.' + cmd.id) ? translated : cmd.title;
       out.push({
         kind: 'item',
-        label: cmd.title,
+        label,
         keybinding: cmd.keybinding,
         enabled: isCommandEnabled(cmd),
         checked: cmd.checked?.(),
         run: () => runCommand(cmd.id),
       });
     } else if ('submenu' in entry) {
-      const items = resolveMenu(typeof entry.items === 'function' ? entry.items() : entry.items);
-      out.push({ kind: 'submenu', label: entry.submenu, enabled: items.some((i) => i.kind !== 'separator'), items });
+      const items = resolveMenu(typeof entry.items === 'function' ? entry.items() : entry.items, t);
+      const subKey = entry.submenu.replace(/\s+/g, '');
+      const camelKey = subKey.charAt(0).toLowerCase() + subKey.slice(1);
+      const translatedSub = t ? t('menu.submenus.' + camelKey) : entry.submenu;
+      const label = (translatedSub && translatedSub !== 'menu.submenus.' + camelKey) ? translatedSub : entry.submenu;
+      out.push({ kind: 'submenu', label, enabled: items.some((i) => i.kind !== 'separator'), items });
     } else {
       out.push({ kind: 'item', label: entry.label, enabled: entry.enabled ?? true, run: entry.run });
     }

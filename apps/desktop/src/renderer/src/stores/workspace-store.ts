@@ -105,6 +105,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   setFileTree: (fileTree) => set({ fileTree }),
 
   openFile: (file) => {
+    if (file.name === 'Atomvs Settings' || file.name === 'Settings' || file.path.includes('settings')) return;
     const { openFiles } = get();
     const exists = openFiles.find((f) => f.path === file.path);
     if (exists) {

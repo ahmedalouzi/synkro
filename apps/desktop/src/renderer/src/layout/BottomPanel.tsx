@@ -1,3 +1,4 @@
+import { useI18n } from '../i18n';
 import { useRef, useEffect } from 'react';
 import { useDiagnosticsStore, usePreviewStore } from '../stores/preview-store';
 import { useWorkspaceStore } from '../stores/workspace-store';
@@ -58,6 +59,7 @@ function LogsTabContent({ logs }: { logs: string[] }) {
 }
 
 function ProblemsTabContent({ diagnostics, loadFile, errorCount, warningCount }: any) {
+  const { t } = useI18n();
   const parentRef = useRef<HTMLDivElement>(null);
   const count = diagnostics.length === 0 ? 0 : diagnostics.length + 1;
   
@@ -71,7 +73,7 @@ function ProblemsTabContent({ diagnostics, loadFile, errorCount, warningCount }:
   if (diagnostics.length === 0) {
     return (
       <div style={{ color: 'var(--text-muted)', padding: '4px 0' }}>
-        ✓ No problems detected.
+        ✓ {t('bottomPanel.noProblems')}
       </div>
     );
   }
@@ -157,6 +159,7 @@ function ProblemsTabContent({ diagnostics, loadFile, errorCount, warningCount }:
 
 /** `hidden` keeps the panel mounted while closed so terminal sessions and their scrollback survive (like VS Code). */
 export function BottomPanel({ hidden = false }: { hidden?: boolean }) {
+  const { t } = useI18n();
   const tab = useWorkspaceStore((s) => s.bottomPanelTab);
   const setTab = useWorkspaceStore((s) => s.setBottomPanelTab);
   const currentBuild = useBuildStore((s) => s.currentBuild);
@@ -172,15 +175,15 @@ export function BottomPanel({ hidden = false }: { hidden?: boolean }) {
       <div className="terminal-tabs">
         <div className={`terminal-tab ${tab === 'terminal' ? 'active' : ''}`} onClick={() => setTab('terminal')}>
           <div className="terminal-tab-dot td-green"></div>
-          Terminal
+          {t('bottomPanel.terminal')}
         </div>
         <div className={`terminal-tab ${tab === 'logs' ? 'active' : ''}`} onClick={() => setTab('logs')}>
           <div className="terminal-tab-dot td-blue"></div>
-          Output
+          {t('bottomPanel.output')}
         </div>
 
         <div className={`terminal-tab ${tab === 'problems' ? 'active' : ''}`} onClick={() => setTab('problems')}>
-          Problems
+          {t('bottomPanel.problems')}
           <span className={`terminal-tab-count${errorCount ? ' terminal-tab-count--error' : warningCount ? ' terminal-tab-count--warn' : ''}`}>
             {errorCount + warningCount}
           </span>
@@ -188,7 +191,7 @@ export function BottomPanel({ hidden = false }: { hidden?: boolean }) {
         
         <div id="bottom-panel-build-tab" className={`terminal-tab ${tab === 'build' ? 'active' : ''}`} onClick={() => setTab('build')}>
           <div className="terminal-tab-dot td-green"></div>
-          Build
+          {t('bottomPanel.build')}
           {currentBuild && (
             <span style={{marginLeft: 6, fontSize: '10px', background: 'rgba(255,255,255,0.1)', padding: '2px 6px', borderRadius: '10px', textTransform: 'uppercase'}}>
               {currentBuild.status}

@@ -1,3 +1,4 @@
+import { useI18n } from '../i18n';
 
 import { useWorkspace } from '../hooks/useWorkspace';
 import { FileTree } from '../features/explorer/FileTree';
@@ -9,6 +10,7 @@ import { SkyBackdrop } from '../features/shared/SkyBackdrop';
 
 
 export function Sidebar() {
+  const { t } = useI18n();
   const { project, fileTree, openProjectByPath, recentProjects, activeFilePath } = useWorkspace();
   const sidebarView = useWorkspaceStore((s) => s.sidebarView);
   const setCreatingItem = useWorkspaceStore((s) => s.setCreatingItem);
@@ -63,7 +65,7 @@ export function Sidebar() {
     <div className="sidebar">
       <SkyBackdrop interactive={false} />
       <div className="sidebar-header">
-        <span className="sidebar-title">Explorer</span>
+        <span className="sidebar-title">{t('sidebar.explorer')}</span>
         <div className="sidebar-actions">
           <button className="sidebar-btn" title="New File" onClick={() => handleNewItem('file')}>
             <svg style={{width:'12px',height:'12px',stroke:'currentColor',fill:'none',strokeWidth:'2'}} viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
@@ -84,7 +86,7 @@ export function Sidebar() {
         </div>
       </div>
       <div className="sidebar-search">
-        <input type="text" placeholder="Filter files..." />
+        <input type="text" placeholder={t('sidebar.filterFiles')} />
       </div>
       <div className="sidebar-tree">
         {!project ? (

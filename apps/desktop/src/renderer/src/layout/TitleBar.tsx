@@ -8,6 +8,7 @@ import { buildApk, getCommand, isCommandEnabled, runCommand } from '../commands/
 import { MenuBar } from './MenuBar';
 import { useBuildStore } from '../stores/build-store';
 import { openWebPage } from '../config/web';
+import { useI18n } from '../i18n';
 import './TitleBar.css';
 
 /**
@@ -18,8 +19,13 @@ import './TitleBar.css';
 
 const IS_MAC = navigator.userAgent.includes('Mac');
 
-const openSettings = (section?: string) =>
-  window.dispatchEvent(new CustomEvent('peep:open-settings', { detail: section ? { section } : undefined }));
+const openSettings = (section?: string) => {
+  if (window.peep?.openSettingsWindow) {
+    void window.peep.openSettingsWindow(section);
+  } else {
+    window.dispatchEvent(new CustomEvent('peep:open-settings', { detail: section ? { section } : undefined }));
+  }
+};
 
 function Icon({ d, size = 15 }: { d: string; size?: number }) {
   return (
@@ -53,6 +59,7 @@ function CommandButton({ id, icon, title }: { id: string; icon: string; title: s
 }
 
 export function TitleBar() {
+  const { t } = useI18n();
   const { project } = useWorkspace();
   const { user, logout } = useAuthStore();
   const currentBuild = useBuildStore((s) => s.currentBuild);
@@ -88,7 +95,7 @@ export function TitleBar() {
   const openSearch = () => runCommand(project ? 'workbench.action.quickOpen' : 'workbench.action.showCommands');
 
   return (
-    <div className={`topbar ${IS_MAC ? 'topbar--mac' : 'topbar--win'}`} ref={menuRef}>
+    <div className={`topbar ${IS_MAC ? 'topbar--mac' : 'topbar--win'}`} ref={menuRef} dir="ltr">
       {/* ── Left: logo, menus, navigation ── */}
       <div className="topbar__left">
         {!IS_MAC && (
@@ -105,26 +112,26 @@ export function TitleBar() {
           <button
             type="button"
             className={`tb-btn ${sidebarOpen ? 'tb-btn--on' : ''}`}
-            title="Toggle Primary Side Bar (Ctrl+B)"
+            title={t('titlebar.toggleSidebar')}
             onClick={() => runCommand('workbench.action.toggleSidebarVisibility')}
           >
             <Icon d={ICON.sidebar} />
           </button>
-          <CommandButton id="workbench.action.navigateBack" icon={ICON.back} title="Go Back (Alt+Left)" />
-          <CommandButton id="workbench.action.navigateForward" icon={ICON.forward} title="Go Forward (Alt+Right)" />
+          <CommandButton id="workbench.action.navigateBack" icon={ICON.back} title={t('titlebar.goBack')} />
+          <CommandButton id="workbench.action.navigateForward" icon={ICON.forward} title={t('titlebar.goForward')} />
         </div>
       </div>
 
       {/* ── Center: search ── */}
-      <button type="button" className="topbar__search" onClick={openSearch} title={project ? 'Go to File (Ctrl+P)' : 'Command Palette (Ctrl+Shift+P)'}>
+      <button type="button" className="topbar__search" onClick={openSearch} title={project ? t('titlebar.searchFile') : t('titlebar.commandPalette')}>
         <Icon d={ICON.search} size={13} />
-        <span>{project ? project.name : 'Search'}</span>
+        <span>{project ? project.name : t('titlebar.search')}</span>
       </button>
 
       {/* ── Right: build, layout, settings, account ── */}
       <div className="topbar__right">
         {user && isFreePlan && (
-          <button type="button" className="topbar__upgrade" title="Opens Atomvs pricing" onClick={() => openWebPage('pricing')}>Upgrade to Pro</button>
+          <button type="button" className="topbar__upgrade" title="Opens Atomvs pricing" onClick={() => openWebPage('pricing')}>{t('titlebar.upgradeToPro')}</button>
         )}
 
         {canBuild && (
@@ -134,22 +141,22 @@ export function TitleBar() {
             className="topbar__build"
             disabled={isBuildActive}
             onClick={() => void buildApk()}
-            title={isBuildActive ? 'Build already in progress' : 'Build Android APK (Ctrl+Shift+B)'}
+            title={isBuildActive ? t('titlebar.buildInProgress') : t('titlebar.buildApkTooltip')}
           >
-            {isBuildActive ? 'Building…' : 'Build APK'}
+            {isBuildActive ? t('titlebar.building') : t('titlebar.buildApk')}
           </button>
         )}
 
         {project && (
           <>
-            <button type="button" className={`tb-btn ${bottomPanelOpen ? 'tb-btn--on' : ''}`} title="Toggle Panel (Ctrl+J)" onClick={() => runCommand('workbench.action.togglePanel')}>
+            <button type="button" className={`tb-btn ${bottomPanelOpen ? 'tb-btn--on' : ''}`} title={t('titlebar.togglePanel')} onClick={() => runCommand('workbench.action.togglePanel')}>
               <Icon d={ICON.panel} />
             </button>
             <div className="tb-popover-anchor">
               <button
                 type="button"
                 className={`tb-btn ${previewPaneOpen ? 'tb-btn--on' : ''} ${activeMenu === 'preview-devices' ? 'tb-btn--active' : ''}`}
-                title="Preview & Device"
+                title={t('titlebar.previewAndDevice')}
                 onClick={() => toggleMenu('preview-devices')}
               >
                 <Icon d={ICON.phone} />
@@ -157,10 +164,10 @@ export function TitleBar() {
               {activeMenu === 'preview-devices' && (
                 <div className="tb-menu">
                   <button type="button" className="tb-menu__item" onClick={() => handleMenuClick(() => runCommand('peep.togglePreview'))}>
-                    {previewPaneOpen ? 'Hide Preview' : 'Show Preview'}
+                    {previewPaneOpen ? t('titlebar.hidePreview') : t('titlebar.showPreview')}
                   </button>
                   <div className="tb-menu__sep" />
-                  <div className="tb-menu__label">Device</div>
+                  <div className="tb-menu__label">{t('titlebar.device')}</div>
                   {DEVICES.map((d) => (
                     <button key={d.id} type="button" className="tb-menu__item" onClick={() => handleMenuClick(() => usePreviewStore.getState().setDeviceId(d.id))}>
                       <span className="tb-menu__check">{deviceId === d.id && <Icon d={ICON.check} size={12} />}</span>
@@ -170,13 +177,13 @@ export function TitleBar() {
                 </div>
               )}
             </div>
-            <button type="button" className={`tb-btn ${agentPaneOpen ? 'tb-btn--on' : ''}`} title="Toggle Chat (Ctrl+Alt+B)" onClick={() => runCommand('peep.toggleChat')}>
+            <button type="button" className={`tb-btn ${agentPaneOpen ? 'tb-btn--on' : ''}`} title={t('titlebar.toggleChat')} onClick={() => runCommand('peep.toggleChat')}>
               <Icon d={ICON.chat} />
             </button>
           </>
         )}
 
-        <button type="button" className="tb-btn" title="Settings (Ctrl+,)" onClick={() => openSettings()}>
+        <button type="button" className="tb-btn" title={t('titlebar.settingsTooltip')} onClick={() => openSettings()}>
           <Icon d={ICON.settings} />
         </button>
 
@@ -197,11 +204,11 @@ export function TitleBar() {
                   <div className="tb-menu__plan">{plan.charAt(0).toUpperCase() + plan.slice(1)}</div>
                 </div>
                 <div className="tb-menu__sep" />
-                <button type="button" className="tb-menu__item" onClick={() => handleMenuClick(() => openSettings('usage'))}>Plan & Usage</button>
-                <button type="button" className="tb-menu__item" onClick={() => handleMenuClick(() => openWebPage('account'))}>Manage Account ↗</button>
-                <button type="button" className="tb-menu__item" onClick={() => handleMenuClick(() => openSettings())}>Settings</button>
+                <button type="button" className="tb-menu__item" onClick={() => handleMenuClick(() => openSettings('usage'))}>{t('titlebar.planAndUsage')}</button>
+                <button type="button" className="tb-menu__item" onClick={() => handleMenuClick(() => openWebPage('account'))}>{t('titlebar.manageAccount')}</button>
+                <button type="button" className="tb-menu__item" onClick={() => handleMenuClick(() => openSettings())}>{t('titlebar.settings')}</button>
                 <div className="tb-menu__sep" />
-                <button type="button" className="tb-menu__item tb-menu__item--danger" onClick={() => handleMenuClick(() => void logout())}>Sign Out</button>
+                <button type="button" className="tb-menu__item tb-menu__item--danger" onClick={() => handleMenuClick(() => void logout())}>{t('titlebar.signOut')}</button>
               </div>
             )}
           </div>

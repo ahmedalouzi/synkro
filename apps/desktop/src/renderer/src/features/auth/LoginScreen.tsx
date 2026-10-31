@@ -1,5 +1,6 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { useAuthStore } from '../../stores/auth-store';
+import { useI18n } from '../../i18n';
 import { BuiltWithTicker, ConstellationCanvas, DemoPhone, GiantAtom, ShootingStars } from './LoginBackdrop';
 import './LoginScreen.css';
 
@@ -106,6 +107,7 @@ const ArrowIcon = () => (
 );
 
 export function LoginScreen() {
+  const { t } = useI18n();
   const { login } = useAuthStore();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -142,7 +144,7 @@ export function LoginScreen() {
     setBusy(false);
 
     if (!res.success) {
-      setError(res.error || 'Authentication failed');
+      setError(res.error || t('login.authFailed'));
     }
   };
 
@@ -155,7 +157,7 @@ export function LoginScreen() {
   // Placeholders until the server supports OAuth sign-in.
   const handleOAuth = (provider: 'Google' | 'GitHub') => {
     setError('');
-    setNotice(`Sign in with ${provider} is coming soon. Use your email for now.`);
+    setNotice(t('login.oauthComingSoon', { provider }));
   };
 
   // Spotlight that follows the pointer across the card.
@@ -197,7 +199,7 @@ export function LoginScreen() {
             <span className="lx-brand-name">ATOMVS</span>
             <span className="lx-badge">
               <span className="lx-badge-dot" />
-              Private beta
+              {t('login.privateBeta')}
             </span>
           </div>
 
@@ -264,19 +266,19 @@ export function LoginScreen() {
                 <span className="lx-orb-ring" />
                 <SynkroMark size={36} />
               </div>
-              <h1 className="lx-title">{mode === 'signin' ? 'Welcome back' : 'Create your account'}</h1>
+              <h1 className="lx-title">{mode === 'signin' ? t('login.welcomeBack') : t('login.createAccount')}</h1>
               <p className="lx-caption">
-                {mode === 'signin' ? 'Sign in to continue building with Atomvs' : 'Start shipping apps with your AI engineer'}
+                {mode === 'signin' ? t('login.signInSubtitle') : t('login.signUpSubtitle')}
               </p>
             </div>
 
             <div className="lx-tabs" role="tablist">
               <span className={`lx-tab-indicator ${mode === 'signup' ? 'is-right' : ''}`} />
               <button type="button" role="tab" aria-selected={mode === 'signin'} className={`lx-tab ${mode === 'signin' ? 'is-active' : ''}`} onClick={() => switchMode('signin')} disabled={busy}>
-                Sign in
+                {t('login.signIn')}
               </button>
               <button type="button" role="tab" aria-selected={mode === 'signup'} className={`lx-tab ${mode === 'signup' ? 'is-active' : ''}`} onClick={() => switchMode('signup')} disabled={busy}>
-                Sign up
+                {t('login.signUp')}
               </button>
             </div>
 
@@ -292,7 +294,7 @@ export function LoginScreen() {
             </div>
 
             <div className="lx-divider">
-              <span>or continue with email</span>
+              <span>{t('login.orContinueWithEmail')}</span>
             </div>
 
             {notice && !error && (
@@ -310,13 +312,13 @@ export function LoginScreen() {
 
             <form onSubmit={handleSubmit} className="login-form">
               <label className="lx-field">
-                <span className="lx-label">Email</span>
+                <span className="lx-label">{t('login.email')}</span>
                 <span className="lx-input-wrap">
                   <span className="lx-input-icon"><MailIcon /></span>
                   <input
                     id="email"
                     type="email"
-                    placeholder="you@example.com"
+                    placeholder={t('login.emailPlaceholder')}
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required
@@ -330,15 +332,15 @@ export function LoginScreen() {
 
               <label className="lx-field">
                 <span className="lx-label">
-                  Password
-                  {capsLock && <span className="lx-caps">Caps Lock is on</span>}
+                  {t('login.password')}
+                  {capsLock && <span className="lx-caps">{t('login.capsLockOn')}</span>}
                 </span>
                 <span className="lx-input-wrap">
                   <span className="lx-input-icon"><LockIcon /></span>
                   <input
                     id="password"
                     type={showPassword ? 'text' : 'password'}
-                    placeholder={mode === 'signup' ? 'At least 8 characters' : '••••••••••••'}
+                    placeholder={mode === 'signup' ? t('login.passwordPlaceholderSignUp') : t('login.passwordPlaceholderSignIn')}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     onKeyUp={trackCapsLock}
@@ -353,8 +355,8 @@ export function LoginScreen() {
                     type="button"
                     className="lx-eye"
                     onClick={() => setShowPassword((v) => !v)}
-                    title={showPassword ? 'Hide password' : 'Show password'}
-                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    title={showPassword ? t('login.hidePassword') : t('login.showPassword')}
+                    aria-label={showPassword ? t('login.hidePassword') : t('login.showPassword')}
                     tabIndex={-1}
                   >
                     <EyeIcon open={showPassword} />
@@ -368,7 +370,7 @@ export function LoginScreen() {
                   <span className="login-spinner"></span>
                 ) : (
                   <>
-                    {mode === 'signin' ? 'Sign in' : 'Create account'}
+                    {mode === 'signin' ? t('login.signIn') : t('login.createAccountBtn')}
                     <ArrowIcon />
                   </>
                 )}

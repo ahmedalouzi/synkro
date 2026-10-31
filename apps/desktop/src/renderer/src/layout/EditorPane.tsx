@@ -157,7 +157,7 @@ export function EditorPane() {
   return (
     <div className="editor-area">
       <div className="editor-tabs">
-        {openFiles.map((file, index) => {
+        {openFiles.filter((f) => f.name !== 'Atomvs Settings' && f.name !== 'Settings' && !f.path.includes('settings')).map((file, index) => {
           const isActive = file.path === activeFilePath;
           return (
             <div
