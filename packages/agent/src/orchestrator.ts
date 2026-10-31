@@ -82,8 +82,124 @@ function toolNameToActivityType(name: string): AgentTimelineActivityType {
     case 'rename_file':       return 'editing';
     case 'update_design_manifest': return 'editing';
     case 'manage_plan':       return 'validating';
+    case 'get_preview_logs':  return 'validating';
+    case 'restart_preview':   return 'running';
     default:                  return 'running';
   }
+}
+
+// ---------------------------------------------------------------------------
+// Verify before claiming. After the agent changes the app (code, config or packages), it checks the result
+// before it says the work is done or fixed: the project's type check (validate_project, or tsc / flutter
+// analyze) and the preview (restart_preview / get_preview_logs: dev-server errors, runtime errors in the page,
+// visible content). Both must come back clean after the last change. The model is told so at its first change;
+// if it answers with a check missing or failing, it gets one more turn to check and fix; after that its answer
+// is marked "Not verified" with what is missing and the last error.
+// ---------------------------------------------------------------------------
+
+/** A check's output that shows a problem. */
+const CHECK_FAILED = /Error lines in the output \(|^Preview: (error|not running)|Start error:|Runtime errors in the page \(|visible content NO|Error overlay on screen|"success": false|error TS\d+|exited with code [1-9]|^Error:|^BLOCKED:/m;
+
+const CHANGE_TOOLS = new Set(['propose_file_edit', 'patch_file', 'delete_file', 'rename_file', 'bootstrap_project']);
+const PACKAGE_COMMAND = /\b(npm|pnpm|yarn|bun)\s+(install|i|ci|add|remove|uninstall|rm)\b|\bexpo\s+install\b/i;
+const DEPS_CHECK_COMMAND = /\bexpo\s+install\b.*--check\b/i;
+const TYPECHECK_COMMAND = /\btsc\b|\b(flutter|dart)\s+analyze\b/i;
+/** Notes, not the app: the plan and walkthrough under .peep/, Markdown and text files. */
+const NOTES = /(^|[\\/])\.peep[\\/]|\.(md|txt)$/i;
+/** The Expo dependency check the app appends to a package command's output (agent-service run_command). */
+const DEPS_CHECK_MARKER = 'npx expo install --check:';
+
+export type VerificationRole = 'change' | 'deps' | 'depscheck' | 'typecheck' | 'preview' | null;
+
+/**
+ * Whether a tool call changes the app's code, changes its packages, checks its packages, checks its types,
+ * checks the preview, or none of these. Exported for tests.
+ */
+export function verificationRole(name: string, args: Record<string, unknown>): VerificationRole {
+  if (NOTES.test(String(args.path ?? ''))) return null;
+  if (CHANGE_TOOLS.has(name)) return 'change';
+  if (name === 'install_dependencies') return 'deps';
+  if (name === 'validate_project') return 'typecheck';
+  if (name === 'restart_preview' || name === 'get_preview_logs') return 'preview';
+  if (name === 'run_command') {
+    const command = String(args.command ?? '');
+    if (DEPS_CHECK_COMMAND.test(command)) return 'depscheck';
+    if (PACKAGE_COMMAND.test(command)) return 'deps';
+    if (TYPECHECK_COMMAND.test(command)) return 'typecheck';
+  }
+  return null;
+}
+
+type CheckState = 'missing' | 'failed' | 'ok';
+
+/** What one run changed and checked. Exported for tests. */
+export class RunVerification {
+  private changed = false;
+  private checks: Record<'typecheck' | 'preview', CheckState> = { typecheck: 'missing', preview: 'missing' };
+  /** Expo projects: whether the packages match the SDK ('ok' where there is no check to run). */
+  private deps: 'ok' | 'failed' = 'ok';
+  private failure = '';
+
+  private noteFailure(output: string): void {
+    const lines = output.split(/\r?\n/).filter((l) => /error|fail|NO:|not running|exited with code|should be updated|expected version/i.test(l));
+    this.failure = (lines.length ? lines.slice(0, 4).join('\n') : output).slice(0, 600);
+  }
+
+  record(role: VerificationRole, output: string): void {
+    if (role === 'change' || role === 'deps') {
+      this.changed = true;
+      this.checks = { typecheck: 'missing', preview: 'missing' };
+      // A package change in an Expo project comes with its dependency check appended.
+      const at = output.indexOf(DEPS_CHECK_MARKER);
+      if (role === 'deps' && at >= 0) {
+        const check = output.slice(at);
+        this.deps = /exited with code [1-9]|^Command error:/m.test(check) ? 'failed' : 'ok';
+        if (this.deps === 'failed') this.noteFailure(check);
+      }
+    } else if (role === 'depscheck') {
+      this.deps = /exited with code [1-9]|^Command error:/m.test(output) ? 'failed' : 'ok';
+      if (this.deps === 'failed') this.noteFailure(output);
+    } else if (role === 'typecheck' || role === 'preview') {
+      const failed = CHECK_FAILED.test(output);
+      this.checks[role] = failed ? 'failed' : 'ok';
+      // validate_project includes the Expo dependency check: clean means the packages match too.
+      if (role === 'typecheck' && !failed && output.includes('"expo-deps"')) this.deps = 'ok';
+      if (failed) this.noteFailure(output);
+    }
+  }
+
+  get hasChanges(): boolean {
+    return this.changed;
+  }
+
+  /** What is still missing or failing; empty when nothing changed or both checks passed after the last change. */
+  gaps(): string[] {
+    if (!this.changed) return [];
+    const gaps: string[] = [];
+    if (this.checks.typecheck === 'missing') gaps.push('the type check was not run after the last change');
+    if (this.checks.typecheck === 'failed') gaps.push('the type check reports errors');
+    if (this.checks.preview === 'missing') gaps.push('the preview was not checked after the last change');
+    if (this.checks.preview === 'failed') gaps.push('the preview shows errors or an empty screen');
+    if (this.deps === 'failed') gaps.push("some packages do not match the project's Expo SDK (npx expo install --check)");
+    return gaps;
+  }
+
+  get lastFailure(): string {
+    return this.failure;
+  }
+}
+
+/** Exported for tests. */
+export const VERIFY_REMINDER = '[Atomvs] When you have finished changing the app, and before you tell the user it is done or fixed, '
+  + 'check it: run validate_project (zero type errors), then restart_preview (it waits for a fresh bundle and for the page to report) '
+  + 'and read the report: no dev-server errors, no runtime errors in the page, and visible content. If a check fails, fix it '
+  + 'and check again. Say it works ONLY when both checks are clean; otherwise say plainly what is still failing, quote the '
+  + 'error, and say what you will try next.';
+
+/** The mark on an answer whose changes were not verified. Exported for tests. */
+export function unverifiedNotice(gaps: string[], lastFailure: string): string {
+  const error = lastFailure ? `\n\n\`\`\`\n${lastFailure}\n\`\`\`` : '';
+  return `\n\n**Not verified:** ${gaps.join('; ')}.${error}`;
 }
 
 export interface AgentToolExecutor {
@@ -238,23 +354,6 @@ async function callOpenAI(
 
 
 
-function getDiffStats(original: string, proposed: string) {
-  const origLines = (original || '').split(/\r?\n/);
-  const propLines = (proposed || '').split(/\r?\n/);
-  let added = 0;
-  let removed = 0;
-  const origSet = new Set(origLines);
-  
-  for (const line of propLines) {
-    if (line.trim() && !origSet.has(line)) added++;
-  }
-  const propSet = new Set(propLines);
-  for (const line of origLines) {
-    if (line.trim() && !propSet.has(line)) removed++;
-  }
-  return { added, removed };
-}
-
 export async function runAgentLoop(
   config: AgentConfig,
   systemContext: string,
@@ -270,8 +369,6 @@ export async function runAgentLoop(
 
   const startTimeMs = Date.now();
   const startTime = performance.now();
-  let toolLogs = '';
-  let logsEmitted = false;
 
   // -------------------------------------------------------------------------
   // Timeline: derive stable IDs and emit the initial 'understanding' event
@@ -293,23 +390,9 @@ export async function runAgentLoop(
     timestamp: new Date().toISOString(),
   });
 
-  const emitLogsBlockIfNeeded = () => {
-    if (toolLogs && !logsEmitted) {
-      logsEmitted = true;
-      const durationMs = performance.now() - startTime;
-      const duration = (durationMs / 1000).toFixed(1);
-      config.logger?.info(`Agent loop completed`, { durationMs });
-      const logsBlock = `<details class="agent-activity-dropdown" style="background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; margin-bottom: 12px; outline: none; display: block; width: 100%;">
-<summary style="cursor: pointer; font-weight: 600; font-size: 12.5px; color: var(--gold); user-select: none; outline: none; list-style: none; display: flex; align-items: center; gap: 6px;">
-  <span>▶</span> Worked for ${duration}s
-</summary>
-<div style="margin-top: 8px; font-size: 11.5px; line-height: 1.6; color: #8b949e; border-left: 2px solid var(--border); padding-left: 8px;">
-  ${toolLogs}
-</div>
-</details>\n\n`;
-      callbacks.onDelta(logsBlock);
-    }
-  };
+  // What the agent did is reported only as timeline activities (the app shows them as a collapsible
+  // "Worked for …" list). Text deltas carry the model's answer and nothing else: the chat renders them as
+  // markdown, so markup injected here would show up as raw text.
 
   let currentPhase = 'idle';
   function emitPhase(phase: any) {
@@ -342,6 +425,11 @@ export async function runAgentLoop(
   // Notify observer that LLM thinking begins.
   emitPhase('thinking');
 
+  // Verify-before-claiming state (see RunVerification).
+  const verification = new RunVerification();
+  let reminded = false;
+  let gaveCheckTurn = false;
+
   for (let i = 0; i < MAX_ITERATIONS; i++) {
     if (signal.aborted) throw new Error('Cancelled');
 
@@ -358,69 +446,13 @@ export async function runAgentLoop(
       config,
       conversationHistory,
       signal,
-      (delta) => {
-        emitLogsBlockIfNeeded();
-        callbacks.onDelta(delta);
-      },
+      (delta) => callbacks.onDelta(delta),
       callbacks.onStatus
     );
 
     if (assistantMessage.tool_calls && assistantMessage.tool_calls.length > 0) {
       // Notify observer: entering tool execution phase.
       emitPhase('tool_executing');
-      // Accumulate action log statements
-      for (const call of assistantMessage.tool_calls) {
-        const name = call.function.name;
-        let args: Record<string, unknown> = {};
-        try { args = JSON.parse(call.function.arguments); } catch {}
-        
-        if (name === 'read_file') {
-          toolLogs += `Reading <code>${args.path || ''}</code>.<br/>`;
-        } else if (name === 'propose_file_edit' || name === 'patch_file') {
-          toolLogs += `Editing <code>${args.path || ''}</code> — ${args.description || 'applying changes'}.<br/>`;
-        } else if (name === 'search_files') {
-          toolLogs += `Searching files: <code>"${args.query || ''}"</code>.<br/>`;
-        } else if (name === 'list_dir') {
-          toolLogs += `Exploring directory: <code>${args.path || '.'}</code>.<br/>`;
-        } else if (name === 'search_content') {
-          toolLogs += `Searching codebase: <code>"${args.query || ''}"</code>.<br/>`;
-        } else if (name === 'run_command') {
-          toolLogs += `Running command: <code>${args.command || ''}</code>.<br/>`;
-        } else if (name === 'delete_file') {
-          toolLogs += `Deleting file: <code>${args.path || ''}</code>.<br/>`;
-        } else if (name === 'rename_file') {
-          toolLogs += `Renaming: <code>${args.oldPath || ''}</code> → <code>${args.newPath || ''}</code>.<br/>`;
-        } else if (name === 'update_design_manifest') {
-          toolLogs += `Updating Design Manifest (Design DNA).<br/>`;
-        } else if (name === 'manage_plan') {
-          const act = String(args.action || 'update');
-          if (act === 'init') {
-            toolLogs += `📋 Initialized Plan: <strong>${args.goal || 'Engineering Plan'}</strong>.<br/>`;
-          } else if (act === 'update_step') {
-            if (args.status === 'failed') {
-              toolLogs += `⚠️ <strong>Step Failed:</strong> <code>${args.stepId || ''}</code> ${args.error ? `— ${args.error}` : ''}<br/>🔍 <strong>Diagnosing Error...</strong><br/>`;
-            } else if (args.status === 'completed') {
-              toolLogs += `✅ <strong>Step Completed:</strong> <code>${args.stepId || ''}</code>.<br/>`;
-            } else {
-              toolLogs += `📋 Plan step <code>${args.stepId || ''}</code> → <strong>${args.status || 'updated'}</strong>.<br/>`;
-            }
-          } else if (act === 'retry_step') {
-            toolLogs += `🔧 <strong>Attempting Recovery Strategy:</strong> ${args.strategy || 'Auto Recovery'}<br/>🔄 <strong>Retrying Step:</strong> <code>${args.stepId || ''}</code>.<br/>`;
-          } else if (act === 'record_recovery') {
-            const status = String(args.recoveryStatus || 'pending');
-            if (status === 'success') {
-              toolLogs += `✅ <strong>Recovery Successful!</strong><br/>`;
-            } else if (status === 'failed') {
-              toolLogs += `❌ <strong>Recovery Strategy Exhausted.</strong><br/>`;
-            } else {
-              toolLogs += `🔧 Recorded recovery attempt.<br/>`;
-            }
-          } else {
-            toolLogs += `📋 Plan updated.<br/>`;
-          }
-        }
-      }
-
       conversationHistory.push(assistantMessage);
 
       // -----------------------------------------------------------------------
@@ -483,43 +515,10 @@ export async function runAgentLoop(
 
         toolResultMessages.push(singleCallMsg);
 
+        verification.record(verificationRole(name, args), singleCallMsg.content);
+
         // Determine outcome.
         const toolFailed = singleCallMsg.content.startsWith('Error:');
-
-        // Accumulate legacy toolLogs (unchanged behaviour).
-        if (name === 'read_file') {
-          toolLogs += `Reading <code>${args.path || ''}</code>.<br/>`;
-          toolLogs += `Explored 1 file &gt;<br/><br/>`;
-        } else if (name === 'propose_file_edit' || name === 'patch_file') {
-          toolLogs += `Editing <code>${args.path || ''}</code> — ${args.description || 'applying changes'}.<br/>`;
-          const original = executor.lastOriginalContent ?? '';
-          const proposed = name === 'patch_file' ? (executor.lastProposedContent ?? '') : (args.content ? String(args.content) : '');
-          const stats = getDiffStats(original, proposed);
-          const filename = String(args.path).split(/[\\/]/).pop() || '';
-          toolLogs += `Edited <strong>TS</strong> <code>${filename}</code> <span style="color:#3fb950">+${stats.added}</span> <span style="color:#f85149">-${stats.removed}</span><br/><br/>`;
-        } else if (name === 'search_files')  { toolLogs += `Searching files: <code>"${args.query || ''}"</code>.<br/>`; }
-        else if (name === 'list_dir')        { toolLogs += `Exploring directory: <code>${args.path || '.'}</code>.<br/>`; }
-        else if (name === 'search_content')  { toolLogs += `Searching codebase: <code>"${args.query || ''}"</code>.<br/>`; }
-        else if (name === 'run_command')     { toolLogs += `Running command: <code>${args.command || ''}</code>.<br/>`; }
-        else if (name === 'delete_file')     { toolLogs += `Deleting file: <code>${args.path || ''}</code>.<br/>`; }
-        else if (name === 'rename_file')     { toolLogs += `Renaming: <code>${args.oldPath || ''}</code> → <code>${args.newPath || ''}</code>.<br/>`; }
-        else if (name === 'update_design_manifest') { toolLogs += `Updating Design Manifest (Design DNA).<br/>`; }
-        else if (name === 'manage_plan') {
-          const act = String(args.action || 'update');
-          if (act === 'init') { toolLogs += `📋 Initialized Plan: <strong>${args.goal || 'Engineering Plan'}</strong>.<br/>`;}
-          else if (act === 'update_step') {
-            if (args.status === 'failed')    { toolLogs += `⚠️ <strong>Step Failed:</strong> <code>${args.stepId || ''}</code>${args.error ? ` — ${args.error}` : ''}<br/>🔍 <strong>Diagnosing Error...</strong><br/>`; }
-            else if (args.status === 'completed') { toolLogs += `✅ <strong>Step Completed:</strong> <code>${args.stepId || ''}</code>.<br/>`; }
-            else { toolLogs += `📋 Plan step <code>${args.stepId || ''}</code> → <strong>${args.status || 'updated'}</strong>.<br/>`; }
-          } else if (act === 'retry_step') {
-            toolLogs += `🔧 <strong>Attempting Recovery Strategy:</strong> ${args.strategy || 'Auto Recovery'}<br/>🔄 <strong>Retrying Step:</strong> <code>${args.stepId || ''}</code>.<br/>`;
-          } else if (act === 'record_recovery') {
-            const rStatus = String(args.recoveryStatus || 'pending');
-            if (rStatus === 'success') { toolLogs += `✅ <strong>Recovery Successful!</strong><br/>`; }
-            else if (rStatus === 'failed') { toolLogs += `❌ <strong>Recovery Strategy Exhausted.</strong><br/>`; }
-            else { toolLogs += `🔧 Recorded recovery attempt.<br/>`; }
-          } else { toolLogs += `📋 Plan updated.<br/>`; }
-        }
 
         // Dispatch 'completed' or 'failed' AFTER execution.
         dispatchTimeline({
@@ -534,16 +533,37 @@ export async function runAgentLoop(
         });
       }
 
+      // First change to the app in this run: say how to finish, long before the model writes its answer.
+      if (verification.hasChanges && !reminded && toolResultMessages.length > 0) {
+        const last = toolResultMessages[toolResultMessages.length - 1];
+        last.content = `${last.content}\n\n${VERIFY_REMINDER}`;
+        reminded = true;
+      }
+
       conversationHistory.push(...toolResultMessages);
-      toolLogs += 'Working.<br/><br/>';
       // Return to thinking phase for next LLM call.
       emitPhase('thinking');
       continue;
     }
 
     const text = assistantMessage.content?.trim();
+    const gaps = verification.gaps();
+    if (text && gaps.length > 0 && !gaveCheckTurn) {
+      // It answered with a check missing or failing: one more turn to check and fix (its answer is already on screen).
+      gaveCheckTurn = true;
+      accumulatedResponseText += `${text}\n\n`;
+      callbacks.onDelta('\n\n');
+      conversationHistory.push({ role: 'assistant', content: text });
+      conversationHistory.push({ role: 'user', content: `[Atomvs] Not done yet: ${gaps.join('; ')}.\n\n${VERIFY_REMINDER}` });
+      continue;
+    }
     if (text) {
       accumulatedResponseText += text;
+      if (gaps.length > 0) {
+        const notice = unverifiedNotice(gaps, verification.lastFailure);
+        accumulatedResponseText += notice;
+        callbacks.onDelta(notice);
+      }
       // Timeline: emit 'completed' for the whole run (zero-tool conversational path).
       dispatchTimeline({
         id: `${runId}:completed`,
@@ -560,9 +580,6 @@ export async function runAgentLoop(
 
     break;
   }
-
-  // Pre-stream the collapsible logs block if tools were run
-  emitLogsBlockIfNeeded();
 
   callbacks.onStatus('Summarizing changes…');
   // Notify observer: entering summarization phase.

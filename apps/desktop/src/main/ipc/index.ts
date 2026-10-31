@@ -2,7 +2,7 @@
 import { ipcMain, dialog, app, BrowserWindow, screen } from 'electron';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
-import { IPC_CHANNELS, IPC_EVENTS } from '@peep/shared';
+import { IPC_CHANNELS, IPC_EVENTS, parsePreviewRuntimeReport } from '@peep/shared';
 import type { ClaudeIdeStatus, ClaudeIdeToolResult, InlineCompletionRequest, InlineEditRequest, Settings, SshTarget } from '@peep/shared';
 import { InlineEditService } from '../services/inline-edit-service';
 import { InlineCompletionService } from '../services/inline-completion-service';
@@ -218,6 +218,7 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
   publishService = new PublishService(processManager, platformRegistry);
   agentService = new AgentService(db, workspace, platformRegistry, terminalService);
   agentService.setMainWindow(mainWindow);
+  agentService.setPreviewManager(previewManager);
   const projectService = new ProjectService(platformRegistry, workspace);
   const deviceService = new DeviceService();
 
@@ -663,6 +664,12 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
 
   ipcMain.handle(IPC_CHANNELS.PREVIEW_IS_DETACHED, () => {
     return previewWindow !== null && !previewWindow.isDestroyed();
+  });
+
+  // The preview page's runtime state, relayed by the renderer; validated again here (it comes from the app).
+  ipcMain.on(IPC_CHANNELS.PREVIEW_RUNTIME_REPORT, (_event, data: unknown) => {
+    const report = parsePreviewRuntimeReport(data);
+    if (report) previewManager.setRuntime(report);
   });
 
   // Only the calling window captures itself, and only aggregate numbers go back.

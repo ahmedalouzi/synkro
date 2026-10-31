@@ -1,7 +1,8 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import { IPC_CHANNELS, IPC_EVENTS } from '@peep/shared';
+import { IPC_CHANNELS, IPC_EVENTS, parseProposedEditsPayload } from '@peep/shared';
 import { installPreviewSafeArea } from './preview-safe-area';
 import type {
+  PreviewRuntimeReport,
   SshTarget,
   AgentSendOptions,
   AgentStreamEvent,
@@ -81,6 +82,7 @@ const api: IpcApi = {
   isPreviewDetached: () => ipcRenderer.invoke(IPC_CHANNELS.PREVIEW_IS_DETACHED) as Promise<boolean>,
   samplePreviewStrips: (rects: Array<{ x: number; y: number; width: number; height: number }>) =>
     ipcRenderer.invoke(IPC_CHANNELS.PREVIEW_SAMPLE_STRIPS, rects) as Promise<Array<{ luminance: number; rgb: [number, number, number] } | null>>,
+  reportPreviewRuntime: (report: PreviewRuntimeReport) => ipcRenderer.send(IPC_CHANNELS.PREVIEW_RUNTIME_REPORT, report),
   sendAgentMessage: (options: AgentSendOptions) => ipcRenderer.invoke(IPC_CHANNELS.AGENT_SEND, options),
   cancelAgent: () => ipcRenderer.invoke(IPC_CHANNELS.AGENT_CANCEL),
   approvePlan: (projectPath?: string) => ipcRenderer.invoke(IPC_CHANNELS.AGENT_APPROVE_PLAN, projectPath),
@@ -155,7 +157,12 @@ const api: IpcApi = {
   onAgentTimeline: (callback: any) => subscribe<any>(IPC_EVENTS.AGENT_TIMELINE, callback),
   onAgentPhase: (callback: (phase: import('@peep/shared').AgentPhase) => void) =>
     subscribe<import('@peep/shared').AgentPhase>(IPC_EVENTS.AGENT_PHASE_CHANGED, callback),
-  onProposedEdits: (callback) => subscribe<ProposedEdit[]>(IPC_EVENTS.AGENT_PROPOSED_EDITS, callback),
+  // Main sends { edits, threadId }; the callback used to get that object as if it were the array ("edits is
+  // not iterable"). Anything without an edits array is dropped.
+  onProposedEdits: (callback) => subscribe<unknown>(IPC_EVENTS.AGENT_PROPOSED_EDITS, (payload) => {
+    const parsed = parseProposedEditsPayload(payload);
+    if (parsed) callback(parsed.edits, parsed.threadId);
+  }),
   onTerminalOutput: (callback) =>
     subscribe<{ id: string; data: string }>(IPC_EVENTS.TERMINAL_OUTPUT, callback),
   onTerminalExit: (callback) => subscribe<{ id: string; code: number }>(IPC_EVENTS.TERMINAL_EXIT, callback),

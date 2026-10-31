@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
+import { parsePreviewRuntimeReport } from '@peep/shared';
 import type { DeviceConfig, DeviceGeometry } from './devices';
 
 export type StatusBarTone = 'light' | 'dark';
@@ -64,9 +65,13 @@ export function usePreviewSafeArea(
   const [background, setBackground] = useState<string | null>(null);
   const { top, right, bottom, left } = geometry.safe;
 
+  // The iframe element that has loaded the app. Before that its window is about:blank, and a message with the
+  // app's origin as targetOrigin is refused with an origin-mismatch error (the insets then arrive on load).
+  const loadedFrame = useRef<HTMLIFrameElement | null>(null);
   const send = useCallback(() => {
-    const target = iframeRef.current?.contentWindow;
-    if (!target || !url) return;
+    const iframe = iframeRef.current;
+    const target = iframe?.contentWindow;
+    if (!iframe || !target || !url || loadedFrame.current !== iframe) return;
     let origin: string;
     try {
       origin = new URL(url).origin;
@@ -139,8 +144,17 @@ export function usePreviewSafeArea(
       if (!iframeRef.current || event.source !== iframeRef.current.contentWindow) return;
       const data = event.data as { type?: unknown; declared?: unknown; source?: unknown } | null;
       if (!data || typeof data !== 'object') return;
-      if (data.type === 'atomvs:safe-area-request') send();
+      if (data.type === 'atomvs:safe-area-request') {
+        // Sent by the shim from the app's own page, so the iframe is on the app's origin now (before 'load').
+        loadedFrame.current = iframeRef.current;
+        send();
+      }
       else if (data.type === 'atomvs:screen-changed') scheduleSample();
+      else if (data.type === 'atomvs:runtime') {
+        // Relayed for the agent's get_preview_logs (main validates it again).
+        const report = parsePreviewRuntimeReport(data);
+        if (report) window.peep?.reportPreviewRuntime?.(report);
+      }
       else if (data.type === 'atomvs:status-bar') {
         const tone = data.declared;
         const source = data.source as Source;
@@ -180,7 +194,11 @@ export function usePreviewSafeArea(
   }, [url, device.label, declared, sampledTop, sampledBottom, topTone, bottomTone]);
 
   /** Call from the iframe's onLoad: a reloaded app starts without insets. */
-  const onFrameLoad = useCallback(() => { send(); scheduleSample(400); }, [send, scheduleSample]);
+  const onFrameLoad = useCallback((event?: { currentTarget: HTMLIFrameElement }) => {
+    loadedFrame.current = event?.currentTarget ?? iframeRef.current;
+    send();
+    scheduleSample(400);
+  }, [iframeRef, send, scheduleSample]);
 
   return { tone: { top: topTone, bottom: bottomTone } as SystemBarTones, background, onFrameLoad };
 }

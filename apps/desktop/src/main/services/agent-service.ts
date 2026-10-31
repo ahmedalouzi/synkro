@@ -51,6 +51,9 @@ Key rules:
 
 import { ProjectIndexer, ProjectRetrieval, MemoryManager, MemoryRetrieval } from '@peep/agent';
 import type { PlatformRegistry } from './platform-registry';
+import type { PreviewManager } from './preview-manager';
+import { formatPreviewReport, waitForBundle } from './preview-log';
+import { EXPO_DEPS_CHECK, changesDependencies, isExpoProject, toExpoInstall } from './expo-deps';
 
 export class AgentService {
   private pendingEdits: ProposedEdit[] = [];
@@ -71,6 +74,13 @@ export class AgentService {
     private registry: PlatformRegistry,
     private terminal: TerminalService,
   ) {}
+
+  /** The Preview pane's dev server, which the agent reads and restarts (get_preview_logs, restart_preview). */
+  private preview: PreviewManager | null = null;
+
+  setPreviewManager(preview: PreviewManager): void {
+    this.preview = preview;
+  }
 
   async onFileChanged(projectPath: string, event: 'add' | 'change' | 'unlink', path: string): Promise<void> {
     const indexer = this.indexers.get(projectPath);
@@ -954,6 +964,28 @@ export class AgentService {
             if (!detection.provider) return 'Error: Could not detect framework provider.';
             const result = await detection.provider.getRuntimeLogs(Number(args.processId));
             return JSON.stringify(result, null, 2);
+          }
+          case 'get_preview_logs': {
+            if (!this.preview) return 'Error: The Preview pane is not available.';
+            return formatPreviewReport(this.preview.getSession(), this.preview.getLog(), this.preview.getRuntime());
+          }
+          case 'restart_preview': {
+            if (!projectPath) return 'Error: No project path specified.';
+            if (!this.preview) return 'Error: The Preview pane is not available.';
+            const detection = await this.registry.detect(projectPath);
+            if (!detection.provider) return 'Error: Could not detect framework provider.';
+            const preview = this.preview;
+            // A failed start is in the session and the log; the report below shows it.
+            await preview.start(detection.projectRoot, detection.provider).catch(() => {});
+            // The Preview pane reloads the app once the server is up; wait for that bundle or its error.
+            await waitForBundle(() => preview.getSession()?.status, () => preview.getLog());
+            // Then for the page to run the bundle and report (errors, visible content): up to 15 s.
+            for (let waited = 0; waited < 15_000 && preview.getSession()?.status === 'running' && !preview.getRuntime(); waited += 500) {
+              await new Promise((resolve) => setTimeout(resolve, 500));
+            }
+            // A crash can follow the first report by a moment; let late errors arrive.
+            await new Promise((resolve) => setTimeout(resolve, 1500));
+            return formatPreviewReport(preview.getSession(), preview.getLog(), preview.getRuntime());
           }
           default:
             throw new Error(`Unknown tool: ${name}`);

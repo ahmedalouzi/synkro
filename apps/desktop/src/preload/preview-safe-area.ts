@@ -16,6 +16,8 @@ import { webFrame } from 'electron';
  *        { type: 'atomvs:status-bar', declared: 'light' | 'dark' | null, source: string | null }
  *          (the status-bar icon tone the app declares, and where: e.g. 'expo-status-bar style=auto'), and
  *        { type: 'atomvs:screen-changed' } (the host re-samples the rendered status-bar and home-indicator strips)
+ *        { type: 'atomvs:runtime', errors, rendered, textChars, overlay } (the app's runtime errors, and whether
+ *          it shows anything; the host relays it to the agent's get_preview_logs)
  * Nothing is exposed to the page: no contextBridge API, no ipcRenderer.
  */
 
@@ -205,9 +207,53 @@ function pageShim(rewrite: (css: string) => string, isInsets: (data: unknown) =>
     }
     window.parent.postMessage({ type: 'atomvs:screen-changed' }, '*');
   };
+  // The app's runtime state, for the agent's checks: errors it hits (a bundle that loads can still crash in
+  // the browser, which never reaches the dev server's terminal) and whether it shows anything at all.
+  const runtimeErrors: Array<{ kind: string; message: string }> = [];
+  const describe = (value: unknown): string => {
+    if (value instanceof Error) return `${value.name}: ${value.message}\n${(value.stack || '').split('\n').slice(1, 4).join('\n')}`;
+    if (typeof value === 'string') return value;
+    try { return JSON.stringify(value); } catch { return String(value); }
+  };
+  const addError = (kind: string, message: string) => {
+    runtimeErrors.push({ kind, message: message.slice(0, 1500) });
+    if (runtimeErrors.length > 10) runtimeErrors.shift();
+    schedule();
+  };
+  window.addEventListener('error', (event) => {
+    addError('exception', event.error ? describe(event.error) : `${event.message} (${event.filename}:${event.lineno})`);
+  });
+  window.addEventListener('unhandledrejection', (event) => addError('unhandled-rejection', describe(event.reason)));
+  const consoleError = console.error;
+  console.error = function (...args: unknown[]) {
+    try { addError('console.error', args.map(describe).join(' ')); } catch { /* never break the app's logging */ }
+    return consoleError.apply(this, args);
+  };
+  const OVERLAY = /(Uncaught Error|Render Error|Syntax Error|Unable to resolve module|Failed to compile)/;
+  let lastRuntime = '';
+  const reportRuntime = () => {
+    if (!document.body) return;
+    const root = document.getElementById('root') || document.body;
+    const text = (document.body.innerText || '').trim();
+    const media = root.querySelectorAll('img,svg,canvas,video').length;
+    const state = {
+      type: 'atomvs:runtime',
+      errors: runtimeErrors.slice(),
+      rendered: root.childElementCount > 0 && (text.length > 0 || media > 0),
+      textChars: text.length,
+      overlay: OVERLAY.test(text) ? text.slice(0, 1500) : '',
+    };
+    const key = JSON.stringify(state);
+    if (key !== lastRuntime) {
+      lastRuntime = key;
+      window.parent.postMessage(state, '*');
+    }
+  };
+  window.addEventListener('load', () => window.setTimeout(reportRuntime, 1500));
+
   // Re-check on navigation, scroll, theme and animation changes, batched.
   let pending = 0;
-  function schedule() { if (!pending) pending = window.setTimeout(() => { pending = 0; report(); }, 250); }
+  function schedule() { if (!pending) pending = window.setTimeout(() => { pending = 0; report(); reportRuntime(); }, 250); }
   new MutationObserver(schedule).observe(document, { subtree: true, childList: true, attributes: true });
   for (const type of ['scroll', 'transitionend', 'animationend']) window.addEventListener(type, schedule, { capture: true, passive: true });
   for (const type of ['resize', 'popstate', 'hashchange']) window.addEventListener(type, schedule);

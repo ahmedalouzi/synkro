@@ -40,6 +40,49 @@ export interface PreviewSession {
   error?: string;
 }
 
+/** What the app in the preview iframe hit at runtime, and whether it shows anything (for the agent's checks). */
+export interface PreviewRuntimeReport {
+  errors: Array<{ kind: 'exception' | 'unhandled-rejection' | 'console.error'; message: string }>;
+  /** Visible content after load: text, images or a canvas in the app's root. */
+  rendered: boolean;
+  textChars: number;
+  /** Text of an error overlay (Expo's red box) if one is showing. */
+  overlay: string;
+}
+
+/**
+ * The agent's proposed-edits event: main sends { edits, threadId }. Read as if it were the array, it threw
+ * "edits is not iterable" in the renderer. Anything without an edits array is null.
+ */
+export function parseProposedEditsPayload(payload: unknown): { edits: ProposedEdit[]; threadId?: string } | null {
+  if (Array.isArray(payload)) return { edits: payload as ProposedEdit[] };
+  if (!payload || typeof payload !== 'object') return null;
+  const { edits, threadId } = payload as { edits?: unknown; threadId?: unknown };
+  if (!Array.isArray(edits)) return null;
+  return { edits: edits as ProposedEdit[], ...(typeof threadId === 'string' ? { threadId } : {}) };
+}
+
+const RUNTIME_ERROR_KINDS = new Set(['exception', 'unhandled-rejection', 'console.error']);
+
+/**
+ * A PreviewRuntimeReport from untrusted input (the app's page, then the renderer over IPC), or null:
+ * known kinds only, at most 10 errors, strings capped.
+ */
+export function parsePreviewRuntimeReport(data: unknown): PreviewRuntimeReport | null {
+  if (!data || typeof data !== 'object') return null;
+  const d = data as Record<string, unknown>;
+  if (typeof d.rendered !== 'boolean' || typeof d.textChars !== 'number' || !Number.isFinite(d.textChars)) return null;
+  if (typeof d.overlay !== 'string' || !Array.isArray(d.errors)) return null;
+  const errors: PreviewRuntimeReport['errors'] = [];
+  for (const e of d.errors.slice(-10)) {
+    if (!e || typeof e !== 'object') return null;
+    const { kind, message } = e as Record<string, unknown>;
+    if (typeof kind !== 'string' || !RUNTIME_ERROR_KINDS.has(kind) || typeof message !== 'string') return null;
+    errors.push({ kind: kind as PreviewRuntimeReport['errors'][number]['kind'], message: message.slice(0, 1500) });
+  }
+  return { errors, rendered: d.rendered, textChars: Math.max(0, Math.round(d.textChars)), overlay: d.overlay.slice(0, 1500) };
+}
+
 export type ErrorCategory =
   | 'success'
   | 'warning'
@@ -666,6 +709,7 @@ export const IPC_CHANNELS = {
   PREVIEW_ATTACH: 'preview:attach',
   PREVIEW_IS_DETACHED: 'preview:isDetached',
   PREVIEW_SAMPLE_STRIPS: 'preview:sampleStrips',
+  PREVIEW_RUNTIME_REPORT: 'preview:runtimeReport',
   // Extensions
   EXTENSIONS_SEARCH: 'extensions:search',
   // Auth
@@ -892,6 +936,8 @@ export interface IpcApi {
    */
   samplePreviewStrips: (rects: Array<{ x: number; y: number; width: number; height: number }>) =>
     Promise<Array<{ luminance: number; rgb: [number, number, number] } | null>>;
+  /** The preview page's runtime state, relayed from the iframe for the agent (get_preview_logs). */
+  reportPreviewRuntime: (report: PreviewRuntimeReport) => void;
   sendAgentMessage: (options: AgentSendOptions) => Promise<void>;
   cancelAgent: () => Promise<void>;
   /** Approve the pending Implementation Plan and start autonomous execution. */
@@ -953,7 +999,8 @@ export interface IpcApi {
   onAgentActivity: (callback: (event: AgentActivityEvent) => void) => () => void;
   onAgentTimeline: (callback: (activity: AgentTimelineActivity) => void) => () => void;
   onAgentPhase: (callback: (phase: AgentPhase) => void) => () => void;
-  onProposedEdits: (callback: (edits: ProposedEdit[]) => void) => () => void;
+  /** `threadId`: the chat the edits belong to, when the agent knows it. */
+  onProposedEdits: (callback: (edits: ProposedEdit[], threadId?: string) => void) => () => void;
   onTerminalOutput: (callback: (payload: { id: string; data: string }) => void) => () => void;
   onTerminalExit: (callback: (payload: { id: string; code: number }) => void) => () => void;
   onGitChanged: (callback: () => void) => () => void;

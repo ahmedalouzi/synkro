@@ -285,5 +285,31 @@ export default async function runTests() {
     console.log(`    v ${ids.length} events, all IDs unique`);
   }
 
+  // Test 11: what the agent did is reported only as timeline activities. The chat renders text as markdown,
+  // so an HTML block in the streamed text (the old "Worked for …" <details>) showed up as raw markup.
+  {
+    console.log('  [Test 11] No markup in the streamed text of a run with tools...');
+    const gateway = new MockAIGateway();
+    gateway.setCustomToolCall({ id: 'call-read', name: 'read_file', arguments: JSON.stringify({ path: 'App.tsx' }) });
+    const deltas: string[] = [];
+    const activities: AgentTimelineActivity[] = [];
+    await runAgentLoop(
+      { capabilityTier: 'fast', sessionToken: 'markup_tok', gateway }, 'sys',
+      [{ role: 'user', content: 'Read App.tsx' }],
+      { execute: async () => { gateway.setScenario('success'); return 'export default function App() {}'; } },
+      { onStatus: () => {}, onDelta: (d) => deltas.push(d), onError: () => {}, onDone: () => {},
+        onTimelineActivity: (a) => activities.push(a) },
+      new AbortController().signal,
+    );
+    const text = deltas.join('');
+    if (!text) throw new Error('No streamed answer');
+    for (const markup of ['<details', '<summary', '<br/>', '<code>', 'Worked for']) {
+      if (text.includes(markup)) throw new Error(`Streamed text contains "${markup}"`);
+    }
+    const read = activities.filter((a) => a.type === 'reading' && a.file === 'App.tsx').map((a) => a.status);
+    if (read.join(',') !== 'in_progress,completed') throw new Error(`read_file activities: ${read.join(',')}`);
+    console.log('    v text has no markup; the tool call is in the timeline');
+  }
+
   console.log('  v All Timeline Dispatch unit tests passed.');
 }
