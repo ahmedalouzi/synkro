@@ -40,7 +40,7 @@ async function detectPlatformRecursively(dir: string, depth = 0): Promise<{ plat
     for (const entry of entries) {
       if (entry.isDirectory()) {
         const name = entry.name;
-        if (name === 'node_modules' || name === '.git' || name === '.expo' || name === 'build' || name === 'dist' || name === '.peep' || name === '.next' || name === 'Pods' || name === '.idea' || name === '.vscode') {
+        if (name === 'node_modules' || name === '.git' || name === '.expo' || name === 'build' || name === 'dist' || name === '.peep' || name === '.atomvs' || name === '.next' || name === 'Pods' || name === '.idea' || name === '.vscode') {
           continue;
         }
         const subResult = await detectPlatformRecursively(join(dir, name), depth + 1);

@@ -2,7 +2,7 @@ import chokidar, { type FSWatcher } from 'chokidar';
 import type { BrowserWindow } from 'electron';
 import { IPC_EVENTS } from '@peep/shared';
 
-const IGNORED = /(^|[\\/])(\.git|node_modules|\.dart_tool|build|\.peep)([\\/]|$)/;
+const IGNORED = /(^|[\\/])(\.git|node_modules|\.dart_tool|build|\.peep|\.atomvs)([\\/]|$)/;
 
 export class FileWatcherService {
   private watcher: FSWatcher | null = null;

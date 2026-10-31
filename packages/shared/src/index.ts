@@ -680,6 +680,7 @@ export const IPC_CHANNELS = {
   AI_INLINE_EDIT: 'ai:inlineEdit',
   AI_INLINE_EDIT_CANCEL: 'ai:inlineEditCancel',
   AGENT_RESTORE_CHECKPOINT: 'agent:restoreCheckpoint',
+  AGENT_LIST_CHECKPOINTS: 'agent:listCheckpoints',
   RUN_COMMAND: 'terminal:runCommand',
   PROJECT_LIST_TEMPLATES: 'project:listTemplates',
   PROJECT_CREATE: 'project:create',
@@ -979,6 +980,8 @@ export interface IpcApi {
   cancelInlineEdit: () => Promise<void>;
   /** Restores files to before the agent message `id`; returns restored paths. */
   restoreCheckpoint: (id: string) => Promise<string[]>;
+  /** The open project's restorable checkpoints, including ones saved before a restart. */
+  listCheckpoints: () => Promise<Array<{ id: string; fileCount: number }>>;
   onAgentCheckpoint: (callback: (payload: { id: string; fileCount: number }) => void) => () => void;
   runCommand: (options: RunCommandOptions) => Promise<RunCommandResult>;
   listProjectTemplates: () => Promise<ProjectTemplateInfo[]>;

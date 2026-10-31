@@ -72,7 +72,7 @@ export class ReactNativeService extends FrameworkProvider {
         for (const entry of entries) {
           if (entry.isDirectory()) {
             const name = entry.name;
-            if (name === 'node_modules' || name === '.git' || name === '.expo' || name === 'build' || name === 'dist' || name === '.peep' || name === '.next' || name === 'Pods' || name === '.idea' || name === '.vscode') {
+            if (name === 'node_modules' || name === '.git' || name === '.expo' || name === 'build' || name === 'dist' || name === '.peep' || name === '.atomvs' || name === '.next' || name === 'Pods' || name === '.idea' || name === '.vscode') {
               continue;
             }
             queue.push({ path: join(current.path, name), depth: current.depth + 1 });

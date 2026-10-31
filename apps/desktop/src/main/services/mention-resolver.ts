@@ -13,7 +13,7 @@ const MAX_FILE_CHARS = 60_000;
 const MAX_TOTAL_CHARS = 200_000;
 const MAX_FOLDER_ENTRIES = 300;
 const MAX_FOLDER_DEPTH = 4;
-const IGNORED = new Set(['.git', 'node_modules', '.dart_tool', 'build', '.peep', '.idea', '.vscode', 'dist', 'out', '.expo']);
+const IGNORED = new Set(['.git', 'node_modules', '.dart_tool', 'build', '.peep', '.atomvs', '.idea', '.vscode', 'dist', 'out', '.expo']);
 
 function truncate(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max)}\n… [truncated ${text.length - max} characters]` : text;

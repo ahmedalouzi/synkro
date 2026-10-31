@@ -1,7 +1,7 @@
 import { readFile, readdir } from 'node:fs/promises';
 import { join, extname } from 'node:path';
 
-const IGNORED = new Set(['.git', 'node_modules', '.dart_tool', 'build', '.peep', 'dist', '.next', '.expo', 'ios', 'android', 'coverage', '__pycache__', '.venv']);
+const IGNORED = new Set(['.git', 'node_modules', '.dart_tool', 'build', '.peep', '.atomvs', 'dist', '.next', '.expo', 'ios', 'android', 'coverage', '__pycache__', '.venv']);
 const TEXT_EXTENSIONS = new Set([
   '.dart', '.yaml', '.yml', '.json', '.md', '.txt', '.html', '.css', '.xml',
   '.ts', '.tsx', '.js', '.jsx', '.py', '.swift', '.kt', '.java', '.sh', '.env',

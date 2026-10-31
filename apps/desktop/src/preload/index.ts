@@ -119,6 +119,7 @@ const api: IpcApi = {
   inlineEdit: (request) => ipcRenderer.invoke(IPC_CHANNELS.AI_INLINE_EDIT, request) as Promise<import('@peep/shared').InlineEditResult>,
   cancelInlineEdit: () => ipcRenderer.invoke(IPC_CHANNELS.AI_INLINE_EDIT_CANCEL),
   restoreCheckpoint: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.AGENT_RESTORE_CHECKPOINT, id) as Promise<string[]>,
+  listCheckpoints: () => ipcRenderer.invoke(IPC_CHANNELS.AGENT_LIST_CHECKPOINTS) as Promise<Array<{ id: string; fileCount: number }>>,
   onAgentCheckpoint: (callback) => subscribe<{ id: string; fileCount: number }>(IPC_EVENTS.AGENT_CHECKPOINT, callback),
   runCommand: (options) =>
     ipcRenderer.invoke(IPC_CHANNELS.RUN_COMMAND, options) as Promise<RunCommandResult>,

@@ -224,6 +224,13 @@ export function ChatPane({ onOpenSettings: _onOpenSettings }: ChatPaneProps) {
   useEffect(() => window.peep.onAgentCheckpoint(({ id, fileCount }) => {
     setCheckpointFiles((prev) => ({ ...prev, [id]: fileCount }));
   }), []);
+  // Checkpoints are saved in the project, so after a restart the restore buttons come back from disk.
+  useEffect(() => {
+    if (!project?.path) return;
+    void window.peep.listCheckpoints().then((list) => {
+      setCheckpointFiles((prev) => ({ ...Object.fromEntries(list.map((c) => [c.id, c.fileCount])), ...prev }));
+    }).catch(() => undefined);
+  }, [project?.path]);
 
   const restoreCheckpoint = async (id: string) => {
     const count = checkpointFiles[id] ?? 0;

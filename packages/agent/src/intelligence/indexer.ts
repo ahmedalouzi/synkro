@@ -121,7 +121,7 @@ export class ProjectIndexer {
     for (const entry of entries) {
       const fullPath = path.join(dir, entry.name);
       if (entry.isDirectory()) {
-        if (!['.git', 'node_modules', 'build', '.dart_tool', 'dist', '.peep'].includes(entry.name)) {
+        if (!['.git', 'node_modules', 'build', '.dart_tool', 'dist', '.peep', '.atomvs'].includes(entry.name)) {
           await this.scanDirectoryIncremental(fullPath, currentFiles);
         }
       } else {

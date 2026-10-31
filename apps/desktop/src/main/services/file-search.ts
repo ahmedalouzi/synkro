@@ -2,7 +2,7 @@ import { readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { FileEntry } from '@peep/shared';
 
-const IGNORED = new Set(['.git', 'node_modules', '.dart_tool', 'build', '.peep', '.idea', '.vscode']);
+const IGNORED = new Set(['.git', 'node_modules', '.dart_tool', 'build', '.peep', '.atomvs', '.idea', '.vscode']);
 
 export async function searchFiles(rootPath: string, query: string, maxResults = 50, includeDirectories = false): Promise<FileEntry[]> {
   const normalized = query.trim().toLowerCase();

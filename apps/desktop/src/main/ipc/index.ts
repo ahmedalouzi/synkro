@@ -785,7 +785,13 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
   });
 
   ipcMain.handle(IPC_CHANNELS.AGENT_RESTORE_CHECKPOINT, async (_event, id: string) => {
-    return agentService!.restoreCheckpoint(id);
+    return agentService!.restoreCheckpoint(id, workspace.getProject()?.path);
+  });
+
+  // The open project's checkpoints (from disk too), so restore buttons come back after a restart.
+  ipcMain.handle(IPC_CHANNELS.AGENT_LIST_CHECKPOINTS, async () => {
+    const projectPath = workspace.getProject()?.path;
+    return projectPath ? agentService!.listCheckpoints(projectPath) : [];
   });
 
   ipcMain.handle(IPC_CHANNELS.AGENT_APPLY_EDITS, async (_event, editIds: string[]) => {

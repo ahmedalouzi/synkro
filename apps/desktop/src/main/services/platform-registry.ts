@@ -54,7 +54,7 @@ export class PlatformRegistry {
           if (existsSync(currentPath)) {
             const files = await readdir(currentPath, { withFileTypes: true });
             for (const file of files) {
-              if (file.isDirectory() && file.name !== '.git' && file.name !== '.peep' && file.name !== 'node_modules') {
+              if (file.isDirectory() && file.name !== '.git' && file.name !== '.peep' && file.name !== '.atomvs' && file.name !== 'node_modules') {
                 const subPath = join(currentPath, file.name);
                 await scanForProject(subPath, currentDepth + 1, maxDepth);
               }
@@ -95,7 +95,7 @@ export class PlatformRegistry {
     try {
       if (existsSync(root)) {
         const files = await readdir(root);
-        const filtered = files.filter(f => f !== '.git' && f !== '.peep' && f !== '.DS_Store');
+        const filtered = files.filter(f => f !== '.git' && f !== '.peep' && f !== '.atomvs' && f !== '.DS_Store');
         if (filtered.length === 0) {
           const managed = this.providers.find(p => p.id === 'react-native-managed');
           if (managed) return { provider: managed, projectRoot: root };

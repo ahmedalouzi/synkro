@@ -133,8 +133,15 @@ export class AgentService {
   }
 
   /** Rolls files back to before the given agent message; returns the restored paths. */
-  restoreCheckpoint(id: string): Promise<string[]> {
+  async restoreCheckpoint(id: string, projectPath?: string): Promise<string[]> {
+    // After a restart the checkpoint is on disk only.
+    if (projectPath) await this.checkpoints.list(projectPath);
     return this.checkpoints.restore(id);
+  }
+
+  /** The project's checkpoints that can be restored (saved on disk, so they survive a restart). */
+  listCheckpoints(projectPath: string): Promise<Array<{ id: string; fileCount: number }>> {
+    return this.checkpoints.list(projectPath);
   }
 
   getPendingEdits(): ProposedEdit[] {
