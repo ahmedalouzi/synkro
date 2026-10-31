@@ -588,8 +588,13 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
     }
   });
 
-  ipcMain.handle(IPC_CHANNELS.WORKSPACE_CREATE_DIR, async (_event, dirPath: string) => {
-    await workspace.createDir(dirPath);
+  ipcMain.handle(IPC_CHANNELS.WORKSPACE_CREATE_FILE, async (_event, filePath: string, content?: string) => {
+    await workspace.createFile(filePath, typeof content === 'string' ? content : '');
+    if (workspace.getProject()) notifyGitChanged();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.WORKSPACE_CREATE_DIR, async (_event, dirPath: string, options?: { failIfExists?: boolean }) => {
+    await workspace.createDir(dirPath, options?.failIfExists === true);
     const project = workspace.getProject();
     if (project) {
       notifyGitChanged();

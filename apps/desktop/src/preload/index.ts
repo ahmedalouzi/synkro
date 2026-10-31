@@ -49,7 +49,8 @@ const api: IpcApi = {
   readImage: (filePath: string) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_READ_IMAGE, filePath) as Promise<string>,
   writeFile: (filePath: string, content: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_WRITE_FILE, filePath, content),
-  createDir: (dirPath: string) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_CREATE_DIR, dirPath),
+  createFile: (filePath: string, content?: string) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_CREATE_FILE, filePath, content ?? ''),
+  createDir: (dirPath: string, options?: { failIfExists?: boolean }) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_CREATE_DIR, dirPath, options),
   renameItem: (oldPath: string, newPath: string) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_RENAME_ITEM, oldPath, newPath),
   deleteItem: (path: string) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_DELETE_ITEM, path),
   revealItem: (path: string) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_REVEAL_ITEM, path),

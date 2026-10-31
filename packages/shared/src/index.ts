@@ -614,6 +614,7 @@ export const IPC_CHANNELS = {
   WORKSPACE_READ_IMAGE: 'workspace:readImage',
   WORKSPACE_WRITE_FILE: 'workspace:writeFile',
   WORKSPACE_CREATE_DIR: 'workspace:createDir',
+  WORKSPACE_CREATE_FILE: 'workspace:createFile',
   WORKSPACE_RENAME_ITEM: 'workspace:renameItem',
   WORKSPACE_DELETE_ITEM: 'workspace:deleteItem',
   WORKSPACE_REVEAL_ITEM: 'workspace:revealItem',
@@ -900,7 +901,11 @@ export interface IpcApi {
   readFile: (filePath: string) => Promise<string>;
   readImage: (filePath: string) => Promise<string>;
   writeFile: (filePath: string, content: string) => Promise<void>;
-  createDir: (dirPath: string) => Promise<void>;
+  /** A new file. Rejects when anything already exists at the path: never replaces it. */
+  createFile: (filePath: string, content?: string) => Promise<void>;
+  /** `failIfExists`: reject an existing path (a new folder from the Explorer) instead of reusing it. */
+  createDir: (dirPath: string, options?: { failIfExists?: boolean }) => Promise<void>;
+  /** Rejects when something else already exists at `newPath`: never replaces it. */
   renameItem: (oldPath: string, newPath: string) => Promise<void>;
   deleteItem: (path: string) => Promise<void>;
   revealItem: (path: string) => Promise<void>;

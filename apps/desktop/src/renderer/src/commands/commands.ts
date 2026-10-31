@@ -245,8 +245,8 @@ async function openProjectRules() {
     content = await window.peep.readFile(path);
   } catch {
     content = RULES_TEMPLATE;
-    await window.peep.createDir(dir).catch(() => undefined);
-    await window.peep.writeFile(path, content);
+    // Only when there is no rules file: a read can fail for other reasons, and must not cost the user's rules.
+    await window.peep.createFile(path, content).catch(() => undefined);
   }
   ws().openFile({ path, name: 'rules.md', content, dirty: false });
 }
