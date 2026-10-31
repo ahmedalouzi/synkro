@@ -2,8 +2,18 @@ import { basename, join } from 'node:path';
 import { FrameworkProvider, ProviderPreviewSession } from './base-provider';
 import type { MobileEnvironment, ValidationResult, BuildResult, TestResult, AppStartResult, AppStatusResult, AppLogsResult, RuntimeError } from '@peep/shared';
 import type { ProcessManager } from '../process-manager';
+import { fastRefreshHint, isExpoProject } from '../expo-deps';
+import { existsSync } from 'node:fs';
 import { access, readFile, mkdir, writeFile } from 'node:fs/promises';
 import { getTemplate } from '@peep/flutter-adapter'; // Assuming templates are accessible here or from shared
+
+/** index.js of a new project: @expo/metro-runtime first (Fast Refresh on the web), then the app. Exported for tests. */
+export const PREVIEW_ENTRY = `import '@expo/metro-runtime';
+import { registerRootComponent } from 'expo';
+import App from './App';
+
+registerRootComponent(App);
+`;
 
 export class ReactNativeManagedProvider extends FrameworkProvider {
   readonly id = 'react-native-managed';
@@ -61,39 +71,18 @@ export class ReactNativeManagedProvider extends FrameworkProvider {
     
     await mkdir(projectPath, { recursive: true });
 
-    // In managed mode, we can create the project via `create-expo-app` or use a template.
-    if (templateId) {
-      const template = getTemplate(templateId);
-      if (template && template.files.length > 0) {
-        for (const file of template.files) {
-          const fullPath = join(projectPath, file.relativePath);
-          await mkdir(join(fullPath, '..'), { recursive: true });
-          await writeFile(fullPath, file.content, 'utf-8');
-        }
-      }
-      
-      // Install dependencies
-      const pm = await this.detectPackageManager(projectPath);
-      const installCmd = process.platform === 'win32' ? `${pm}.cmd` : pm;
-      await new Promise<void>((resolve, reject) => {
-        const info = this.processManager.spawn(installCmd, ['install'], projectPath, undefined, { shell: false });
-        info.process.on('exit', (code) => {
-          if (code === 0) resolve();
-          else reject(new Error(`${pm} install failed`));
-        });
-      });
-    } else {
-      // Default to npx create-expo-app
-      const npx = process.platform === 'win32' ? 'npx.cmd' : 'npx';
-      await new Promise<void>((resolve, reject) => {
-        const info = this.processManager.spawn(npx, ['create-expo-app', name, '--template', 'blank'], parentPath, undefined, { shell: false });
-        info.process.on('exit', (code) => {
-          if (code === 0) resolve();
-          else reject(new Error('create-expo-app failed'));
-        });
-      });
+    // The Expo project (package.json, app.json, tsconfig.json, App.tsx) and its dependencies. Writing only the
+    // template's App.tsx left a folder with no package.json, so `npm install` installed nothing.
+    const result = await this.bootstrapProject(projectPath);
+    if (!result.success) throw new Error(result.message);
+
+    // The chosen template's files replace the defaults (the React Native templates ship App.tsx).
+    for (const file of getTemplate(templateId ?? '')?.files ?? []) {
+      const fullPath = join(projectPath, file.relativePath);
+      await mkdir(join(fullPath, '..'), { recursive: true });
+      await writeFile(fullPath, file.content, 'utf-8');
     }
-    
+
     return projectPath;
   }
 
@@ -103,7 +92,9 @@ export class ReactNativeManagedProvider extends FrameworkProvider {
     const cmdArgs = pm === 'npm' ? ['expo', 'start', '--web', '--port', port.toString()] : ['exec', 'expo', 'start', '--web', '--port', port.toString()];
     
     console.log('[DEBUG_RUNTIME] react-native-managed startPreview received path:', projectPath);
-    
+    const hint = await fastRefreshHint(projectPath);
+    if (hint) onLog?.(`${hint}\n`);
+
     return new Promise((resolve, reject) => {
       let resolved = false;
       let logs: string[] = [];
@@ -112,7 +103,10 @@ export class ReactNativeManagedProvider extends FrameworkProvider {
 
       const info = this.processManager.spawn(execCmd, cmdArgs, projectPath, {
         EXPO_NO_TELEMETRY: 'true',
-        CI: 'true',
+        // Not CI: with CI set, Metro turns its file watcher off ("reloads are disabled"), so neither the user's
+        // edits nor the agent's reached the preview. Expo is non-interactive anyway: stdout is a pipe, not a TTY.
+        // 'false' rather than unset, in case the user's own environment has CI set.
+        CI: 'false',
       }, { shell: false });
 
       const timeout = setTimeout(() => {
@@ -280,6 +274,22 @@ export class ReactNativeManagedProvider extends FrameworkProvider {
       } catch (err) {
         console.error(`[DEBUG_RUNTIME] Repair failed:`, err);
       }
+    }
+
+    // The packages against the project's Expo SDK: a version made for a newer SDK installs and bundles fine,
+    // then crashes in the browser (expo-font 58 on SDK 51: "registerWebModule is not a function").
+    if (await isExpoProject(projectPath)) {
+      const depsArgs = pm === 'npm' ? ['expo', 'install', '--check'] : ['exec', 'expo', 'install', '--check'];
+      const deps = await new Promise<{ code: number; output: string }>((resolve) => {
+        let output = '';
+        // CI: report only, never prompt to fix.
+        const info = this.processManager.spawn(execCmd, depsArgs, projectPath, { CI: '1' }, { shell: false });
+        info.process.stdout?.on('data', (d) => { output += d.toString(); });
+        info.process.stderr?.on('data', (d) => { output += d.toString(); });
+        info.process.on('error', () => resolve({ code: 1, output }));
+        info.process.on('exit', (code) => resolve({ code: code ?? 1, output }));
+      });
+      checks.push({ type: 'expo-deps', success: deps.code === 0, exitCode: deps.code, stdout: deps.output, stderr: '' });
     }
 
     const blockingErrors = checks.filter(c => !c.success).length;
@@ -522,6 +532,32 @@ export class ReactNativeManagedProvider extends FrameworkProvider {
     };
   }
 
+  /**
+   * Installs the project's dependencies and checks the result. A failed install throws with the end of the
+   * package manager's output; so does one that exits 0 without installing the packages the app needs (a
+   * project created on a half-finished install showed "Cannot find module 'react-native'" everywhere).
+   */
+  private async installAndVerify(projectPath: string): Promise<void> {
+    const pm = await this.detectPackageManager(projectPath);
+    const installCmd = process.platform === 'win32' ? `${pm}.cmd` : pm;
+    const args = pm === 'npm' ? ['install', '--no-audit', '--no-fund'] : ['install'];
+    const { code, output } = await new Promise<{ code: number | null; output: string }>((resolve, reject) => {
+      const info = this.processManager.spawn(installCmd, args, projectPath);
+      info.process.on('error', reject);
+      info.process.on('close', (exitCode) => resolve({ code: exitCode, output: `${info.stdout}\n${info.stderr}` }));
+    });
+    const tail = output.split(/\r?\n/).filter((l) => l.trim() && !/^npm warn deprecated/i.test(l)).slice(-12).join('\n');
+    if (code !== 0) {
+      throw new Error(`${pm} install failed (exit code ${code}).${tail ? `\n${tail}` : ''}`);
+    }
+    const missing = ['expo', 'react', 'react-native', 'typescript'].filter(
+      (pkg) => !existsSync(join(projectPath, 'node_modules', pkg, 'package.json')),
+    );
+    if (missing.length > 0) {
+      throw new Error(`${pm} install finished but did not install ${missing.join(', ')}.${tail ? `\n${tail}` : ''}`);
+    }
+  }
+
   async bootstrapProject(projectPath: string, _options?: { template?: string }): Promise<{ success: boolean; message: string }> {
     const appName = basename(projectPath);
     const appSlug = appName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'app';
@@ -531,6 +567,7 @@ export class ReactNativeManagedProvider extends FrameworkProvider {
       const packageJson = {
         name: appSlug,
         version: "1.0.0",
+        main: "index.js",
         scripts: {
           "start": "expo start",
           "android": "expo start --android",
@@ -543,14 +580,16 @@ export class ReactNativeManagedProvider extends FrameworkProvider {
           "expo-status-bar": "~1.12.1",
           "react": "18.2.0",
           "react-dom": "18.2.0",
-          "react-native": "0.74.1",
+          // The versions Expo SDK 51 expects (expo/bundledNativeModules.json and its project template). With
+          // others `expo start` stops to "install typescript@~5.3.3", which fails in the app's preview.
+          "react-native": "0.74.5",
           "react-native-web": "~0.19.10",
-          "@expo/metro-runtime": "~3.2.1"
+          "@expo/metro-runtime": "~3.2.3"
         },
         devDependencies: {
           "@babel/core": "^7.20.0",
-          "@types/react": "~18.2.45",
-          "typescript": "^5.1.3"
+          "@types/react": "~18.2.79",
+          "typescript": "~5.3.3"
         },
         private: true
       };
@@ -616,19 +655,16 @@ const styles = StyleSheet.create({
 `;
       await writeFile(join(projectPath, 'App.tsx'), Apptsx);
 
+      // The entry. On the web, Fast Refresh and hot updates come from @expo/metro-runtime, which only expo-router
+      // imports by itself: without this import the preview never picked up an edit (Metro rebuilt, the page
+      // had nothing listening).
+      await writeFile(join(projectPath, 'index.js'), PREVIEW_ENTRY);
+
       // Create assets/ folder
       await mkdir(join(projectPath, 'assets'), { recursive: true });
 
       // 5. Run install
-      const pm = await this.detectPackageManager(projectPath);
-      const installCmd = process.platform === 'win32' ? `${pm}.cmd` : pm;
-      await new Promise<void>((resolve, reject) => {
-        const info = this.processManager.spawn(installCmd, ['install'], projectPath, undefined, { shell: false });
-        info.process.on('exit', (code) => {
-          if (code === 0) resolve();
-          else reject(new Error(`${pm} install failed with exit code ${code}`));
-        });
-      });
+      await this.installAndVerify(projectPath);
 
       return {
         success: true,
@@ -645,9 +681,14 @@ const styles = StyleSheet.create({
 
   async installDependencies(projectPath: string, packages: string[]): Promise<{ success: boolean; exitCode: number | null; stdout: string; stderr: string; message?: string }> {
     const pm = await this.detectPackageManager(projectPath);
-    const installCmd = process.platform === 'win32' ? `${pm}.cmd` : pm;
-    const args = pm === 'npm' ? ['install', '--save', ...packages] : ['add', ...packages];
-    
+    // Expo projects add packages through expo install, which picks versions that match the SDK.
+    const expo = await isExpoProject(projectPath);
+    const runner = expo && pm === 'npm' ? 'npx' : pm;
+    const installCmd = process.platform === 'win32' ? `${runner}.cmd` : runner;
+    const args = expo
+      ? (pm === 'npm' ? ['expo', 'install', ...packages] : ['exec', 'expo', 'install', ...packages])
+      : (pm === 'npm' ? ['install', '--save', ...packages] : ['add', ...packages]);
+
     let stdout = '';
     let stderr = '';
     let exitCode = 0;

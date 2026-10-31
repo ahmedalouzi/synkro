@@ -10,6 +10,8 @@ interface PlanViewerProps {
 
 export function PlanViewer({ content, mode = 'plan' }: PlanViewerProps) {
   const project = useWorkspaceStore((s) => s.project);
+  // The agent usually builds its plan in the same turn; Proceed is for when it stopped to ask.
+  const agentBusy = useChatStore((s) => s.isStreaming);
 
   const handleProceed = () => {
     const chatStore = useChatStore.getState();
@@ -108,11 +110,13 @@ export function PlanViewer({ content, mode = 'plan' }: PlanViewerProps) {
           <p>
             {isWalkthrough
               ? 'Review the completed feature checklist and manual verification steps below.'
-              : 'Review the tasks below. Once ready, click Proceed to begin coding.'}
+              : agentBusy
+                ? 'The agent is working through these tasks.'
+                : 'The agent builds its plan right away. If it stopped to ask first, click Proceed to go ahead.'}
           </p>
         </div>
         {!isWalkthrough && (
-          <button type="button" className="btn-proceed" onClick={handleProceed} disabled={!project}>
+          <button type="button" className="btn-proceed" onClick={handleProceed} disabled={!project || agentBusy}>
             Proceed with Implementation ➔
           </button>
         )}

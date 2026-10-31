@@ -13,6 +13,76 @@ export interface ProcessInfo {
   startedAt: string;
 }
 
+// cmd.exe metacharacters, escaped with ^ (same rules as the cross-spawn package).
+const CMD_META = /([()\][%!^"`<>&|;, *?])/g;
+
+/** One argument for a cmd.exe command line: quoted for the program's own parser, then escaped for cmd.exe. */
+export function escapeCmdArgument(arg: string): string {
+  let quoted = arg.replace(/(?=(\\+?)?)\1"/g, '$1$1\\"').replace(/(?=(\\+?)?)\1$/, '$1$1');
+  quoted = `"${quoted}"`;
+  return quoted.replace(CMD_META, '^$1');
+}
+
+/**
+ * How to start `command args` on Windows. .cmd/.bat files (npm.cmd, npx.cmd, flutter.bat) and bare names
+ * resolved through PATHEXT ('flutter', 'npx') need cmd.exe, and Node >= 18.20.2 / 20.12.2 refuses to spawn
+ * .cmd/.bat without a shell (EINVAL, CVE-2024-27980). Node's own `shell: true` joins the arguments without
+ * quoting, so spaces in paths break and characters like & | ^ in an argument are run by cmd.exe. Instead every
+ * argument is quoted and escaped, and cmd.exe gets the line verbatim. A real .exe is spawned directly.
+ * Exported for tests.
+ */
+export function windowsSpawnArgs(command: string, args: string[]): { file: string; args: string[]; verbatim: boolean } {
+  if (/\.(exe|com)$/i.test(command)) return { file: command, args, verbatim: false };
+  const line = [command.replace(CMD_META, '^$1'), ...args.map(escapeCmdArgument)].join(' ');
+  return { file: process.env.ComSpec || 'cmd.exe', args: ['/d', '/s', '/c', `"${line}"`], verbatim: true };
+}
+
+/** Variables a package manager sets when it runs Atomvs itself (`pnpm dev`), all pointing into the Atomvs repo. */
+const LEAKED_VARIABLE = /^(NODE_PATH|INIT_CWD|npm_.*|PNPM_.*)$/i;
+/** PATH entries the package manager prepends for the same run: the repo's node_modules/.bin folders. */
+const LEAKED_PATH_ENTRY = /[\\/]node_modules[\\/](\.bin|\.pnpm)([\\/]|$)|[\\/]node-gyp-bin([\\/]|$)/i;
+
+/**
+ * The environment for processes run in a user's project (npm, npx, expo, flutter, the agent's commands).
+ * Under `pnpm dev`, pnpm passes NODE_PATH (the repo's .pnpm/node_modules), its settings as npm_config_*,
+ * npm_* / PNPM_* variables and the repo's node_modules/.bin on PATH to every child process. A project then
+ * resolves packages from the Atomvs repo (Metro 0.84 instead of the project's own: ERR_PACKAGE_PATH_NOT_EXPORTED)
+ * and npm/Expo read pnpm's settings. All of it is removed; `removed` names what was (keys only, never values).
+ * Exported for tests.
+ */
+export function userProjectEnv(env: NodeJS.ProcessEnv): { env: NodeJS.ProcessEnv; removed: string[] } {
+  const removed: string[] = [];
+  const clean: NodeJS.ProcessEnv = {};
+  for (const [key, value] of Object.entries(env)) {
+    if (LEAKED_VARIABLE.test(key)) {
+      removed.push(key);
+      continue;
+    }
+    if (key.toLowerCase() === 'path' && value) {
+      const separator = platform() === 'win32' ? ';' : ':';
+      const entries = value.split(separator);
+      const kept = entries.filter((entry) => !LEAKED_PATH_ENTRY.test(entry));
+      if (kept.length !== entries.length) removed.push(`${key} (${entries.length - kept.length} node_modules entries)`);
+      clean[key] = kept.join(separator);
+      continue;
+    }
+    clean[key] = value;
+  }
+  return { env: clean, removed };
+}
+
+let loggedRemoved = '';
+/** userProjectEnv(process.env), logging in dev what it removed (once per distinct set). */
+export function cleanUserProjectEnv(): NodeJS.ProcessEnv {
+  const { env, removed } = userProjectEnv(process.env);
+  const summary = removed.sort().join(', ');
+  if (summary && summary !== loggedRemoved && process.env.ELECTRON_RENDERER_URL) {
+    loggedRemoved = summary;
+    console.info(`[env] removed from processes run in user projects: ${summary}`);
+  }
+  return env;
+}
+
 export class ProcessManager {
   private processes = new Map<number, ProcessInfo>();
   private nextId = 1;
@@ -22,9 +92,12 @@ export class ProcessManager {
     this.flutterSdkPath = path;
   }
 
+  /**
+   * Starts `command` with `args` passed as separate arguments, never as a shell string. On Windows see
+   * windowsSpawnArgs(). Elsewhere `shell: true` is honored for callers that ask for it.
+   */
   spawn(command: string, args: string[], cwd: string, envOverrides?: Record<string, string>, spawnOpts?: { shell?: boolean }): ProcessInfo {
-    const shell = spawnOpts?.shell !== undefined ? spawnOpts.shell : platform() === 'win32';
-    const customEnv = { ...process.env, ...envOverrides };
+    const customEnv = { ...cleanUserProjectEnv(), ...envOverrides };
     if (this.flutterSdkPath) {
       const binPath = join(this.flutterSdkPath, 'bin');
       const pathKeyActual = Object.keys(customEnv).find(k => k.toLowerCase() === 'path') || 'PATH';
@@ -34,9 +107,11 @@ export class ProcessManager {
         : `${binPath}:${existingPath}`;
     }
 
-    const child = spawn(command, args, {
+    const win = platform() === 'win32' ? windowsSpawnArgs(command, args) : null;
+    const child = spawn(win ? win.file : command, win ? win.args : args, {
       cwd,
-      shell,
+      shell: win ? false : spawnOpts?.shell ?? false,
+      windowsVerbatimArguments: win?.verbatim,
       stdio: ['pipe', 'pipe', 'pipe'],
       env: customEnv,
     });

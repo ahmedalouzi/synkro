@@ -3,63 +3,14 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { usePreviewStore } from '../stores/preview-store';
 import { useWorkspaceStore } from '../stores/workspace-store';
 import { PreviewAssembly } from '../features/preview/PreviewAssembly';
-import { DeviceType } from '../features/preview/PhoneFrame';
+import { DEVICES, deviceGeometry, fitZoom, type DeviceType } from '../features/preview/devices';
+import { usePreviewSafeArea } from '../features/preview/usePreviewSafeArea';
 import { useComposerStore } from '../stores/composer-store';
 import './PreviewPane.css';
 import { SkyBackdrop } from '../features/shared/SkyBackdrop';
 
-export type DeviceConfig = {
-  id: string;
-  label: string;
-  logicalViewport: { width: number; height: number };
-  artwork: { frameAsset: string };
-  screenCutout: { x: number; y: number; width: number; height: number; cornerRadius: number };
-};
-
-export const DEVICES: DeviceConfig[] = [
-  {
-    id: 'iphone-15',
-    label: 'iPhone 15',
-    logicalViewport: { width: 393, height: 852 },
-    artwork: { frameAsset: 'pf-iphone' },
-    screenCutout: { x: 16, y: 16, width: 393, height: 852, cornerRadius: 42 }
-  },
-  {
-    id: 'iphone-15-pro',
-    label: 'iPhone 15 Pro',
-    logicalViewport: { width: 393, height: 852 },
-    artwork: { frameAsset: 'pf-iphone pf-iphone--pro' },
-    screenCutout: { x: 16, y: 16, width: 393, height: 852, cornerRadius: 42 }
-  },
-  {
-    id: 'iphone-se',
-    label: 'iPhone SE',
-    logicalViewport: { width: 375, height: 667 },
-    artwork: { frameAsset: 'pf-iphone-se' },
-    screenCutout: { x: 12, y: 92, width: 375, height: 667, cornerRadius: 0 }
-  },
-  {
-    id: 'pixel-8',
-    label: 'Pixel 8',
-    logicalViewport: { width: 412, height: 892 },
-    artwork: { frameAsset: 'pf-pixel' },
-    screenCutout: { x: 14, y: 14, width: 412, height: 892, cornerRadius: 36 }
-  },
-  {
-    id: 'pixel-fold',
-    label: 'Pixel Fold',
-    logicalViewport: { width: 840, height: 768 },
-    artwork: { frameAsset: 'pf-pixel-fold' },
-    screenCutout: { x: 18, y: 18, width: 840, height: 768, cornerRadius: 24 }
-  },
-  {
-    id: 'galaxy-s24',
-    label: 'Galaxy S24',
-    logicalViewport: { width: 360, height: 780 },
-    artwork: { frameAsset: 'pf-galaxy' },
-    screenCutout: { x: 12, y: 12, width: 360, height: 780, cornerRadius: 28 }
-  }
-];
+export { DEVICES };
+export type { DeviceConfig } from '../features/preview/devices';
 
 function getPlatformLabel(p: string) {
   if (p === 'react-native') return 'RN';
@@ -226,10 +177,13 @@ Please modify the selected element and its corresponding component files as foll
   const iframeKey = usePreviewStore((s) => s.iframeKey);
   const deviceId = usePreviewStore((s) => s.deviceId) as DeviceType;
   const setDeviceId = usePreviewStore((s) => s.setDeviceId);
+  const landscape = usePreviewStore((s) => s.landscape);
+  const setLandscape = usePreviewStore((s) => s.setLandscape);
 
   /* ── Refs ── */
   const paneRef = useRef<HTMLElement>(null);
   const deviceRef = useRef(deviceId);
+  const landscapeRef = useRef(landscape);
 
   useEffect(() => { deviceRef.current = deviceId; }, [deviceId]);
 
@@ -238,6 +192,8 @@ Please modify the selected element and its corresponding component files as foll
   const platform = project?.platform ?? 'flutter';
   const platColor = getPlatformColor(platform);
   const device = DEVICES.find((d) => d.id === deviceId) ?? DEVICES[0]!;
+  const geometry = deviceGeometry(device, landscape);
+  const { tone, background, onFrameLoad } = usePreviewSafeArea(iframeRef, session?.url, device, geometry);
 
   /* ── Scale: fit the phone into the stage below the header ── */
   const stageBodyRef = useRef<HTMLDivElement>(null);
@@ -249,10 +205,7 @@ Please modify the selected element and its corresponding component files as foll
     const availW = el.clientWidth - 24;
     const availH = el.clientHeight - 28 - 26;
     if (availW < 10 || availH < 10) return;
-    const outerW = d.logicalViewport.width + d.screenCutout.x * 2;
-    const outerH = d.logicalViewport.height + d.screenCutout.y * 2;
-    const s = Math.min(availW / outerW, availH / outerH);
-    setScale(Math.min(Math.max(s, 0.2), 1.0));
+    setScale(fitZoom(deviceGeometry(d, landscapeRef.current), availW, availH, window.devicePixelRatio || 1));
   }, []);
 
   useEffect(() => {
@@ -264,11 +217,12 @@ Please modify the selected element and its corresponding component files as foll
     return () => ro.disconnect();
   }, [fitScale]);
 
-  // Recompute when device changes
+  // Recompute when the device or its orientation changes
   useEffect(() => {
     deviceRef.current = deviceId;
+    landscapeRef.current = landscape;
     fitScale();
-  }, [deviceId, fitScale]);
+  }, [deviceId, landscape, fitScale]);
 
   /* ── Detach listener ── */
   useEffect(() => {
@@ -332,20 +286,18 @@ Please modify the selected element and its corresponding component files as foll
       window.removeEventListener('peep:preview-stop', onStop);
     };
   }, []);
-  const handleDetach = () => void window.peep.detachPreview(deviceId, {
-    width: device.logicalViewport.width + device.screenCutout.x * 2,
-    height: device.logicalViewport.height + device.screenCutout.y * 2,
-  });
+  const handleDetach = () => void window.peep.detachPreview(deviceId, geometry.frame, landscape);
 
-  // Switching device while detached: resize the detached window and show the new device.
-  const lastDetachedDeviceRef = useRef(deviceId);
+  // Switching device or orientation while detached: resize the detached window and show the new frame.
+  const detachedKey = `${deviceId}:${landscape}`;
+  const lastDetachedKeyRef = useRef(detachedKey);
   useEffect(() => {
-    if (!isDetached || lastDetachedDeviceRef.current === deviceId) return;
-    lastDetachedDeviceRef.current = deviceId;
+    if (!isDetached || lastDetachedKeyRef.current === detachedKey) return;
+    lastDetachedKeyRef.current = detachedKey;
     handleDetach();
-  }, [deviceId, isDetached]);
+  }, [detachedKey, isDetached]);
   useEffect(() => {
-    if (isDetached) lastDetachedDeviceRef.current = deviceId;
+    if (isDetached) lastDetachedKeyRef.current = detachedKey;
   }, [isDetached]);
   const handleAutoHeal = () => {
     if (!project || !session?.error) return;
@@ -413,6 +365,18 @@ Please modify the selected element and its corresponding component files as foll
                     <option key={d.id} value={d.id}>{d.label}</option>
                   ))}
                 </select>
+              )}
+
+              {selectedDeviceId === 'browser' && (
+                <button
+                  type="button"
+                  className={`preview-action-btn ${landscape ? 'preview-action-btn--primary' : ''}`}
+                  data-testid="preview-rotate"
+                  onClick={() => setLandscape(!landscape)}
+                  title={landscape ? 'Rotate to portrait' : 'Rotate to landscape'}
+                >
+                  ⟳ {landscape ? 'Landscape' : 'Portrait'}
+                </button>
               )}
 
               {isRunning && selectedDeviceId === 'browser' && (
@@ -487,15 +451,12 @@ Please modify the selected element and its corresponding component files as foll
                   zoomed size so the app stays sharp, while it still sees the device's
                   logical width (e.g. 393px). transform would stretch a 1x bitmap. */}
               <div className={`phone-scale-container${isRunning ? ' is-running' : ''}`} style={{
-                width: device.logicalViewport.width + device.screenCutout.x * 2,
-                height: device.logicalViewport.height + device.screenCutout.y * 2,
+                width: geometry.frame.width,
+                height: geometry.frame.height,
                 zoom: scale,
                 flexShrink: 0,
-                boxSizing: 'border-box',
-                paddingLeft: device.screenCutout.x,
-                paddingTop: device.screenCutout.y,
               }}>
-                <PreviewAssembly device={device}>
+                <PreviewAssembly device={device} landscape={landscape} tone={tone} background={background}>
                   {session?.status === 'starting' && (
                     <div className="preview-placeholder">
                       <span className="preview-placeholder__icon preview-placeholder__spinner">⏳</span>
@@ -560,6 +521,7 @@ Please modify the selected element and its corresponding component files as foll
                         border: 'none',
                         display: iframeError ? 'none' : 'block',
                       }}
+                      onLoad={onFrameLoad}
                       onError={() => setIframeError(true)}
                     />
                   )}

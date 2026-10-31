@@ -1,8 +1,9 @@
 import { BrowserWindow } from 'electron';
 import { IPC_EVENTS } from '@peep/shared';
-import type { PreviewSession } from '@peep/shared';
+import type { PreviewSession, PreviewRuntimeReport } from '@peep/shared';
 import type { FrameworkProvider } from './providers/base-provider';
 import { createServer } from 'node:net';
+import { PreviewLog } from './preview-log';
 
 function getFreePort(): Promise<number> {
   const startPort = 10000 + Math.floor(Math.random() * 10000);
@@ -21,6 +22,22 @@ function getFreePort(): Promise<number> {
 export class PreviewManager {
   private session: PreviewSession | null = null;
   private activeProvider: FrameworkProvider | null = null;
+  /** The current preview's output, for the agent (get_preview_logs / restart_preview). */
+  private readonly log = new PreviewLog();
+  /** The preview page's runtime state, relayed from the iframe; null until the page reports after a (re)start. */
+  private runtime: PreviewRuntimeReport | null = null;
+
+  getLog(): string {
+    return this.log.get();
+  }
+
+  getRuntime(): PreviewRuntimeReport | null {
+    return this.runtime;
+  }
+
+  setRuntime(report: PreviewRuntimeReport): void {
+    this.runtime = report;
+  }
 
   setMainWindow(_window: BrowserWindow | null): void {
     // no-op
@@ -48,11 +65,14 @@ export class PreviewManager {
     this.stop();
 
     this.activeProvider = provider;
+    this.log.clear();
+    this.runtime = null;
     this.emit({ url: '', processId: 0, status: 'starting' });
 
     try {
       const port = await getFreePort();
       const { url, processId } = await provider.startPreview(projectRoot, port, (line) => {
+        this.log.add(line);
         for (const win of BrowserWindow.getAllWindows()) {
           if (!win.isDestroyed()) {
             win.webContents.send(IPC_EVENTS.PREVIEW_LOG, line);
@@ -65,6 +85,7 @@ export class PreviewManager {
       return session;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      this.log.add(`[preview error] ${message}`);
       const session: PreviewSession = {
         url: '',
         processId: 0,

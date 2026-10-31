@@ -1,6 +1,8 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import { IPC_CHANNELS, IPC_EVENTS } from '@peep/shared';
+import { IPC_CHANNELS, IPC_EVENTS, parseProposedEditsPayload } from '@peep/shared';
+import { installPreviewSafeArea } from './preview-safe-area';
 import type {
+  PreviewRuntimeReport,
   SshTarget,
   AgentSendOptions,
   AgentStreamEvent,
@@ -47,7 +49,8 @@ const api: IpcApi = {
   readImage: (filePath: string) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_READ_IMAGE, filePath) as Promise<string>,
   writeFile: (filePath: string, content: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_WRITE_FILE, filePath, content),
-  createDir: (dirPath: string) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_CREATE_DIR, dirPath),
+  createFile: (filePath: string, content?: string) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_CREATE_FILE, filePath, content ?? ''),
+  createDir: (dirPath: string, options?: { failIfExists?: boolean }) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_CREATE_DIR, dirPath, options),
   renameItem: (oldPath: string, newPath: string) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_RENAME_ITEM, oldPath, newPath),
   deleteItem: (path: string) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_DELETE_ITEM, path),
   revealItem: (path: string) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_REVEAL_ITEM, path),
@@ -74,10 +77,13 @@ const api: IpcApi = {
   rnReloadPreview: (processId: number) => ipcRenderer.invoke(IPC_CHANNELS.RN_RELOAD_PREVIEW, processId),
   getPreviewSession: () =>
     ipcRenderer.invoke(IPC_CHANNELS.PREVIEW_GET_SESSION) as Promise<PreviewSession | null>,
-  detachPreview: (deviceId?: string, frame?: { width: number; height: number }) =>
-    ipcRenderer.invoke(IPC_CHANNELS.PREVIEW_DETACH, deviceId, frame) as Promise<void>,
+  detachPreview: (deviceId?: string, frame?: { width: number; height: number }, landscape?: boolean) =>
+    ipcRenderer.invoke(IPC_CHANNELS.PREVIEW_DETACH, deviceId, frame, landscape) as Promise<void>,
   attachPreview: () => ipcRenderer.invoke(IPC_CHANNELS.PREVIEW_ATTACH) as Promise<void>,
   isPreviewDetached: () => ipcRenderer.invoke(IPC_CHANNELS.PREVIEW_IS_DETACHED) as Promise<boolean>,
+  samplePreviewStrips: (rects: Array<{ x: number; y: number; width: number; height: number }>) =>
+    ipcRenderer.invoke(IPC_CHANNELS.PREVIEW_SAMPLE_STRIPS, rects) as Promise<Array<{ luminance: number; rgb: [number, number, number] } | null>>,
+  reportPreviewRuntime: (report: PreviewRuntimeReport) => ipcRenderer.send(IPC_CHANNELS.PREVIEW_RUNTIME_REPORT, report),
   sendAgentMessage: (options: AgentSendOptions) => ipcRenderer.invoke(IPC_CHANNELS.AGENT_SEND, options),
   cancelAgent: () => ipcRenderer.invoke(IPC_CHANNELS.AGENT_CANCEL),
   approvePlan: (projectPath?: string) => ipcRenderer.invoke(IPC_CHANNELS.AGENT_APPROVE_PLAN, projectPath),
@@ -113,6 +119,7 @@ const api: IpcApi = {
   inlineEdit: (request) => ipcRenderer.invoke(IPC_CHANNELS.AI_INLINE_EDIT, request) as Promise<import('@peep/shared').InlineEditResult>,
   cancelInlineEdit: () => ipcRenderer.invoke(IPC_CHANNELS.AI_INLINE_EDIT_CANCEL),
   restoreCheckpoint: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.AGENT_RESTORE_CHECKPOINT, id) as Promise<string[]>,
+  listCheckpoints: () => ipcRenderer.invoke(IPC_CHANNELS.AGENT_LIST_CHECKPOINTS) as Promise<Array<{ id: string; fileCount: number }>>,
   onAgentCheckpoint: (callback) => subscribe<{ id: string; fileCount: number }>(IPC_EVENTS.AGENT_CHECKPOINT, callback),
   runCommand: (options) =>
     ipcRenderer.invoke(IPC_CHANNELS.RUN_COMMAND, options) as Promise<RunCommandResult>,
@@ -152,7 +159,12 @@ const api: IpcApi = {
   onAgentTimeline: (callback: any) => subscribe<any>(IPC_EVENTS.AGENT_TIMELINE, callback),
   onAgentPhase: (callback: (phase: import('@peep/shared').AgentPhase) => void) =>
     subscribe<import('@peep/shared').AgentPhase>(IPC_EVENTS.AGENT_PHASE_CHANGED, callback),
-  onProposedEdits: (callback) => subscribe<ProposedEdit[]>(IPC_EVENTS.AGENT_PROPOSED_EDITS, callback),
+  // Main sends { edits, threadId }; the callback used to get that object as if it were the array ("edits is
+  // not iterable"). Anything without an edits array is dropped.
+  onProposedEdits: (callback) => subscribe<unknown>(IPC_EVENTS.AGENT_PROPOSED_EDITS, (payload) => {
+    const parsed = parseProposedEditsPayload(payload);
+    if (parsed) callback(parsed.edits, parsed.threadId);
+  }),
   onTerminalOutput: (callback) =>
     subscribe<{ id: string; data: string }>(IPC_EVENTS.TERMINAL_OUTPUT, callback),
   onTerminalExit: (callback) => subscribe<{ id: string; code: number }>(IPC_EVENTS.TERMINAL_EXIT, callback),
@@ -198,7 +210,14 @@ const api: IpcApi = {
   onSettingsSection: (callback: (section: string) => void) => subscribe<string>('peep:settings-section', callback),
 };
 
-contextBridge.exposeInMainWorld('peep', {
-  ...api,
-  getInspectorPreloadPath: () => require('path').join(__dirname, 'inspector.js'),
-});
+// The window loads this preload in sub-frames too (nodeIntegrationInSubFrames), for the preview iframe's
+// safe-area shim. Only the app's own top-level page gets the IPC API: the preview iframe runs the user's
+// code, and a sub-frame gets nothing but the shim (see preview-safe-area.ts).
+if (process.isMainFrame) {
+  contextBridge.exposeInMainWorld('peep', {
+    ...api,
+    getInspectorPreloadPath: () => require('path').join(__dirname, 'inspector.js'),
+  });
+} else {
+  installPreviewSafeArea();
+}

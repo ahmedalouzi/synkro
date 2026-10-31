@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Download Synkro — AI Desktop IDE for Mobile Developers</title>
+  <meta name="description" content="Download Synkro v0.1.0 for Windows. Free, local-first AI IDE with live mobile preview, agentic coding, and sandboxed Cloud Build." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../style.css" />
+  <style>
+    .download-hero {
+      padding: 72px 0 36px;
+      text-align: center;
+      background: radial-gradient(ellipse at top, rgba(124, 58, 237, 0.16) 0%, transparent 70%);
+      border-bottom: 1px solid var(--border);
+    }
+    .download-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 32px;
+      max-width: 900px;
+      margin: -24px auto 64px;
+      padding: 0 24px;
+    }
+    .release-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border2);
+      border-radius: var(--radius-lg);
+      padding: 40px;
+      box-shadow: 0 12px 48px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(124, 58, 237, 0.2);
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+    .release-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0; height: 3px;
+      background: linear-gradient(90deg, #7c3aed, #06b6d4, #7c3aed);
+    }
+    .release-title {
+      font-size: 28px;
+      font-weight: 800;
+      color: var(--text);
+      margin-bottom: 8px;
+    }
+    .release-meta {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 12px;
+      margin: 16px 0 28px;
+    }
+    .meta-tag {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-3);
+      background: var(--bg-card2);
+      border: 1px solid var(--border2);
+      padding: 4px 12px;
+      border-radius: 20px;
+    }
+    .cta-button-group {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+    .btn-download-main {
+      padding: 16px 36px;
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      border-radius: 12px;
+    }
+    .fallback-links {
+      font-size: 13.5px;
+      color: var(--text-3);
+    }
+    .fallback-links a {
+      color: var(--accent-2);
+      text-decoration: underline;
+    }
+
+    /* SmartScreen Interactive Guide */
+    .guide-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border2);
+      border-radius: var(--radius-lg);
+      padding: 36px;
+      margin-bottom: 48px;
+    }
+    .guide-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 16px;
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    .guide-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(227, 179, 65, 0.12);
+      color: var(--gold);
+      border: 1px solid rgba(227, 179, 65, 0.3);
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .lang-tabs {
+      display: flex;
+      gap: 6px;
+      background: var(--bg-card2);
+      padding: 4px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+    }
+    .lang-tab {
+      padding: 6px 14px;
+      font-size: 12.5px;
+      font-weight: 600;
+      border-radius: 6px;
+      border: none;
+      background: transparent;
+      color: var(--text-3);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .lang-tab.active {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .smartscreen-mock {
+      background: #005a9e;
+      color: #ffffff;
+      border-radius: 8px;
+      padding: 24px 28px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      margin: 24px 0;
+      position: relative;
+    }
+    .smartscreen-shield {
+      font-size: 36px;
+      margin-bottom: 12px;
+      line-height: 1;
+    }
+    .smartscreen-title {
+      font-size: 22px;
+      font-weight: 600;
+      margin-bottom: 12px;
+    }
+    .smartscreen-body {
+      font-size: 14px;
+      line-height: 1.5;
+      color: #e2e8f0;
+      margin-bottom: 20px;
+    }
+    .smartscreen-details {
+      background: rgba(0, 0, 0, 0.2);
+      border-left: 3px solid #60a5fa;
+      padding: 12px 16px;
+      margin-bottom: 20px;
+      font-size: 13.5px;
+    }
+    .smartscreen-details div {
+      margin-bottom: 4px;
+    }
+    .smartscreen-moreinfo {
+      color: #93c5fd;
+      text-decoration: underline;
+      cursor: pointer;
+      font-weight: 600;
+      display: inline-block;
+      margin-bottom: 16px;
+    }
+    .smartscreen-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 12px;
+    }
+    .ss-btn {
+      padding: 8px 24px;
+      font-size: 13.5px;
+      font-weight: 600;
+      border-radius: 4px;
+      border: 1px solid rgba(255,255,255,0.4);
+      background: rgba(255,255,255,0.1);
+      color: #fff;
+      cursor: pointer;
+    }
+    .ss-btn--highlight {
+      background: #fff;
+      color: #005a9e;
+      border-color: #fff;
+      font-weight: 700;
+      box-shadow: 0 0 16px rgba(255, 255, 255, 0.6);
+      position: relative;
+    }
+    .step-callout {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(124, 58, 237, 0.2);
+      border: 1px solid var(--accent);
+      color: var(--accent-2);
+      padding: 6px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      margin-top: 8px;
+    }
+
+    /* Verification Box */
+    .checksum-box {
+      background: var(--bg-card);
+      border: 1px solid var(--border2);
+      border-radius: var(--radius-lg);
+      padding: 32px;
+      margin-bottom: 48px;
+    }
+    .cli-tabs {
+      display: flex;
+      gap: 8px;
+      margin: 16px 0 12px;
+    }
+    .cli-tab {
+      background: var(--bg-card2);
+      border: 1px solid var(--border);
+      color: var(--text-3);
+      padding: 6px 14px;
+      border-radius: 6px;
+      font-size: 12.5px;
+      font-family: 'JetBrains Mono', monospace;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .cli-tab.active {
+      background: rgba(124, 58, 237, 0.25);
+      border-color: var(--accent);
+      color: var(--text);
+    }
+    .cli-snippet {
+      position: relative;
+      background: #05070c;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      color: #38bdf8;
+      overflow-x: auto;
+    }
+    .copy-btn {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      padding: 4px 10px;
+      font-size: 11px;
+      font-weight: 600;
+      background: var(--bg-card2);
+      color: var(--text-3);
+      border: 1px solid var(--border2);
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .copy-btn:hover {
+      color: var(--text);
+      border-color: var(--accent);
+    }
+
+    /* Requirements Table */
+    .req-table-wrap {
+      background: var(--bg-card);
+      border: 1px solid var(--border2);
+      border-radius: var(--radius-lg);
+      padding: 32px;
+      margin-bottom: 64px;
+      overflow-x: auto;
+    }
+    .req-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+      text-align: left;
+    }
+    .req-table th {
+      padding: 12px 16px;
+      border-bottom: 2px solid var(--border2);
+      color: var(--text);
+      font-weight: 700;
+    }
+    .req-table td {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      color: var(--text-2);
+    }
+    .req-table tr:last-child td {
+      border-bottom: none;
+    }
+    .badge-check {
+      color: var(--green);
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ── NAV ──────────────────────────────────────────────────────────── -->
+  <nav class="nav">
+    <div class="nav__inner container">
+      <a class="nav__logo" href="/">
+        <span class="nav__logo-icon">⚡</span>
+        <span>Synkro</span>
+      </a>
+      <div class="nav__links">
+        <a href="/#features">Features</a>
+        <a href="/pricing">Pricing</a>
+        <a href="/docs">Docs</a>
+        <a href="/account">Account</a>
+        <a href="/download" class="btn btn--primary">Download App</a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ── HERO ─────────────────────────────────────────────────────────── -->
+  <header class="download-hero">
+    <div class="container">
+      <div class="section-badge">v0.1.0 Android Beta Release Gate</div>
+      <h1 class="hero__title">
+        Download <span class="gradient-text">Synkro</span> for Windows
+      </h1>
+      <p class="hero__subtitle">
+        The local-first AI desktop IDE built specifically for Flutter and React Native engineers.
+        Real-time phone-frame hot reload, integrated agentic code modifications, Monaco editor, and sandboxed Cloud Build.
+      </p>
+    </div>
+  </header>
+
+  <!-- ── DOWNLOAD CONTENT ─────────────────────────────────────────────── -->
+  <div class="download-grid">
+
+    <!-- Primary Release Card -->
+    <div class="release-card">
+      <div class="release-title">Synkro for Windows (x64)</div>
+      <p style="color: var(--text-3); font-size: 14.5px;">Latest stable beta installer • Standard user-space setup (no admin privileges needed)</p>
+      
+      <div class="release-meta">
+        <span class="meta-tag">🏷️ Version 0.1.0 Beta</span>
+        <span class="meta-tag">💻 Windows 10 &amp; 11 (64-bit)</span>
+        <span class="meta-tag">📦 NSIS Installer (~120 MB)</span>
+        <span class="meta-tag">🛡️ Verified Clean &amp; Open Source</span>
+      </div>
+
+      <div class="cta-button-group">
+        <a href="https://github.com/ahmedalouzi/synkro/releases/latest/download/Synkro-Setup-0.1.0.exe" class="btn btn--primary btn--lg btn-download-main">
+          ⬇️ Download Synkro-Setup-0.1.0.exe
+        </a>
+        <div class="fallback-links">
+          Direct binary link unavailable or blocked by network? <br />
+          <a href="https://github.com/ahmedalouzi/synkro/releases/latest" target="_blank" rel="noopener">
+            View Release on GitHub Releases ↗
+          </a>
+        </div>
+      </div>
+
+      <div style="font-size: 12.5px; color: var(--text-4); margin-top: 16px;">
+        🍏 Looking for macOS or 🐧 Linux? Native Apple Silicon and Linux x64 builds will ship in v0.2.0.
+      </div>
+    </div>
+
+    <!-- Windows Defender SmartScreen Walkthrough -->
+    <div class="guide-card">
+      <div class="guide-header">
+        <div>
+          <span class="guide-badge">🛡️ Important Setup Notice (DEC-03)</span>
+          <h2 style="font-size: 22px; font-weight: 800; color: var(--text); margin-top: 8px;">
+            Windows Defender SmartScreen Guide
+          </h2>
+        </div>
+        <div class="lang-tabs">
+          <button type="button" class="lang-tab active" id="tabEn" onclick="switchLang('en')">English</button>
+          <button type="button" class="lang-tab" id="tabAr" onclick="switchLang('ar')">العربية</button>
+        </div>
+      </div>
+
+      <p style="font-size: 14.5px; color: var(--text-2); line-height: 1.7; margin-bottom: 16px;">
+        Because Synkro v0.1.0 is an early-stage open-source beta release, the binary has not yet undergone the multi-thousand dollar Extended Validation (EV) corporate certificate signing process. Windows Defender SmartScreen flags newly released binaries with a blue <em>"Windows protected your PC"</em> prompt until global download reputation accumulates.
+      </p>
+
+      <!-- English Guide Content -->
+      <div id="guideEn">
+        <div class="step-callout">
+          <strong>Step 1:</strong> Click <u>"More info"</u> on the initial prompt.
+        </div>
+
+        <div class="smartscreen-mock">
+          <div class="smartscreen-shield">🛡️</div>
+          <div class="smartscreen-title">Windows protected your PC</div>
+          <div class="smartscreen-body">
+            Microsoft Defender SmartScreen prevented an unrecognized app from starting. Running this app might put your PC at risk.
+          </div>
+          <div>
+            <span class="smartscreen-moreinfo" style="outline: 2px dashed #fbbf24; padding: 2px 6px; border-radius: 4px;">More info ⬅ (Click here)</span>
+          </div>
+          <div class="smartscreen-actions">
+            <button class="ss-btn" type="button">Don't run</button>
+          </div>
+        </div>
+
+        <div class="step-callout" style="background: rgba(16, 185, 129, 0.2); border-color: #10b981; color: #6ee7b7;">
+          <strong>Step 2:</strong> Click <u>"Run anyway"</u> once the publisher details appear.
+        </div>
+
+        <div class="smartscreen-mock">
+          <div class="smartscreen-shield">🛡️</div>
+          <div class="smartscreen-title">Windows protected your PC</div>
+          <div class="smartscreen-body">
+            Microsoft Defender SmartScreen prevented an unrecognized app from starting. Running this app might put your PC at risk.
+          </div>
+          <div class="smartscreen-details">
+            <div><strong>App:</strong> Synkro-Setup-0.1.0.exe</div>
+            <div><strong>Publisher:</strong> Unknown publisher</div>
+          </div>
+          <div class="smartscreen-actions">
+            <button class="ss-btn ss-btn--highlight" type="button">Run anyway ⬅ (Click here)</button>
+            <button class="ss-btn" type="button">Don't run</button>
+          </div>
+        </div>
+
+        <div style="font-size: 13.5px; color: var(--text-3); margin-top: 14px; line-height: 1.6;">
+          ✅ <strong>Step 3:</strong> The NSIS installer will launch and install Synkro to <code>%LOCALAPPDATA%\Programs\Synkro</code>. No administrative UAC elevation is required.
+        </div>
+      </div>
+
+      <!-- Arabic Guide Content -->
+      <div id="guideAr" style="display: none;" dir="rtl">
+        <div class="step-callout">
+          <strong>الخطوة 1:</strong> انقر على <u>"مزيد من المعلومات"</u> في النافذة الزرقاء الأولية.
+        </div>
+
+        <div class="smartscreen-mock" style="font-family: system-ui, -apple-system, sans-serif;">
+          <div class="smartscreen-shield">🛡️</div>
+          <div class="smartscreen-title">حماية الكمبيوتر بواسطة Windows</div>
+          <div class="smartscreen-body">
+            منع Microsoft Defender SmartScreen بدء تشغيل تطبيق غير معروف. قد يؤدي تشغيل هذا التطبيق إلى تعريض الكمبيوتر للخطر.
+          </div>
+          <div>
+            <span class="smartscreen-moreinfo" style="outline: 2px dashed #fbbf24; padding: 2px 6px; border-radius: 4px;">مزيد من المعلومات ⬅ (اضغط هنا)</span>
+          </div>
+          <div class="smartscreen-actions" style="justify-content: flex-start;">
+            <button class="ss-btn" type="button">عدم التشغيل</button>
+          </div>
+        </div>
+
+        <div class="step-callout" style="background: rgba(16, 185, 129, 0.2); border-color: #10b981; color: #6ee7b7;">
+          <strong>الخطوة 2:</strong> انقر على <u>"تشغيل على أي حال"</u> عند ظهور معلومات التطبيق.
+        </div>
+
+        <div class="smartscreen-mock" style="font-family: system-ui, -apple-system, sans-serif;">
+          <div class="smartscreen-shield">🛡️</div>
+          <div class="smartscreen-title">حماية الكمبيوتر بواسطة Windows</div>
+          <div class="smartscreen-body">
+            منع Microsoft Defender SmartScreen بدء تشغيل تطبيق غير معروف. قد يؤدي تشغيل هذا التطبيق إلى تعريض الكمبيوتر للخطر.
+          </div>
+          <div class="smartscreen-details">
+            <div><strong>التطبيق:</strong> Synkro-Setup-0.1.0.exe</div>
+            <div><strong>الناشر:</strong> ناشر غير معروف</div>
+          </div>
+          <div class="smartscreen-actions" style="justify-content: flex-start;">
+            <button class="ss-btn ss-btn--highlight" type="button">تشغيل على أي حال ⬅ (اضغط هنا)</button>
+            <button class="ss-btn" type="button">عدم التشغيل</button>
+          </div>
+        </div>
+
+        <div style="font-size: 13.5px; color: var(--text-3); margin-top: 14px; line-height: 1.6;">
+          ✅ <strong>الخطوة 3:</strong> سيبدأ برنامج التثبيت NSIS بالعمل ويُثبّت Synkro داخل مجلد المستخدم <code>%LOCALAPPDATA%\Programs\Synkro</code> دون الحاجة إلى صلاحيات المشرف (UAC).
+        </div>
+      </div>
+    </div>
+
+    <!-- Checksum & SHA-256 Verification -->
+    <div class="checksum-box">
+      <div class="section-badge">Cryptographic Integrity</div>
+      <h2 style="font-size: 22px; font-weight: 800; color: var(--text); margin: 8px 0 12px;">
+        Verify Installer Checksum (SHA-256)
+      </h2>
+      <p style="font-size: 14px; color: var(--text-3); margin-bottom: 16px;">
+        Verify that your downloaded binary has not been tampered with by computing its SHA-256 hash in your terminal before launching.
+      </p>
+
+      <div class="cli-tabs">
+        <button type="button" class="cli-tab active" id="tabPwsh" onclick="switchCli('pwsh')">PowerShell</button>
+        <button type="button" class="cli-tab" id="tabCmd" onclick="switchCli('cmd')">Command Prompt (CMD)</button>
+        <button type="button" class="cli-tab" id="tabBash" onclick="switchCli('bash')">macOS / Linux</button>
+      </div>
+
+      <div class="cli-snippet" id="snippetContainer">
+        <code id="snippetText">Get-FileHash -Algorithm SHA256 .\Synkro-Setup-0.1.0.exe</code>
+        <button type="button" class="copy-btn" id="copyBtn" onclick="copySnippet()">Copy</button>
+      </div>
+
+      <div style="font-size: 13px; color: var(--text-4); margin-top: 12px;">
+        💡 Compare the output hash against the official sha256 checksum published alongside the release in <a href="https://github.com/ahmedalouzi/synkro/releases/latest" style="color: var(--accent-2);" target="_blank" rel="noopener">GitHub Releases</a>.
+      </div>
+    </div>
+
+    <!-- System Requirements & Toolchain Support -->
+    <div class="req-table-wrap">
+      <div class="section-badge">Hardware &amp; Toolchain</div>
+      <h2 style="font-size: 22px; font-weight: 800; color: var(--text); margin: 8px 0 16px;">
+        System Requirements
+      </h2>
+      <table class="req-table">
+        <thead>
+          <tr>
+            <th>Component</th>
+            <th>Minimum Requirement</th>
+            <th>Recommended Specification</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Operating System</strong></td>
+            <td>Windows 10 (64-bit, Version 19041+)</td>
+            <td>Windows 11 (64-bit)</td>
+          </tr>
+          <tr>
+            <td><strong>Processor</strong></td>
+            <td>Intel Core i5 / AMD Ryzen 5 (4 cores)</td>
+            <td>Intel Core i7 / AMD Ryzen 7 (8 cores+)</td>
+          </tr>
+          <tr>
+            <td><strong>Memory (RAM)</strong></td>
+            <td>8 GB RAM</td>
+            <td>16 GB or 32 GB RAM (for concurrent preview &amp; Gradle builds)</td>
+          </tr>
+          <tr>
+            <td><strong>Disk Storage</strong></td>
+            <td>4 GB free SSD space</td>
+            <td>10 GB+ free NVMe SSD space</td>
+          </tr>
+          <tr>
+            <td><strong>Flutter SDK</strong></td>
+            <td>Flutter 3.16+ / Dart 3.2+</td>
+            <td>Flutter 3.24+ (auto-detected via <code>Settings → SDK Paths</code>)</td>
+          </tr>
+          <tr>
+            <td><strong>React Native / Node</strong></td>
+            <td>Node.js 18.x LTS / React Native 0.72+</td>
+            <td>Node.js 20.x LTS / Expo SDK 51+</td>
+          </tr>
+          <tr>
+            <td><strong>Cloud Build Support</strong></td>
+            <td>None (runs in remote isolated Docker sandbox)</td>
+            <td>Synkro account for Cloud Build APK compilation</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- FAQ -->
+    <div class="guide-card" style="margin-bottom: 32px;">
+      <h2 style="font-size: 22px; font-weight: 800; color: var(--text); margin-bottom: 20px;">
+        Download &amp; Installation FAQ
+      </h2>
+      <div class="faq-list">
+        <div class="faq-item">
+          <h3>Does Synkro require administrative privileges to install?</h3>
+          <p>No. Synkro is packaged as an NSIS per-user installer that deploys safely into your user app data directory (<code>%LOCALAPPDATA%\Programs\Synkro</code>). You do not need administrative or UAC access.</p>
+        </div>
+        <div class="faq-item">
+          <h3>How do software updates work?</h3>
+          <p>Synkro features a built-in auto-updater. When a new version is released, the IDE detects it quietly in the background and displays a non-intrusive update prompt in the bottom status bar.</p>
+        </div>
+        <div class="faq-item">
+          <h3>Is my source code uploaded anywhere when I install or use Synkro?</h3>
+          <p>No. Synkro is strictly local-first. Your code stays on your physical drive and all edits, Git operations, and terminal processes execute locally. Telemetry is 100% opt-in (disabled by default), and AI features operate with zero-data-retention commercial guarantees.</p>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── FOOTER ────────────────────────────────────────────────────────── -->
+  <footer class="footer">
+    <div class="container footer__inner">
+      <div class="footer__brand">
+        <a class="nav__logo" href="/">
+          <span class="nav__logo-icon">⚡</span>
+          <span>Synkro</span>
+        </a>
+        <p>The AI desktop IDE for Flutter &amp; React Native developers.</p>
+      </div>
+      <div class="footer__links">
+        <div>
+          <strong>Product</strong>
+          <a href="/#features">Features</a>
+          <a href="/pricing">Pricing</a>
+          <a href="/docs">Documentation</a>
+          <a href="/download">Download</a>
+        </div>
+        <div>
+          <strong>Account &amp; Legal</strong>
+          <a href="/account">Account</a>
+          <a href="/account/billing">Billing</a>
+          <a href="/privacy">Privacy Policy</a>
+          <a href="/terms">Terms of Service</a>
+        </div>
+        <div>
+          <strong>Community</strong>
+          <a href="mailto:support@synkro.com">Support</a>
+          <a href="https://github.com/ahmedalouzi/synkro" target="_blank" rel="noopener">GitHub</a>
+        </div>
+      </div>
+    </div>
+    <div class="container footer__bottom">
+      <span>© 2026 Synkro. All rights reserved.</span>
+      <span>Built for Flutter &amp; React Native engineers</span>
+    </div>
+  </footer>
+
+  <script>
+    function switchLang(lang) {
+      const enSection = document.getElementById('guideEn');
+      const arSection = document.getElementById('guideAr');
+      const tabEn = document.getElementById('tabEn');
+      const tabAr = document.getElementById('tabAr');
+
+      if (lang === 'ar') {
+        enSection.style.display = 'none';
+        arSection.style.display = 'block';
+        tabEn.classList.remove('active');
+        tabAr.classList.add('active');
+      } else {
+        enSection.style.display = 'block';
+        arSection.style.display = 'none';
+        tabEn.classList.add('active');
+        tabAr.classList.remove('active');
+      }
+    }
+
+    const snippets = {
+      pwsh: 'Get-FileHash -Algorithm SHA256 .\\Synkro-Setup-0.1.0.exe',
+      cmd: 'certutil -hashfile Synkro-Setup-0.1.0.exe SHA256',
+      bash: 'shasum -a 256 Synkro-Setup-0.1.0.exe'
+    };
+
+    let activeCli = 'pwsh';
+
+    function switchCli(target) {
+      activeCli = target;
+      document.getElementById('snippetText').textContent = snippets[target];
+      document.getElementById('tabPwsh').classList.toggle('active', target === 'pwsh');
+      document.getElementById('tabCmd').classList.toggle('active', target === 'cmd');
+      document.getElementById('tabBash').classList.toggle('active', target === 'bash');
+    }
+
+    function copySnippet() {
+      const text = snippets[activeCli];
+      navigator.clipboard.writeText(text).then(() => {
+        const btn = document.getElementById('copyBtn');
+        btn.textContent = 'Copied!';
+        setTimeout(() => { btn.textContent = 'Copy'; }, 2000);
+      });
+    }
+  </script>
+</body>
+</html>

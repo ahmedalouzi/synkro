@@ -7,6 +7,7 @@ import { config } from 'dotenv';
 import * as Sentry from '@sentry/electron/main';
 import log from 'electron-log/main';
 import { resolveSentryDsn } from './build-config';
+import { hideScrollbarsInPreviewFrames } from './preview-frames';
 
 if (app.isPackaged) {
   // Release builds never read a .env and can't be switched into test mode from the environment.
@@ -147,11 +148,14 @@ function createWindow(): void {
       sandbox: false,
       contextIsolation: true,
       nodeIntegration: false,
+      // Runs the preload in the preview iframe too, only for its safe-area shim; it exposes nothing there.
+      nodeIntegrationInSubFrames: true,
       webviewTag: true,
     },
   });
 
   setMainWindow(mainWindow);
+  hideScrollbarsInPreviewFrames(mainWindow.webContents);
 
   mainWindow.on('ready-to-show', () => {
     mainWindow?.show();

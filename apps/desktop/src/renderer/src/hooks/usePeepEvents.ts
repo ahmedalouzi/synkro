@@ -66,7 +66,9 @@ export function usePeepEvents(): void {
       useChatStore.getState().upsertTimelineActivity(activity);
     });
 
-    const unsubEdits = window.peep.onProposedEdits((edits) => {
+    const unsubEdits = window.peep.onProposedEdits((edits, threadId) => {
+      // Edits from another chat's run don't belong in this one (same rule as the timeline above).
+      if (threadId && threadId !== useChatStore.getState().activeThreadId) return;
       const isComposer = useComposerStore.getState().isOpen;
       const workspaceStore = useWorkspaceStore.getState();
 

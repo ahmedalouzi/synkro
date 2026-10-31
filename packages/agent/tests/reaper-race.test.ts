@@ -18,7 +18,7 @@ export default async function run() {
   };
 
   // Stopped containers.
-  add(1, 'running', false, 44 * minute);   // build finished, APK being copied out: keep
+  add(1, 'running', false, maxAge - minute); // build finished, APK being copied out: keep
   add(2, 'queued', false, 1 * minute);     // keep
   add(3, 'success', false, 2 * minute);    // remove
   add(4, 'failed', false, 2 * minute);     // remove

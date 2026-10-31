@@ -130,6 +130,12 @@ function triggerSave(state: ChatState) {
 }
 
 /** Unstripped text of the reply being streamed. */
+/** Saved chats from before ids were checked can hold the same message twice; keep the first. */
+function uniqueById<T extends { id: string }>(items: T[]): T[] {
+  const seen = new Set<string>();
+  return items.filter((item) => (seen.has(item.id) ? false : (seen.add(item.id), true)));
+}
+
 let streamingRaw = { id: '', text: '' };
 
 function stripCodeBlocks(text: string): string {
@@ -179,6 +185,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   setIpcError: (ipcError) => set({ ipcError }),
   addMessage: (message) =>
     set((state) => {
+      // A message is added once: a second add with the same id (a re-sent event) would show it twice.
+      if (state.messages.some((m) => m.id === message.id)) return {};
       // The first user message names the chat (shown in tabs and history, saved with the thread).
       const isFirstUserMessage = message.role === 'user' && !state.messages.some((m) => m.role === 'user');
       const title = isFirstUserMessage ? message.content.split('\n')[0].trim().slice(0, 60) : '';
@@ -200,7 +208,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       isStreaming: true,
       streamingMessageId: messageId,
       streamStatus: 'Thinking…',
-      messages: [...get().messages, { id: messageId, role: 'assistant', content: '', createdAt: new Date().toISOString() }],
+      messages: get().messages.some((m) => m.id === messageId)
+        ? get().messages
+        : [...get().messages, { id: messageId, role: 'assistant', content: '', createdAt: new Date().toISOString() }],
     }),
 
   appendToStreamingMessage: (delta) => {
@@ -286,7 +296,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const history = await (window as any).peep?.loadChatHistory?.(projectPath);
       if (history) {
         set({
-          messages: history.messages || [
+          messages: history.messages ? uniqueById(history.messages) : [
             {
               id: 'welcome',
               role: 'assistant',
@@ -361,7 +371,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const data = await (window as any).peep?.loadChatThread?.(threadId);
       if (!data) throw new Error('Received empty data from backend');
       
-      const messages = data?.messages || [];
+      const messages = uniqueById<AgentMessage>(data?.messages || []);
       const runs = data?.runs || [];
       const timelineActivities = [];
       for (const run of runs) {

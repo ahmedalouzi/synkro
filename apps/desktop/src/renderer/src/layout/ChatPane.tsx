@@ -60,6 +60,17 @@ function stepsForRun(activities: AgentTimelineActivity[], runId: string | undefi
   return [...byKey.values()];
 }
 
+/** Seconds from the run's first timeline event to its last, for the "Worked for" line. */
+function runSeconds(activities: AgentTimelineActivity[], runId: string | undefined): number | null {
+  const times = activities.filter((a) => a.runId === runId).map((a) => Date.parse(a.timestamp)).filter(Number.isFinite);
+  if (times.length < 2) return null;
+  return (Math.max(...times) - Math.min(...times)) / 1000;
+}
+
+// Older agent versions wrote their activity log into the message text as HTML. Messages are rendered as
+// markdown, so that block showed up as raw markup; drop it from messages saved before the fix.
+const LEGACY_ACTIVITY_HTML = /<details class="agent-activity-dropdown"[\s\S]*?<\/details>\s*/g;
+
 function stepLabel(a: AgentTimelineActivity): { verb: string; target: string } {
   const done = a.status !== 'in_progress';
   const target = a.file ? fileName(a.file) : a.command ?? '';
@@ -134,13 +145,19 @@ export function ChatPane({ onOpenSettings: _onOpenSettings }: ChatPaneProps) {
   const [historyOpen, setHistoryOpen] = useState(false);
   const historyRef = useRef<HTMLDivElement>(null);
 
+  // The check is on `prev`, not this render's openTabIds: an effect that runs twice before the state updates
+  // (React StrictMode does that on purpose) added the same tab twice, and every render after warned about a
+  // duplicate key.
   useEffect(() => {
-    if (activeThreadId && !openTabIds.includes(activeThreadId)) setOpenTabIds((prev) => [...prev, activeThreadId]);
-  }, [activeThreadId, openTabIds]);
+    if (activeThreadId) setOpenTabIds((prev) => (prev.includes(activeThreadId) ? prev : [...prev, activeThreadId]));
+  }, [activeThreadId]);
 
-  // Drop tabs whose thread was deleted.
+  // Drop tabs whose thread was deleted, and any duplicate.
   useEffect(() => {
-    setOpenTabIds((prev) => prev.filter((id) => id === activeThreadId || threads.some((t) => t.id === id)));
+    setOpenTabIds((prev) => {
+      const next = [...new Set(prev)].filter((id) => id === activeThreadId || threads.some((t) => t.id === id));
+      return next.length === prev.length ? prev : next;
+    });
   }, [threads, activeThreadId]);
 
   const firstUserText = messages.find((m) => m.role === 'user')?.content;
@@ -209,6 +226,13 @@ export function ChatPane({ onOpenSettings: _onOpenSettings }: ChatPaneProps) {
   useEffect(() => window.peep.onAgentCheckpoint(({ id, fileCount }) => {
     setCheckpointFiles((prev) => ({ ...prev, [id]: fileCount }));
   }), []);
+  // Checkpoints are saved in the project, so after a restart the restore buttons come back from disk.
+  useEffect(() => {
+    if (!project?.path) return;
+    void window.peep.listCheckpoints().then((list) => {
+      setCheckpointFiles((prev) => ({ ...Object.fromEntries(list.map((c) => [c.id, c.fileCount])), ...prev }));
+    }).catch(() => undefined);
+  }, [project?.path]);
 
   const restoreCheckpoint = async (id: string) => {
     const count = checkpointFiles[id] ?? 0;
@@ -491,28 +515,39 @@ export function ChatPane({ onOpenSettings: _onOpenSettings }: ChatPaneProps) {
     const steps = stepsForRun(timelineActivities, message.runId);
     const isLive = message.id === streamingMessageId;
     const showEdits = message.id === lastAssistantId && editSummaries.length > 0;
+    const content = message.content.replace(LEGACY_ACTIVITY_HTML, '');
+    const stepList = (
+      <div className="cx-steps">
+        {steps.map((a) => {
+          const { verb, target } = stepLabel(a);
+          return (
+            <div key={a.id} className={`cx-step cx-step--${a.status}`} title={a.message}>
+              <span className="cx-step__verb">{verb}</span>
+              {target && <span className="cx-step__target">{target}</span>}
+              {a.status === 'failed' && <span className="cx-step__failed">failed</span>}
+            </div>
+          );
+        })}
+      </div>
+    );
+    const seconds = runSeconds(timelineActivities, message.runId);
 
     return (
       <div className="cx-turn cx-turn--assistant">
-        {steps.length > 0 && (
-          <div className="cx-steps">
-            {steps.map((a) => {
-              const { verb, target } = stepLabel(a);
-              return (
-                <div key={a.id} className={`cx-step cx-step--${a.status}`} title={a.message}>
-                  <span className="cx-step__verb">{verb}</span>
-                  {target && <span className="cx-step__target">{target}</span>}
-                  {a.status === 'failed' && <span className="cx-step__failed">failed</span>}
-                </div>
-              );
-            })}
-          </div>
-        )}
+        {/* Live: the steps stream in open. Finished: one collapsed "Worked for …" line. */}
+        {steps.length > 0 && (isLive ? stepList : (
+          <details className="cx-worked">
+            <summary className="cx-worked__summary">
+              {seconds !== null ? `Worked for ${seconds.toFixed(1)}s` : 'Worked'} · {steps.length} {steps.length === 1 ? 'step' : 'steps'}
+            </summary>
+            {stepList}
+          </details>
+        ))}
 
-        {message.content ? (
+        {content ? (
           // Rendered as markdown, never raw HTML: model output can contain injected markup.
           <div className="cx-markdown">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
           </div>
         ) : isLive ? (
           <div className="cx-thinking">{streamStatus || 'Thinking…'}</div>

@@ -369,5 +369,21 @@ export const OPENAI_TOOLS = [
         required: ['processId']
       }
     }
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'get_preview_logs',
+      description: "Read the Preview pane's dev server (Expo/Metro or Flutter) as the user sees it: its status, its error lines and the end of its output. Use it to see a preview error the user reports, and after a fix to check whether the error is gone.",
+      parameters: { type: 'object', properties: {} }
+    }
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'restart_preview',
+      description: "Restart the Preview pane's dev server (needed after changing package.json, babel/metro config or node_modules), wait for it to start and bundle, and return the same report as get_preview_logs for the new run.",
+      parameters: { type: 'object', properties: {} }
+    }
   }
 ];

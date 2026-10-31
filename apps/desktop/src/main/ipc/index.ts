@@ -2,7 +2,7 @@
 import { ipcMain, dialog, app, BrowserWindow, screen, shell } from 'electron';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
-import { IPC_CHANNELS, IPC_EVENTS } from '@peep/shared';
+import { IPC_CHANNELS, IPC_EVENTS, parsePreviewRuntimeReport } from '@peep/shared';
 import type { ClaudeIdeStatus, ClaudeIdeToolResult, InlineCompletionRequest, InlineEditRequest, Settings, SshTarget } from '@peep/shared';
 import { InlineEditService } from '../services/inline-edit-service';
 import { InlineCompletionService } from '../services/inline-completion-service';
@@ -75,6 +75,7 @@ export function setMainWindow(window: BrowserWindow | null): void {
 
 import { globalIpcBatcher } from '../utils/ipc-batcher';
 import { resolveGatewayUrl } from '../build-config';
+import { hideScrollbarsInPreviewFrames, sampleStrips, validStrips } from '../preview-frames';
 
 function notifyGitChanged(): void {
   globalIpcBatcher.throttle(IPC_EVENTS.GIT_CHANGED, 500, () => {
@@ -191,6 +192,13 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
   cloudBuildService = new CloudBuildService(db);
 
   await telemetryService.init();
+  if (telemetryService.isEnabled()) {
+    try {
+      syncSentryOptIn(true);
+    } catch (err) {
+      console.error('[Telemetry] Failed to initialize Sentry on startup:', err);
+    }
+  }
   autoUpdateService = new AutoUpdateService(telemetryService);
   autoUpdateService.init();
 
@@ -211,6 +219,7 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
   publishService = new PublishService(processManager, platformRegistry);
   agentService = new AgentService(db, workspace, platformRegistry, terminalService);
   agentService.setMainWindow(mainWindow);
+  agentService.setPreviewManager(previewManager);
   const projectService = new ProjectService(platformRegistry, workspace);
   const deviceService = new DeviceService();
 
@@ -580,8 +589,13 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
     }
   });
 
-  ipcMain.handle(IPC_CHANNELS.WORKSPACE_CREATE_DIR, async (_event, dirPath: string) => {
-    await workspace.createDir(dirPath);
+  ipcMain.handle(IPC_CHANNELS.WORKSPACE_CREATE_FILE, async (_event, filePath: string, content?: string) => {
+    await workspace.createFile(filePath, typeof content === 'string' ? content : '');
+    if (workspace.getProject()) notifyGitChanged();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.WORKSPACE_CREATE_DIR, async (_event, dirPath: string, options?: { failIfExists?: boolean }) => {
+    await workspace.createDir(dirPath, options?.failIfExists === true);
     const project = workspace.getProject();
     if (project) {
       notifyGitChanged();
@@ -733,7 +747,20 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
     return previewWindow !== null && !previewWindow.isDestroyed();
   });
 
+  // The preview page's runtime state, relayed by the renderer; validated again here (it comes from the app).
+  ipcMain.on(IPC_CHANNELS.PREVIEW_RUNTIME_REPORT, (_event, data: unknown) => {
+    const report = parsePreviewRuntimeReport(data);
+    if (report) previewManager.setRuntime(report);
+  });
+
+  // Only the calling window captures itself, and only aggregate numbers go back.
+  ipcMain.handle(IPC_CHANNELS.PREVIEW_SAMPLE_STRIPS, (event, rects: unknown) => {
+    const strips = validStrips(rects);
+    return strips ? sampleStrips(event.sender, strips) : [];
+  });
+
   let currentDetachedDeviceId = 'iphone-15';
+  let currentDetachedLandscape = false;
 
   /** Detached window size that shows the whole device frame (portrait phones and wide foldables alike). */
   const detachedWindowSize = (frame?: { width: number; height: number }) => {
@@ -755,17 +782,18 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
   const loadDetachedPreview = (win: BrowserWindow) => {
     const isDev = !app.isPackaged && process.env.ELECTRON_RENDERER_URL;
     if (isDev) {
-      void win.loadURL(`${process.env.ELECTRON_RENDERER_URL}?windowType=preview&deviceId=${currentDetachedDeviceId}`);
+      void win.loadURL(`${process.env.ELECTRON_RENDERER_URL}?windowType=preview&deviceId=${currentDetachedDeviceId}&landscape=${currentDetachedLandscape ? 1 : 0}`);
     } else {
-      void win.loadFile(path.join(__dirname, '../renderer/index.html'), { query: { windowType: 'preview', deviceId: currentDetachedDeviceId } });
+      void win.loadFile(path.join(__dirname, '../renderer/index.html'), { query: { windowType: 'preview', deviceId: currentDetachedDeviceId, landscape: currentDetachedLandscape ? '1' : '0' } });
     }
   };
 
-  ipcMain.handle(IPC_CHANNELS.PREVIEW_DETACH, async (_event, deviceId?: string, frame?: { width: number; height: number }) => {
-    const deviceChanged = !!deviceId && deviceId !== currentDetachedDeviceId;
+  ipcMain.handle(IPC_CHANNELS.PREVIEW_DETACH, async (_event, deviceId?: string, frame?: { width: number; height: number }, landscape?: boolean) => {
+    const deviceChanged = (!!deviceId && deviceId !== currentDetachedDeviceId) || !!landscape !== currentDetachedLandscape;
     if (deviceId) {
       currentDetachedDeviceId = deviceId;
     }
+    currentDetachedLandscape = !!landscape;
     const size = detachedWindowSize(frame);
 
     if (previewWindow && !previewWindow.isDestroyed()) {
@@ -793,10 +821,13 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
         sandbox: false,
         contextIsolation: true,
         nodeIntegration: false,
+        // Preview iframe's safe-area shim, as in the main window.
+        nodeIntegrationInSubFrames: true,
         webviewTag: true,
       },
     });
 
+    hideScrollbarsInPreviewFrames(previewWindow.webContents);
     loadDetachedPreview(previewWindow);
 
     previewWindow.on('closed', () => {
@@ -830,7 +861,13 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
   });
 
   ipcMain.handle(IPC_CHANNELS.AGENT_RESTORE_CHECKPOINT, async (_event, id: string) => {
-    return agentService!.restoreCheckpoint(id);
+    return agentService!.restoreCheckpoint(id, workspace.getProject()?.path);
+  });
+
+  // The open project's checkpoints (from disk too), so restore buttons come back after a restart.
+  ipcMain.handle(IPC_CHANNELS.AGENT_LIST_CHECKPOINTS, async () => {
+    const projectPath = workspace.getProject()?.path;
+    return projectPath ? agentService!.listCheckpoints(projectPath) : [];
   });
 
   ipcMain.handle(IPC_CHANNELS.AGENT_APPLY_EDITS, async (_event, editIds: string[]) => {
@@ -975,10 +1012,13 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
   });
 
   ipcMain.handle(IPC_CHANNELS.PROJECT_CREATE_FROM_PROMPT, async (_event, options) => {
+    // Same creation path as New Project: managed or local, Flutter or React Native, as chosen in the dialog.
     const projectPath = await projectService.createFromTemplate({
       name: options.name,
       parentPath: options.parentPath,
-      templateId: 'blank',
+      templateId: options.framework === 'flutter' ? 'blank' : 'blank-rn',
+      mode: options.mode,
+      framework: options.framework,
     });
 
     mainWindow?.webContents.send(IPC_EVENTS.AGENT_STREAM, {

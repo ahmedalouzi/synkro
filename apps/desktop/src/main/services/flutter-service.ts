@@ -226,7 +226,7 @@ export class FlutterService extends FrameworkProvider {
         for (const entry of entries) {
           if (entry.isDirectory()) {
             const name = entry.name;
-            if (name === 'node_modules' || name === '.git' || name === '.dart_tool' || name === 'build' || name === 'dist' || name === '.peep' || name === '.idea' || name === '.vscode') {
+            if (name === 'node_modules' || name === '.git' || name === '.dart_tool' || name === 'build' || name === 'dist' || name === '.peep' || name === '.atomvs' || name === '.idea' || name === '.vscode') {
               continue;
             }
             queue.push({ path: join(current.path, name), depth: current.depth + 1 });

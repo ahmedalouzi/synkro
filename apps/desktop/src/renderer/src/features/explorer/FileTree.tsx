@@ -13,8 +13,24 @@ interface FileTreeProps {
   onContextMenuShow?: (e: React.MouseEvent, entry: FileEntry) => void;
 }
 
+/**
+ * The message for a failed create/rename. An existing name is refused by main (never replaced), and the input
+ * stays open so the user can pick another name. Electron prefixes errors from main with "Error invoking …".
+ */
+function fileOpError(err: unknown, name: string): string {
+  const message = err instanceof Error ? err.message : String(err);
+  if (/already exists|EEXIST/i.test(message)) return `"${name}" already exists in this folder. Choose a different name.`;
+  return message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') || 'Unknown error';
+}
+
+const inputErrorStyle: React.CSSProperties = {
+  flexBasis: '100%', padding: '2px 6px', margin: '2px 0 4px', fontSize: '11px', color: 'var(--text-error, #f48771)',
+  background: 'var(--bg-primary)', border: '1px solid var(--text-error, #f48771)',
+};
+
 function InlineCreateInput({ depth, baseDir }: { depth: number; baseDir: string }) {
   const [name, setName] = useState('');
+  const [error, setError] = useState<string | null>(null);
   const creatingItem = useWorkspaceStore((s) => s.creatingItem);
   const setCreatingItem = useWorkspaceStore((s) => s.setCreatingItem);
   const { project, syncProject } = useWorkspace();
@@ -25,19 +41,18 @@ function InlineCreateInput({ depth, baseDir }: { depth: number; baseDir: string 
       if (name && creatingItem) {
         try {
           const path = `${baseDir}/${name}`;
+          // Both refuse an existing name: a new item never replaces one.
           if (creatingItem.type === 'folder') {
-            await window.peep.createDir(path);
+            await window.peep.createDir(path, { failIfExists: true });
           } else {
-            await window.peep.writeFile(path, '');
+            await window.peep.createFile(path, '');
           }
+          setCreatingItem(null);
           if (project) {
             await syncProject(project);
           }
-        } catch (err: any) {
-          console.error('Failed to create item:', err);
-          alert(`Could not create ${creatingItem.type}:\n${err.message || 'Unknown error'}`);
-        } finally {
-          setCreatingItem(null);
+        } catch (err) {
+          setError(fileOpError(err, name));
         }
       } else {
         setCreatingItem(null);
@@ -50,7 +65,7 @@ function InlineCreateInput({ depth, baseDir }: { depth: number; baseDir: string 
   if (!creatingItem) return null;
 
   return (
-    <div className={`tree-item tree-indent-${Math.min(depth + 1, 3)} active`} style={{ padding: '2px 8px' }}>
+    <div className={`tree-item tree-indent-${Math.min(depth + 1, 3)} active`} style={{ padding: '2px 8px', flexWrap: 'wrap' }}>
       <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 18, height: 18, marginRight: 6 }}>
         {creatingItem.type === 'folder' ? <FolderIcon isOpen={true} /> : getFileIcon(name)}
       </span>
@@ -58,18 +73,22 @@ function InlineCreateInput({ depth, baseDir }: { depth: number; baseDir: string 
         autoFocus
         type="text"
         value={name}
-        onChange={(e) => setName(e.target.value)}
+        onChange={(e) => { setName(e.target.value); setError(null); }}
         onKeyDown={handleSubmit}
         onBlur={() => setCreatingItem(null)}
-        style={{ flex: 1, background: 'var(--bg-primary)', color: 'var(--text-primary)', border: '1px solid var(--accent)', outline: 'none', padding: '2px 4px', fontSize: '12px' }}
+        aria-invalid={error ? true : undefined}
+        style={{ flex: 1, background: 'var(--bg-primary)', color: 'var(--text-primary)', border: `1px solid ${error ? 'var(--text-error, #f48771)' : 'var(--accent)'}`, outline: 'none', padding: '2px 4px', fontSize: '12px' }}
       />
+      {error && <div role="alert" data-testid="explorer-name-error" style={inputErrorStyle}>{error}</div>}
     </div>
   );
 }
 
 function InlineRenameInput({ depth, entry }: { depth: number; entry: FileEntry }) {
   const [name, setName] = useState(entry.name);
+  const [error, setError] = useState<string | null>(null);
   const setRenamingItem = useWorkspaceStore((s) => s.setRenamingItem);
+  const renameOpenFiles = useWorkspaceStore((s) => s.renameOpenFiles);
   const { renameItem, project, syncProject } = useWorkspace();
 
   const handleSubmit = async (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -80,15 +99,15 @@ function InlineRenameInput({ depth, entry }: { depth: number; entry: FileEntry }
           const lastSlash = Math.max(entry.path.lastIndexOf('/'), entry.path.lastIndexOf('\\'));
           const baseDir = lastSlash > -1 ? entry.path.substring(0, lastSlash) : entry.path;
           const newPath = `${baseDir}/${name}`;
+          // Refused by main if another item has that name (never replaced).
           await renameItem(entry.path, newPath);
+          renameOpenFiles(entry.path, newPath);
+          setRenamingItem(null);
           if (project) {
             await syncProject(project);
           }
-        } catch (err: any) {
-          console.error('Failed to rename item:', err);
-          alert(`Could not rename:\n${err.message || 'Unknown error'}`);
-        } finally {
-          setRenamingItem(null);
+        } catch (err) {
+          setError(fileOpError(err, name));
         }
       } else {
         setRenamingItem(null);
@@ -99,7 +118,7 @@ function InlineRenameInput({ depth, entry }: { depth: number; entry: FileEntry }
   };
 
   return (
-    <div className={`tree-item tree-indent-${Math.min(depth + 1, 3)} active`} style={{ padding: '2px 8px' }}>
+    <div className={`tree-item tree-indent-${Math.min(depth + 1, 3)} active`} style={{ padding: '2px 8px', flexWrap: 'wrap' }}>
       <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 18, height: 18, marginRight: 6 }}>
         {entry.type === 'directory' ? <FolderIcon isOpen={false} /> : getFileIcon(name)}
       </span>
@@ -107,10 +126,11 @@ function InlineRenameInput({ depth, entry }: { depth: number; entry: FileEntry }
         autoFocus
         type="text"
         value={name}
-        onChange={(e) => setName(e.target.value)}
+        onChange={(e) => { setName(e.target.value); setError(null); }}
         onKeyDown={handleSubmit}
         onBlur={() => setRenamingItem(null)}
-        style={{ flex: 1, background: 'var(--bg-primary)', color: 'var(--text-primary)', border: '1px solid var(--accent)', outline: 'none', padding: '2px 4px', fontSize: '12px' }}
+        aria-invalid={error ? true : undefined}
+        style={{ flex: 1, background: 'var(--bg-primary)', color: 'var(--text-primary)', border: `1px solid ${error ? 'var(--text-error, #f48771)' : 'var(--accent)'}`, outline: 'none', padding: '2px 4px', fontSize: '12px' }}
         onFocus={(e) => {
           // Select just the filename without extension if possible
           const lastDot = name.lastIndexOf('.');
@@ -121,6 +141,7 @@ function InlineRenameInput({ depth, entry }: { depth: number; entry: FileEntry }
           }
         }}
       />
+      {error && <div role="alert" data-testid="explorer-name-error" style={inputErrorStyle}>{error}</div>}
     </div>
   );
 }

@@ -224,7 +224,7 @@ New Project → Browse (klasör) → Create
 ## ✅ Month 10 — Closed Beta Launch
 
 **Eklenenler:**
-- **Landing Page (`website/`):** React Native ve Flutter özelliklerini, 3 ana workflow'u ve pricing tablosunu içeren `index.html`, `style.css`, `main.js`.
+- **Landing Page (`website/`, removed Oct 30, 2026; the site is now the synkro-web repo):** React Native ve Flutter özelliklerini, 3 ana workflow'u ve pricing tablosunu içeren `index.html`, `style.css`, `main.js`.
 - **Beta Feedback Form:** Her hafta kullanıcılara gönderilecek NPS, CSAT ve açık uçlu sorular içeren form.
 - **Beta Guide (`docs/BETA_GUIDE.md`):** Tester'ların kurulum yapması ve araçları nasıl kullanması gerektiğini açıklayan kapsamlı döküman.
 

@@ -40,6 +40,49 @@ export interface PreviewSession {
   error?: string;
 }
 
+/** What the app in the preview iframe hit at runtime, and whether it shows anything (for the agent's checks). */
+export interface PreviewRuntimeReport {
+  errors: Array<{ kind: 'exception' | 'unhandled-rejection' | 'console.error'; message: string }>;
+  /** Visible content after load: text, images or a canvas in the app's root. */
+  rendered: boolean;
+  textChars: number;
+  /** Text of an error overlay (Expo's red box) if one is showing. */
+  overlay: string;
+}
+
+/**
+ * The agent's proposed-edits event: main sends { edits, threadId }. Read as if it were the array, it threw
+ * "edits is not iterable" in the renderer. Anything without an edits array is null.
+ */
+export function parseProposedEditsPayload(payload: unknown): { edits: ProposedEdit[]; threadId?: string } | null {
+  if (Array.isArray(payload)) return { edits: payload as ProposedEdit[] };
+  if (!payload || typeof payload !== 'object') return null;
+  const { edits, threadId } = payload as { edits?: unknown; threadId?: unknown };
+  if (!Array.isArray(edits)) return null;
+  return { edits: edits as ProposedEdit[], ...(typeof threadId === 'string' ? { threadId } : {}) };
+}
+
+const RUNTIME_ERROR_KINDS = new Set(['exception', 'unhandled-rejection', 'console.error']);
+
+/**
+ * A PreviewRuntimeReport from untrusted input (the app's page, then the renderer over IPC), or null:
+ * known kinds only, at most 10 errors, strings capped.
+ */
+export function parsePreviewRuntimeReport(data: unknown): PreviewRuntimeReport | null {
+  if (!data || typeof data !== 'object') return null;
+  const d = data as Record<string, unknown>;
+  if (typeof d.rendered !== 'boolean' || typeof d.textChars !== 'number' || !Number.isFinite(d.textChars)) return null;
+  if (typeof d.overlay !== 'string' || !Array.isArray(d.errors)) return null;
+  const errors: PreviewRuntimeReport['errors'] = [];
+  for (const e of d.errors.slice(-10)) {
+    if (!e || typeof e !== 'object') return null;
+    const { kind, message } = e as Record<string, unknown>;
+    if (typeof kind !== 'string' || !RUNTIME_ERROR_KINDS.has(kind) || typeof message !== 'string') return null;
+    errors.push({ kind: kind as PreviewRuntimeReport['errors'][number]['kind'], message: message.slice(0, 1500) });
+  }
+  return { errors, rendered: d.rendered, textChars: Math.max(0, Math.round(d.textChars)), overlay: d.overlay.slice(0, 1500) };
+}
+
 export type ErrorCategory =
   | 'success'
   | 'warning'
@@ -574,6 +617,7 @@ export const IPC_CHANNELS = {
   WORKSPACE_READ_IMAGE: 'workspace:readImage',
   WORKSPACE_WRITE_FILE: 'workspace:writeFile',
   WORKSPACE_CREATE_DIR: 'workspace:createDir',
+  WORKSPACE_CREATE_FILE: 'workspace:createFile',
   WORKSPACE_RENAME_ITEM: 'workspace:renameItem',
   WORKSPACE_DELETE_ITEM: 'workspace:deleteItem',
   WORKSPACE_REVEAL_ITEM: 'workspace:revealItem',
@@ -640,6 +684,7 @@ export const IPC_CHANNELS = {
   AI_INLINE_EDIT: 'ai:inlineEdit',
   AI_INLINE_EDIT_CANCEL: 'ai:inlineEditCancel',
   AGENT_RESTORE_CHECKPOINT: 'agent:restoreCheckpoint',
+  AGENT_LIST_CHECKPOINTS: 'agent:listCheckpoints',
   RUN_COMMAND: 'terminal:runCommand',
   PROJECT_LIST_TEMPLATES: 'project:listTemplates',
   PROJECT_CREATE: 'project:create',
@@ -669,6 +714,8 @@ export const IPC_CHANNELS = {
   PREVIEW_DETACH: 'preview:detach',
   PREVIEW_ATTACH: 'preview:attach',
   PREVIEW_IS_DETACHED: 'preview:isDetached',
+  PREVIEW_SAMPLE_STRIPS: 'preview:sampleStrips',
+  PREVIEW_RUNTIME_REPORT: 'preview:runtimeReport',
   // Extensions
   EXTENSIONS_SEARCH: 'extensions:search',
   // Auth
@@ -863,7 +910,11 @@ export interface IpcApi {
   readFile: (filePath: string) => Promise<string>;
   readImage: (filePath: string) => Promise<string>;
   writeFile: (filePath: string, content: string) => Promise<void>;
-  createDir: (dirPath: string) => Promise<void>;
+  /** A new file. Rejects when anything already exists at the path: never replaces it. */
+  createFile: (filePath: string, content?: string) => Promise<void>;
+  /** `failIfExists`: reject an existing path (a new folder from the Explorer) instead of reusing it. */
+  createDir: (dirPath: string, options?: { failIfExists?: boolean }) => Promise<void>;
+  /** Rejects when something else already exists at `newPath`: never replaces it. */
   renameItem: (oldPath: string, newPath: string) => Promise<void>;
   deleteItem: (path: string) => Promise<void>;
   revealItem: (path: string) => Promise<void>;
@@ -890,9 +941,17 @@ export interface IpcApi {
   rnReloadPreview: (processId: number) => Promise<void>;
   getPreviewSession: () => Promise<PreviewSession | null>;
   /** `frame` is the device frame size in CSS px, used to size the window to the device. */
-  detachPreview: (deviceId?: string, frame?: { width: number; height: number }) => Promise<void>;
+  detachPreview: (deviceId?: string, frame?: { width: number; height: number }, landscape?: boolean) => Promise<void>;
   attachPreview: () => Promise<void>;
   isPreviewDetached: () => Promise<boolean>;
+  /**
+   * The rendered pixels of strips of the calling window (CSS px, viewport coordinates), e.g. the preview's
+   * status bar: per strip, the median relative luminance (0–1) and the average colour; null if not capturable.
+   */
+  samplePreviewStrips: (rects: Array<{ x: number; y: number; width: number; height: number }>) =>
+    Promise<Array<{ luminance: number; rgb: [number, number, number] } | null>>;
+  /** The preview page's runtime state, relayed from the iframe for the agent (get_preview_logs). */
+  reportPreviewRuntime: (report: PreviewRuntimeReport) => void;
   sendAgentMessage: (options: AgentSendOptions) => Promise<void>;
   cancelAgent: () => Promise<void>;
   /** Approve the pending Implementation Plan and start autonomous execution. */
@@ -929,6 +988,8 @@ export interface IpcApi {
   cancelInlineEdit: () => Promise<void>;
   /** Restores files to before the agent message `id`; returns restored paths. */
   restoreCheckpoint: (id: string) => Promise<string[]>;
+  /** The open project's restorable checkpoints, including ones saved before a restart. */
+  listCheckpoints: () => Promise<Array<{ id: string; fileCount: number }>>;
   onAgentCheckpoint: (callback: (payload: { id: string; fileCount: number }) => void) => () => void;
   runCommand: (options: RunCommandOptions) => Promise<RunCommandResult>;
   listProjectTemplates: () => Promise<ProjectTemplateInfo[]>;
@@ -954,7 +1015,8 @@ export interface IpcApi {
   onAgentActivity: (callback: (event: AgentActivityEvent) => void) => () => void;
   onAgentTimeline: (callback: (activity: AgentTimelineActivity) => void) => () => void;
   onAgentPhase: (callback: (phase: AgentPhase) => void) => () => void;
-  onProposedEdits: (callback: (edits: ProposedEdit[]) => void) => () => void;
+  /** `threadId`: the chat the edits belong to, when the agent knows it. */
+  onProposedEdits: (callback: (edits: ProposedEdit[], threadId?: string) => void) => () => void;
   onTerminalOutput: (callback: (payload: { id: string; data: string }) => void) => () => void;
   onTerminalExit: (callback: (payload: { id: string; code: number }) => void) => () => void;
   onGitChanged: (callback: () => void) => () => void;

@@ -1,243 +1,199 @@
 /* ═══════════════════════════════════════════════════════════════════
-   PHOTOREALISTIC PHONE FRAMES — Xcode Simulator Quality
-   Matches the reference screenshots: real titanium/aluminum finish,
-   precise bezels, Dynamic Island, physical side rails.
+   DEVICE FRAMES
+   Geometry (viewport, safe areas, bezels) comes from devices.ts; this file only draws.
+   Chassis layers are laid out in portrait and rotated by PreviewAssembly for landscape.
 ═══════════════════════════════════════════════════════════════════ */
 
-/* ── Shared base ─────────────────────────────────────────────────── */
-.pf {
+/* ── Chassis body ────────────────────────────────────────────────── */
+.pf-body {
   position: relative;
-  flex-shrink: 0;
-}
-
-/* ════════════════════════════════════════════════════════════════════
-   iPHONE 15 / 15 Pro
-   Pure black chassis — corners blend into dark IDE background.
-   Only the overlays (Dynamic Island, status bar, home bar) are visible.
-════════════════════════════════════════════════════════════════════ */
-.pf-iphone {
-  width: 100%;
-  height: 100%;
-  border-radius: 54px;
   background: #000;
-}
-
-/* Pro: identical — pure black */
-.pf-iphone--pro {
-  background: #000;
-}
-
-
-
-/* ── Screen inset ── Real phones have a slight step inward */
-.pf-screen-inset {
-  position: absolute;
-  inset: 12px;
-  border-radius: 43px;
-  background: #000;
-  /* Inner bevel: bright top-left edge, dark bottom-right */
-  box-shadow:
-    inset 0 0 0 1px rgba(0, 0, 0, 0.9),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    inset 2px 2px 6px rgba(0, 0, 0, 0.8),
-    inset -1px -1px 3px rgba(255, 255, 255, 0.03);
+  box-shadow: 0 0 0 1px #2a2a2c, 0 18px 50px rgba(0, 0, 0, 0.55);
 }
 
 /* ── Side buttons ────────────────────────────────────────────────── */
 .pf-btn {
   position: absolute;
+  background: linear-gradient(180deg, #2a2a2c 0%, #1e1e20 30%, #1a1a1c 50%, #1e1e20 70%, #2a2a2c 100%);
 }
 
-/* Left side — Action button */
-.pf-btn--mute {
-  top: 112px; left: -5px;
-  width: 5px; height: 32px;
+.pf-btn--mute,
+.pf-btn--vol-up,
+.pf-btn--vol-down,
+.pf-btn--android-vol-up,
+.pf-btn--android-vol-down {
+  left: -5px;
+  width: 5px;
   border-radius: 3px 0 0 3px;
-  background:
-    linear-gradient(180deg,
-      #2a2a2c 0%,
-      #1e1e20 30%,
-      #1a1a1c 50%,
-      #1e1e20 70%,
-      #2a2a2c 100%
-    );
-  box-shadow:
-    inset 1px 0 0 rgba(255,255,255,0.08),
-    inset 0 1px 0 rgba(255,255,255,0.06),
-    inset 0 -1px 0 rgba(0,0,0,0.5),
-    -1px 0 3px rgba(0,0,0,0.5);
+  box-shadow: inset 1px 0 0 rgba(255,255,255,0.08), -1px 0 3px rgba(0,0,0,0.5);
 }
 
-/* Volume up */
-.pf-btn--vol-up {
-  top: 164px; left: -5px;
-  width: 5px; height: 60px;
-  border-radius: 3px 0 0 3px;
-  background:
-    linear-gradient(180deg,
-      #2a2a2c 0%,
-      #1e1e20 30%,
-      #1a1a1c 50%,
-      #1e1e20 70%,
-      #2a2a2c 100%
-    );
-  box-shadow:
-    inset 1px 0 0 rgba(255,255,255,0.08),
-    inset 0 1px 0 rgba(255,255,255,0.06),
-    inset 0 -1px 0 rgba(0,0,0,0.5),
-    -1px 0 3px rgba(0,0,0,0.5);
-}
-
-/* Volume down */
-.pf-btn--vol-down {
-  top: 236px; left: -5px;
-  width: 5px; height: 60px;
-  border-radius: 3px 0 0 3px;
-  background:
-    linear-gradient(180deg,
-      #2a2a2c 0%,
-      #1e1e20 30%,
-      #1a1a1c 50%,
-      #1e1e20 70%,
-      #2a2a2c 100%
-    );
-  box-shadow:
-    inset 1px 0 0 rgba(255,255,255,0.08),
-    inset 0 1px 0 rgba(255,255,255,0.06),
-    inset 0 -1px 0 rgba(0,0,0,0.5),
-    -1px 0 3px rgba(0,0,0,0.5);
-}
-
-/* Power / Side button */
-.pf-btn--power {
-  top: 188px; right: -5px;
-  width: 5px; height: 86px;
+.pf-btn--power,
+.pf-btn--android-power {
+  right: -5px;
+  width: 5px;
   border-radius: 0 3px 3px 0;
-  background:
-    linear-gradient(180deg,
-      #2a2a2c 0%,
-      #1e1e20 25%,
-      #1a1a1c 50%,
-      #1e1e20 75%,
-      #2a2a2c 100%
-    );
-  box-shadow:
-    inset -1px 0 0 rgba(255,255,255,0.08),
-    inset 0 1px 0 rgba(255,255,255,0.06),
-    inset 0 -1px 0 rgba(0,0,0,0.5),
-    1px 0 3px rgba(0,0,0,0.5);
+  box-shadow: inset -1px 0 0 rgba(255,255,255,0.08), 1px 0 3px rgba(0,0,0,0.5);
 }
 
-/* ── Foreground overlay base ── */
-.pf-bezel {
+.pf-btn--mute { top: 112px; height: 32px; }
+.pf-btn--vol-up { top: 164px; height: 60px; }
+.pf-btn--vol-down { top: 236px; height: 60px; }
+.pf-btn--power { top: 188px; height: 86px; }
+.pf-btn--android-power { top: 142px; height: 58px; }
+.pf-btn--android-vol-up { top: 112px; height: 50px; }
+.pf-btn--android-vol-down { top: 170px; height: 50px; }
+
+/* ── iPhone SE bezels: earpiece + camera above the screen, home button below ── */
+.pf-se-top,
+.pf-se-bottom {
   position: absolute;
-  inset: 12px;
-  pointer-events: none;
-  border-radius: 43px;
-  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pf-se-top {
+  gap: 18px;
+}
+
+.pf-se-speaker {
+  width: 60px;
+  height: 6px;
+  border-radius: 3px;
+  background: #151517;
+  box-shadow: inset 0 1.5px 3px rgba(0, 0, 0, 0.9), 0 0 0 1px #1f1f22;
+}
+
+.pf-se-cam {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 38% 34%, #0a2a4a 0%, #040c14 50%, #020808 100%);
+  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.07), 0 0 0 1px rgba(0,0,0,0.9);
+}
+
+.pf-se-home-ring {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: #050506;
+  box-shadow:
+    inset 0 0 0 2px #3a3a3e,
+    inset 0 2px 6px rgba(0, 0, 0, 0.9),
+    0 1px 2px rgba(255, 255, 255, 0.04);
+}
+
+/* ── Pixel Fold: camera in the bezel, faint crease down the middle ── */
+.pf-fold-cam {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  margin-top: -4px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 38% 34%, #0a2a4a 0%, #030c14 60%, #010608 100%);
+}
+
+.pf-fold-hinge {
+  position: absolute;
+  width: 16px;
+  background: linear-gradient(90deg,
+    transparent 0%, rgba(0, 0, 0, 0.035) 35%, rgba(0, 0, 0, 0.07) 50%, rgba(0, 0, 0, 0.035) 65%, transparent 100%);
 }
 
 /* ── Dynamic Island ── */
 .pf-dynamic-island {
   position: absolute;
-  top: 12px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 120px;
-  height: 34px;
   border-radius: 20px;
   background: #000;
-  z-index: 30;
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 26px;
-  /* Deep hole with very subtle inner glow */
-  box-shadow:
-    0 0 0 1px rgba(0, 0, 0, 1),
-    inset 0 0 12px rgba(0, 0, 0, 0.9),
-    0 2px 8px rgba(0, 0, 0, 0.7);
+  justify-content: flex-end;
+  padding-right: 22px;
+  box-sizing: border-box;
 }
 
-/* Front camera lens */
 .pf-di-cam {
-  width: 11px; height: 11px;
+  width: 11px;
+  height: 11px;
   border-radius: 50%;
-  background:
-    radial-gradient(circle at 38% 34%,
-      #0a2a4a 0%,
-      #061420 35%,
-      #020808 60%,
-      #010404 100%
-    );
-  box-shadow:
-    inset 0 0 0 1.5px rgba(255, 255, 255, 0.06),
-    0 0 6px rgba(40, 100, 200, 0.2),
-    0 0 0 1px rgba(0, 0, 0, 0.9);
-  /* Tiny lens reflection */
-  position: relative;
-}
-.pf-di-cam::after {
-  content: '';
-  position: absolute;
-  top: 2px; left: 3px;
-  width: 3px; height: 3px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(255,255,255,0.35) 0%, transparent 100%);
+  background: radial-gradient(circle at 38% 34%, #0a2a4a 0%, #061420 35%, #020808 60%, #010404 100%);
+  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.06), 0 0 0 1px rgba(0, 0, 0, 0.9);
 }
 
-/* Speaker grille */
-.pf-di-speaker {
-  width: 50px; height: 4px;
-  border-radius: 2px;
-  background: #050505;
-  box-shadow:
-    inset 0 1px 3px rgba(0, 0, 0, 1),
-    0 0.5px 0 rgba(255,255,255,0.04);
+/* ── Punch-hole camera (Android) ── */
+.pf-punchhole {
+  position: absolute;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 38% 34%, #0a2a4a 0%, #030c14 50%, #010608 100%);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.95), 0 0 0 3px rgba(255, 255, 255, 0.04);
 }
 
-/* ── Status bar — flanks the Dynamic Island ──
-   Matches the iOS 17 simulator: each side is centred in the space beside the island
-   (126pt wide), time in SF Pro Semibold 17pt, glyphs at their native point sizes. */
-.pf-status-bar {
+/* ── System bars inside the screen ───────────────────────────────── */
+.pf-bars {
   position: absolute;
-  top: 12px;            /* same band as the Dynamic Island, so everything shares its centre */
+  inset: 0;
+  pointer-events: none;
+}
+
+/* Icon colour follows the app behind the bars, like a phone: full-opacity white over a dark app, near-black
+   over a light one, fading when the app behind changes. */
+.pf-tone {
+  transition: color 0.25s ease, background-color 0.25s ease;
+}
+.pf-tone--dark { color: #1c1c1e; --pf-indicator: #1c1c1e; }
+.pf-tone--light { color: #fff; --pf-indicator: #fff; }
+
+.pf-status {
+  position: absolute;
   left: 0;
   right: 0;
-  height: 34px;
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  align-items: center;
-  z-index: 25;
-  pointer-events: none;
-  color: #fff;
 }
 
-.pf-status-left,
-.pf-status-right {
-  width: calc(50% - 63px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.pf-status-left {
-  padding-left: 6px;
-}
-
-.pf-status-right {
-  gap: 6px;
-  padding-right: 4px;
+.pf-status--classic,
+.pf-status--android {
+  padding: 0 14px;
+  box-sizing: border-box;
 }
 
 .pf-status-time {
+  display: flex;
+  justify-content: center;
   font-family: "SF Pro Text", "SF Pro Display", -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
   font-size: 17px;
   font-weight: 600;
   letter-spacing: -0.41px;
   line-height: 1;
-  font-feature-settings: "tnum" 1, "cv11" 1;
+  font-feature-settings: "tnum" 1;
   -webkit-font-smoothing: antialiased;
+}
+
+.pf-status-time--small {
+  font-size: 12px;
+  letter-spacing: 0;
+}
+
+.pf-status-time--android {
+  font-family: "Roboto", "Segoe UI", system-ui, sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.pf-status-icons,
+.pf-status-carrier,
+.pf-status-battery {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pf-status--classic .pf-glyph {
+  transform: scale(0.8);
 }
 
 .pf-glyph {
@@ -246,252 +202,22 @@
   fill: currentColor;
 }
 
-/* ── Home indicator ── */
 .pf-home-indicator {
   position: absolute;
-  bottom: 8px;
   left: 50%;
   transform: translateX(-50%);
-  width: 134px; height: 5px;
+  width: 134px;
+  height: 5px;
   border-radius: 3px;
-  background: rgba(255, 255, 255, 0.28);
-  z-index: 25;
-  box-shadow: 0 0.5px 0 rgba(255,255,255,0.08);
-}
-
-/* pf-shine and pf-camera-rail removed — chassis is pure black, no decorations needed */
-
-
-/* ════════════════════════════════════════════════════════════════════
-   iPHONE SE (3rd gen) — Aluminum, home button, thick bezels
-════════════════════════════════════════════════════════════════════ */
-.pf-iphone-se {
-  width: 100%;
-  height: 100%;
-  border-radius: 46px;
-  background: #000;
-}
-
-.pf-se-topbar {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 20px;
-  height: 90px;
-  background: #000;
-}
-
-.pf-se-speaker {
-  width: 64px; height: 5px;
-  border-radius: 2.5px;
-  background: #0a0a0a;
-  box-shadow: inset 0 1.5px 3px rgba(0, 0, 0, 0.9);
-}
-
-.pf-se-cam {
-  width: 11px; height: 11px;
-  border-radius: 50%;
-  background:
-    radial-gradient(circle at 38% 34%,
-      #0a2a4a 0%,
-      #040c14 50%,
-      #020808 100%
-    );
-  box-shadow:
-    inset 0 0 0 1.5px rgba(255, 255, 255, 0.07),
-    0 0 0 1px rgba(0,0,0,0.9);
-}
-
-.pf-se-home-btn {
-  height: 90px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #000;
-  flex-shrink: 0;
-}
-
-.pf-se-home-ring {
-  width: 40px; height: 40px;
-  border-radius: 50%;
-  background:
-    radial-gradient(circle at 40% 35%,
-      #484848 0%,
-      #2a2a2c 45%,
-      #101012 100%
-    );
-  box-shadow:
-    inset 0 0 0 2px rgba(255, 255, 255, 0.1),
-    inset 0 3px 6px rgba(0, 0, 0, 0.9),
-    0 1.5px 3px rgba(0, 0, 0, 0.6);
-}
-
-
-/* ════════════════════════════════════════════════════════════════════
-   PIXEL 8 — Polished glass back, flat aluminum sides
-════════════════════════════════════════════════════════════════════ */
-.pf-pixel {
-  width: 100%;
-  height: 100%;
-  border-radius: 42px;
-  background: #000;
-}
-
-.pf-btn--android-power {
-  top: 142px; right: -5px;
-  width: 5px; height: 58px;
-  border-radius: 0 3px 3px 0;
-  background: linear-gradient(180deg, #1e1e20 0%, #161618 50%, #1e1e20 100%);
-  box-shadow:
-    inset -1px 0 0 rgba(255,255,255,0.07),
-    2px 0 3px rgba(0,0,0,0.5);
-}
-.pf-btn--android-vol-up {
-  top: 112px; left: -5px;
-  width: 5px; height: 50px;
-  border-radius: 3px 0 0 3px;
-  background: linear-gradient(180deg, #1e1e20 0%, #161618 50%, #1e1e20 100%);
-  box-shadow:
-    inset 1px 0 0 rgba(255,255,255,0.07),
-    -2px 0 3px rgba(0,0,0,0.5);
-}
-.pf-btn--android-vol-down {
-  top: 170px; left: -5px;
-  width: 5px; height: 50px;
-  border-radius: 3px 0 0 3px;
-  background: linear-gradient(180deg, #1e1e20 0%, #161618 50%, #1e1e20 100%);
-  box-shadow:
-    inset 1px 0 0 rgba(255,255,255,0.07),
-    -2px 0 3px rgba(0,0,0,0.5);
-}
-
-.pf-bezel--android {
-  border-radius: 39px;
-}
-
-.pf-punchhole {
-  position: absolute;
-  top: 16px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 13px; height: 13px;
-  border-radius: 50%;
-  background:
-    radial-gradient(circle at 38% 34%,
-      #0a2a4a 0%,
-      #030c14 50%,
-      #010608 100%
-    );
-  box-shadow:
-    0 0 0 2px rgba(0, 0, 0, 0.95),
-    0 0 0 3px rgba(255, 255, 255, 0.04),
-    0 0 6px rgba(40, 100, 200, 0.15);
-  z-index: 25;
+  background: var(--pf-indicator);
 }
 
 .pf-android-bar {
   position: absolute;
-  bottom: 8px;
   left: 50%;
   transform: translateX(-50%);
-  width: 100px; height: 4px;
+  width: 100px;
+  height: 4px;
   border-radius: 2px;
-  background: rgba(255, 255, 255, 0.22);
-  z-index: 25;
-}
-
-.pf-shine--android {
-  background: linear-gradient(
-    138deg,
-    rgba(255,255,255,0.05) 0%,
-    rgba(255,255,255,0.02) 22%,
-    transparent 40%
-  );
-}
-
-
-/* ════════════════════════════════════════════════════════════════════
-   PIXEL FOLD — Wide foldable, center hinge
-════════════════════════════════════════════════════════════════════ */
-.pf-pixel-fold {
-  width: 100%;
-  height: 100%;
-  border-radius: 26px;
-  background: #000;
-}
-
-.pf-bezel--fold {
-  border-radius: 23px;
-}
-
-.pf-fold-hinge {
-  /* The real inner-screen crease is barely visible: a soft translucent shade
-     that never hides the app's content. */
-  position: absolute;
-  top: 0; bottom: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 16px;
-  background: linear-gradient(90deg,
-    transparent 0%,
-    rgba(0, 0, 0, 0.035) 35%,
-    rgba(0, 0, 0, 0.07) 50%,
-    rgba(0, 0, 0, 0.035) 65%,
-    transparent 100%
-  );
-  z-index: 30;
-  pointer-events: none;
-}
-
-.pf-punchhole--fold {
-  top: 12px;
-  width: 10px; height: 10px;
-}
-
-
-/* ════════════════════════════════════════════════════════════════════
-   GALAXY S24 — Samsung Armor Aluminum, ultra-thin
-════════════════════════════════════════════════════════════════════ */
-.pf-galaxy {
-  width: 100%;
-  height: 100%;
-  border-radius: 46px;
-  background: #000;
-}
-
-.pf-bezel--samsung {
-  border-radius: 43px;
-}
-
-.pf-punchhole--samsung {
-  width: 11px; height: 11px;
-  top: 12px;
-}
-
-.pf-btn--samsung-power {
-  top: 160px; right: -5px;
-  width: 5px; height: 54px;
-  border-radius: 0 3px 3px 0;
-  background: linear-gradient(180deg, #1e1e20 0%, #161618 50%, #1e1e20 100%);
-  box-shadow:
-    inset -1px 0 0 rgba(255,255,255,0.07),
-    2px 0 3px rgba(0,0,0,0.5);
-}
-.pf-btn--samsung-vol-up {
-  top: 118px; left: -5px;
-  width: 5px; height: 46px;
-  border-radius: 3px 0 0 3px;
-  background: linear-gradient(180deg, #1e1e20 0%, #161618 50%, #1e1e20 100%);
-  box-shadow:
-    inset 1px 0 0 rgba(255,255,255,0.07),
-    -2px 0 3px rgba(0,0,0,0.5);
-}
-.pf-btn--samsung-vol-down {
-  top: 172px; left: -5px;
-  width: 5px; height: 46px;
-  border-radius: 3px 0 0 3px;
-  background: linear-gradient(180deg, #1e1e20 0%, #161618 50%, #1e1e20 100%);
-  box-shadow:
-    inset 1px 0 0 rgba(255,255,255,0.07),
-    -2px 0 3px rgba(0,0,0,0.5);
+  background: var(--pf-indicator);
 }

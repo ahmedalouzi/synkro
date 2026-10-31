@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { BuildArtifact, BuildRecord, BuildStatus, PublishOptions } from '@peep/shared';
+import { cleanUserProjectEnv } from './process-manager';
 
 export type BuildLogCallback = (buildId: string, line: string) => void;
 export type BuildStatusCallback = (record: BuildRecord) => void;
@@ -108,7 +109,7 @@ export class AndroidBuilder {
 
   private runFlutter(args: string[], cwd: string, log: (l: string) => void): Promise<void> {
     return new Promise((resolve, reject) => {
-      const proc = spawn(this.flutterBin, args, { cwd, shell: true });
+      const proc = spawn(this.flutterBin, args, { cwd, shell: true, env: cleanUserProjectEnv() });
       this.activeProcess = proc;
 
       const handleData = (chunk: Buffer) => {

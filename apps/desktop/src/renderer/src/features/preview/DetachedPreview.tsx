@@ -1,21 +1,24 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { PreviewAssembly } from './PreviewAssembly';
 import './DetachedPreview.css';
-import { DEVICES } from '../../layout/PreviewPane';
-import { DeviceType } from './PhoneFrame';
+import { DEVICES, deviceGeometry, fitZoom, type DeviceType } from './devices';
+import { usePreviewSafeArea } from './usePreviewSafeArea';
 
 export function DetachedPreview() {
   const query = new URLSearchParams(window.location.search);
   const deviceId = (query.get('deviceId') as DeviceType) || 'iphone-15';
   const device = DEVICES.find((d) => d.id === deviceId) || DEVICES[0];
+  const landscape = query.get('landscape') === '1';
+  const geometry = deviceGeometry(device, landscape);
 
   const [session, setSession] = useState<any>(null);
   const [iframeKey, setIframeKey]   = useState(0);
   const [scale, setScale]           = useState(0.6);
   const bodyRef = useRef<HTMLDivElement>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
 
-  const FRAME_W = device.logicalViewport.width + device.screenCutout.x * 2;
-  const FRAME_H = device.logicalViewport.height + device.screenCutout.y * 2;
+  const FRAME_W = geometry.frame.width;
+  const FRAME_H = geometry.frame.height;
 
   useEffect(() => {
     void window.peep.getPreviewSession().then(setSession);
@@ -32,10 +35,9 @@ export function DetachedPreview() {
     const availW = el.clientWidth  - 32;
     const availH = el.clientHeight - 32;
     if (availW <= 0 || availH <= 0) return;
-    const s = Math.min(availW / FRAME_W, availH / FRAME_H);
     // zoom keeps the app sharp at any size, so it can grow beyond 1x.
-    setScale(Math.min(Math.max(s, 0.2), 2));
-  }, [FRAME_W, FRAME_H]);
+    setScale(fitZoom(geometry, availW, availH, window.devicePixelRatio || 1, 0.2, 2));
+  }, [deviceId, landscape]);
 
   useEffect(() => {
     computeScale();
@@ -45,6 +47,7 @@ export function DetachedPreview() {
   }, [computeScale]);
 
   const isRunning = session?.status === 'running' && session.url;
+  const { tone, background, onFrameLoad } = usePreviewSafeArea(iframeRef, session?.url, device, geometry);
 
   return (
     <div className="detached-stage">
@@ -90,12 +93,9 @@ export function DetachedPreview() {
               width: FRAME_W,
               height: FRAME_H,
               zoom: scale,
-              boxSizing: 'border-box',
-              paddingLeft: device.screenCutout.x,
-              paddingTop: device.screenCutout.y,
             }}
           >
-            <PreviewAssembly device={device}>
+            <PreviewAssembly device={device} landscape={landscape} tone={tone} background={background}>
               {session?.status === 'starting' && (
                 <div className="preview-placeholder">
                   <span className="preview-placeholder__icon preview-placeholder__spinner">⏳</span>
@@ -113,6 +113,8 @@ export function DetachedPreview() {
               {isRunning && (
                   <iframe
                     key={iframeKey}
+                    ref={iframeRef}
+                    onLoad={onFrameLoad}
                     className="preview-iframe"
                     style={{
                       width: '100%',

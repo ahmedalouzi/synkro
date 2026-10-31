@@ -26,6 +26,15 @@ export default async function run() {
     throw new Error('Expected context to include the exact mock error message');
   }
 
+  // A clear coding request is planned and built in the same turn; only destructive or ambiguous changes wait.
+  console.log('  Testing the plan rule: build in the same turn...');
+  if (contextWithoutError.includes('Do NOT edit code files in the same turn as writing/updating the plan')) {
+    throw new Error('System prompt still tells the agent to stop after the plan');
+  }
+  if (!contextWithoutError.includes('Then implement it IN THE SAME TURN') || !/ONLY when \(a\) the change is destructive/.test(contextWithoutError)) {
+    throw new Error('System prompt is missing the plan-then-build rule or its destructive/ambiguous exception');
+  }
+
   console.log('  Testing buildAgentContext with selectedCode...');
 
   // Test case 3: Selection in foo.ts stores filePath = foo.ts, and retains start/end lines

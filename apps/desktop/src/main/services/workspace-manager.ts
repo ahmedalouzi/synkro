@@ -4,8 +4,9 @@ import { randomUUID } from 'node:crypto';
 import type { FileEntry, ProjectInfo } from '@peep/shared';
 import type { DatabaseService } from './db';
 import { shell } from 'electron';
+import { createDirExclusive, createFileExclusive, renameNoReplace } from './safe-fs';
 
-const IGNORED = new Set(['.git', 'node_modules', '.dart_tool', 'build', '.peep', 'dist', '.next', '.expo', 'Pods', '.idea', '.vscode', '.keep', '.gitkeep']);
+const IGNORED = new Set(['.git', 'node_modules', '.dart_tool', 'build', '.peep', '.atomvs', 'dist', '.next', '.expo', 'Pods', '.idea', '.vscode', '.keep', '.gitkeep']);
 
 type PlatformType = 'flutter' | 'react-native' | 'expo' | 'unknown';
 
@@ -39,7 +40,7 @@ async function detectPlatformRecursively(dir: string, depth = 0): Promise<{ plat
     for (const entry of entries) {
       if (entry.isDirectory()) {
         const name = entry.name;
-        if (name === 'node_modules' || name === '.git' || name === '.expo' || name === 'build' || name === 'dist' || name === '.peep' || name === '.next' || name === 'Pods' || name === '.idea' || name === '.vscode') {
+        if (name === 'node_modules' || name === '.git' || name === '.expo' || name === 'build' || name === 'dist' || name === '.peep' || name === '.atomvs' || name === '.next' || name === 'Pods' || name === '.idea' || name === '.vscode') {
           continue;
         }
         const subResult = await detectPlatformRecursively(join(dir, name), depth + 1);
@@ -153,12 +154,19 @@ export class WorkspaceManager {
     await mkdir(dirPath, options);
   }
 
-  async createDir(dirPath: string): Promise<void> {
+  /** `failIfExists`: a new folder from the Explorer, which must not reuse an existing one. */
+  async createDir(dirPath: string, failIfExists = false): Promise<void> {
+    if (failIfExists) return createDirExclusive(dirPath);
     await mkdir(dirPath, { recursive: true });
   }
 
+  /** A new file: never replaces an existing one (writeFile is for saving files that are open). */
+  async createFile(filePath: string, content = ''): Promise<void> {
+    return createFileExclusive(filePath, content);
+  }
+
   async renameItem(oldPath: string, newPath: string): Promise<void> {
-    await rename(oldPath, newPath);
+    return renameNoReplace(oldPath, newPath);
   }
 
   async deleteItem(path: string): Promise<void> {

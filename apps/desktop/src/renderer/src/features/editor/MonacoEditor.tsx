@@ -213,6 +213,14 @@ export function MonacoEditor({ path, value, onChange, onSave, externallyModified
       allowJs: true,
     });
 
+    // Monaco's TypeScript runs in the editor without the project's node_modules, so every package import
+    // ('react', 'react-native', …) came out as "Cannot find module" in Problems although the project's own
+    // tsc is clean. Those come from the project's type check instead.
+    const MODULE_NOT_FOUND = [2307, 2792, 7016];
+    for (const defaults of [monaco.languages.typescript.typescriptDefaults, monaco.languages.typescript.javascriptDefaults]) {
+      defaults.setDiagnosticsOptions({ ...defaults.getDiagnosticsOptions(), diagnosticCodesToIgnore: MODULE_NOT_FOUND });
+    }
+
     /* ── Register dotenv language ── */
     if (!monaco.languages.getLanguages().some((l: any) => l.id === 'dotenv')) {
       monaco.languages.register({ id: 'dotenv', extensions: ['.env'], filenames: ['.env'] });

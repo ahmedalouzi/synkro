@@ -51,6 +51,9 @@ Key rules:
 
 import { ProjectIndexer, ProjectRetrieval, MemoryManager, MemoryRetrieval } from '@peep/agent';
 import type { PlatformRegistry } from './platform-registry';
+import type { PreviewManager } from './preview-manager';
+import { formatPreviewReport, waitForBundle } from './preview-log';
+import { EXPO_DEPS_CHECK, changesDependencies, isExpoProject, toExpoInstall } from './expo-deps';
 
 export class AgentService {
   private pendingEdits: ProposedEdit[] = [];
@@ -71,6 +74,13 @@ export class AgentService {
     private registry: PlatformRegistry,
     private terminal: TerminalService,
   ) {}
+
+  /** The Preview pane's dev server, which the agent reads and restarts (get_preview_logs, restart_preview). */
+  private preview: PreviewManager | null = null;
+
+  setPreviewManager(preview: PreviewManager): void {
+    this.preview = preview;
+  }
 
   async onFileChanged(projectPath: string, event: 'add' | 'change' | 'unlink', path: string): Promise<void> {
     const indexer = this.indexers.get(projectPath);
@@ -123,8 +133,15 @@ export class AgentService {
   }
 
   /** Rolls files back to before the given agent message; returns the restored paths. */
-  restoreCheckpoint(id: string): Promise<string[]> {
+  async restoreCheckpoint(id: string, projectPath?: string): Promise<string[]> {
+    // After a restart the checkpoint is on disk only.
+    if (projectPath) await this.checkpoints.list(projectPath);
     return this.checkpoints.restore(id);
+  }
+
+  /** The project's checkpoints that can be restored (saved on disk, so they survive a restart). */
+  listCheckpoints(projectPath: string): Promise<Array<{ id: string; fileCount: number }>> {
+    return this.checkpoints.list(projectPath);
   }
 
   getPendingEdits(): ProposedEdit[] {
@@ -394,7 +411,12 @@ export class AgentService {
             );
           }
           case 'run_command': {
-            const commandStr = String(args.command);
+            // In an Expo project, adding packages goes through expo install (versions that match the SDK).
+            const expoProject = !!projectPath && await isExpoProject(projectPath);
+            const requested = String(args.command);
+            const rewritten = expoProject ? toExpoInstall(requested) : null;
+            const commandStr = rewritten ?? requested;
+            const rewriteNote = rewritten ? `Rewrote "${requested}" to "${rewritten}" (Expo project: versions that match its SDK).\n` : '';
             const safety = classifyCommand(commandStr);
 
             if (safety.level === 'blocked') {
@@ -424,53 +446,62 @@ export class AgentService {
               }
             }
 
-            // Task 6: Stream command output live to the Terminal UI panel via
-            // TerminalService.streamCommand(), while also accumulating a bounded
-            // copy of the output to return to the LLM as tool-result context.
-            const sessionId = `agent-cmd-${Date.now()}-${randomUUID().slice(0, 8)}`;
-            this.agentCommandSessionId = sessionId;
+            const runCaptured = async (cmd: string): Promise<string> => {
+              // Task 6: Stream command output live to the Terminal UI panel via
+              // TerminalService.streamCommand(), while also accumulating a bounded
+              // copy of the output to return to the LLM as tool-result context.
+              const sessionId = `agent-cmd-${Date.now()}-${randomUUID().slice(0, 8)}`;
+              this.agentCommandSessionId = sessionId;
 
-            // Accumulated LLM output buffer
-            let llmOutputBuffer = '';
-            let llmOutputTruncated = false;
+              // Accumulated LLM output buffer
+              let llmOutputBuffer = '';
+              let llmOutputTruncated = false;
 
-            // Intercept TERMINAL_OUTPUT emissions by hooking the session with a
-            // custom listener before streamCommand() is called.
-            const originalEmitOutput = (this.terminal as any).emitOutput.bind(this.terminal);
-            (this.terminal as any).emitOutput = (id: string, data: string) => {
-              originalEmitOutput(id, data);
-              if (id === sessionId) {
-                llmOutputBuffer += data;
-                if (llmOutputBuffer.length > RUN_COMMAND_LLM_OUTPUT_LIMIT) {
-                  // Keep only the tail (last RUN_COMMAND_LLM_OUTPUT_LIMIT bytes)
-                  llmOutputBuffer = llmOutputBuffer.slice(-RUN_COMMAND_LLM_OUTPUT_LIMIT);
-                  llmOutputTruncated = true;
+              // Intercept TERMINAL_OUTPUT emissions by hooking the session with a
+              // custom listener before streamCommand() is called.
+              const originalEmitOutput = (this.terminal as any).emitOutput.bind(this.terminal);
+              (this.terminal as any).emitOutput = (id: string, data: string) => {
+                originalEmitOutput(id, data);
+                if (id === sessionId) {
+                  llmOutputBuffer += data;
+                  if (llmOutputBuffer.length > RUN_COMMAND_LLM_OUTPUT_LIMIT) {
+                    // Keep only the tail (last RUN_COMMAND_LLM_OUTPUT_LIMIT bytes)
+                    llmOutputBuffer = llmOutputBuffer.slice(-RUN_COMMAND_LLM_OUTPUT_LIMIT);
+                    llmOutputTruncated = true;
+                  }
                 }
+              };
+
+              let exitCode: number;
+              let commandError: string | null = null;
+              try {
+                exitCode = await this.terminal.streamCommand(sessionId, cmd, projectPath);
+              } catch (err: any) {
+                exitCode = 1;
+                commandError = err.message || String(err);
+              } finally {
+                // Restore original emitOutput
+                (this.terminal as any).emitOutput = originalEmitOutput;
+                this.agentCommandSessionId = null;
               }
+
+              const truncationNotice = llmOutputTruncated
+                ? `...[output truncated; full output is available in the Terminal panel]...\n`
+                : '';
+
+              if (commandError) {
+                return `Command error: ${commandError}\nPartial output:\n${truncationNotice}${llmOutputBuffer}`;
+              }
+
+              return `Command exited with code ${exitCode}.\nOutput:\n${truncationNotice}${llmOutputBuffer}`;
             };
 
-            let exitCode: number;
-            let commandError: string | null = null;
-            try {
-              exitCode = await this.terminal.streamCommand(sessionId, commandStr, projectPath);
-            } catch (err: any) {
-              exitCode = 1;
-              commandError = err.message || String(err);
-            } finally {
-              // Restore original emitOutput
-              (this.terminal as any).emitOutput = originalEmitOutput;
-              this.agentCommandSessionId = null;
+            let result = rewriteNote + await runCaptured(commandStr);
+            // After a dependency change in an Expo project, check every package against the SDK.
+            if (expoProject && changesDependencies(commandStr)) {
+              result += `\n\n${EXPO_DEPS_CHECK}:\n${await runCaptured(EXPO_DEPS_CHECK)}`;
             }
-
-            const truncationNotice = llmOutputTruncated
-              ? `...[output truncated; full output is available in the Terminal panel]...\n`
-              : '';
-
-            if (commandError) {
-              return `Command error: ${commandError}\nPartial output:\n${truncationNotice}${llmOutputBuffer}`;
-            }
-
-            return `Command exited with code ${exitCode}.\nOutput:\n${truncationNotice}${llmOutputBuffer}`;
+            return result;
           }
           case 'delete_file': {
             const path = this.resolvePath(projectPath, String(args.path));
@@ -962,6 +993,28 @@ export class AgentService {
             if (!detection.provider) return 'Error: Could not detect framework provider.';
             const result = await detection.provider.getRuntimeLogs(Number(args.processId));
             return JSON.stringify(result, null, 2);
+          }
+          case 'get_preview_logs': {
+            if (!this.preview) return 'Error: The Preview pane is not available.';
+            return formatPreviewReport(this.preview.getSession(), this.preview.getLog(), this.preview.getRuntime());
+          }
+          case 'restart_preview': {
+            if (!projectPath) return 'Error: No project path specified.';
+            if (!this.preview) return 'Error: The Preview pane is not available.';
+            const detection = await this.registry.detect(projectPath);
+            if (!detection.provider) return 'Error: Could not detect framework provider.';
+            const preview = this.preview;
+            // A failed start is in the session and the log; the report below shows it.
+            await preview.start(detection.projectRoot, detection.provider).catch(() => {});
+            // The Preview pane reloads the app once the server is up; wait for that bundle or its error.
+            await waitForBundle(() => preview.getSession()?.status, () => preview.getLog());
+            // Then for the page to run the bundle and report (errors, visible content): up to 15 s.
+            for (let waited = 0; waited < 15_000 && preview.getSession()?.status === 'running' && !preview.getRuntime(); waited += 500) {
+              await new Promise((resolve) => setTimeout(resolve, 500));
+            }
+            // A crash can follow the first report by a moment; let late errors arrive.
+            await new Promise((resolve) => setTimeout(resolve, 1500));
+            return formatPreviewReport(preview.getSession(), preview.getLog(), preview.getRuntime());
           }
           default:
             throw new Error(`Unknown tool: ${name}`);

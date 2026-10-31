@@ -113,7 +113,7 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/
 
 - [ ] **Flutter over 15 minutes** on this server: raise `BUILD_TIMEOUT_MS.flutter` to 25 minutes (the reconciler
       follows automatically: longest timeout + 5).
-- [ ] **React Native / Expo**: if well under 45 minutes with `rn-sandbox:1`, lower its timeout (temporary value).
+- [ ] **React Native / Expo**: timeout is 35 minutes now (Expo measured 23-25 min); keep it until the pre-warmed image.
 - [ ] oss.sonatype.org: stays out unless step 6 needed it.
 
 ## 9. Teardown

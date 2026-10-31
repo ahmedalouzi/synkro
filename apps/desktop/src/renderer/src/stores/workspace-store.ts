@@ -50,6 +50,8 @@ interface WorkspaceState {
   /** Closes several editors at once, keeping the active one if it stays open. */
   closeFiles: (paths: string[]) => void;
   moveOpenFile: (path: string, toIndex: number) => void;
+  /** After a rename on disk: open editors under `oldPath` (the file, or files in the folder) follow it. */
+  renameOpenFiles: (oldPath: string, newPath: string) => void;
   toggleEditorWordWrap: () => void;
   toggleEditorMinimap: () => void;
   toggleBottomPanel: () => void;
@@ -179,6 +181,25 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     const [moved] = files.splice(from, 1);
     files.splice(Math.max(0, Math.min(toIndex, files.length)), 0, moved);
     set({ openFiles: files });
+  },
+  renameOpenFiles: (oldPath, newPath) => {
+    // A tab left on the old path showed a file that was gone, and saving it wrote the old file back.
+    const norm = (p: string) => p.replace(/\\/g, '/');
+    const from = norm(oldPath);
+    const moved = (p: string) => {
+      const n = norm(p);
+      if (n === from) return newPath;
+      if (n.startsWith(`${from}/`)) return `${norm(newPath)}${n.slice(from.length)}`;
+      return null;
+    };
+    const { openFiles, activeFilePath } = get();
+    set({
+      openFiles: openFiles.map((f) => {
+        const to = moved(f.path);
+        return to ? { ...f, path: to, name: to.split(/[\\/]/).pop() ?? f.name } : f;
+      }),
+      activeFilePath: activeFilePath ? moved(activeFilePath) ?? activeFilePath : activeFilePath,
+    });
   },
   toggleEditorWordWrap: () => set({ editorWordWrap: !get().editorWordWrap }),
   toggleEditorMinimap: () => set({ editorMinimap: !get().editorMinimap }),
