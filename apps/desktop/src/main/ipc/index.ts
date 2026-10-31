@@ -74,6 +74,7 @@ export function setMainWindow(window: BrowserWindow | null): void {
 
 import { globalIpcBatcher } from '../utils/ipc-batcher';
 import { resolveGatewayUrl } from '../build-config';
+import { hideScrollbarsInPreviewFrames, sampleStrips, validStrips } from '../preview-frames';
 
 function notifyGitChanged(): void {
   globalIpcBatcher.throttle(IPC_EVENTS.GIT_CHANGED, 500, () => {
@@ -664,7 +665,14 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
     return previewWindow !== null && !previewWindow.isDestroyed();
   });
 
+  // Only the calling window captures itself, and only aggregate numbers go back.
+  ipcMain.handle(IPC_CHANNELS.PREVIEW_SAMPLE_STRIPS, (event, rects: unknown) => {
+    const strips = validStrips(rects);
+    return strips ? sampleStrips(event.sender, strips) : [];
+  });
+
   let currentDetachedDeviceId = 'iphone-15';
+  let currentDetachedLandscape = false;
 
   /** Detached window size that shows the whole device frame (portrait phones and wide foldables alike). */
   const detachedWindowSize = (frame?: { width: number; height: number }) => {
@@ -686,17 +694,18 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
   const loadDetachedPreview = (win: BrowserWindow) => {
     const isDev = !app.isPackaged && process.env.ELECTRON_RENDERER_URL;
     if (isDev) {
-      void win.loadURL(`${process.env.ELECTRON_RENDERER_URL}?windowType=preview&deviceId=${currentDetachedDeviceId}`);
+      void win.loadURL(`${process.env.ELECTRON_RENDERER_URL}?windowType=preview&deviceId=${currentDetachedDeviceId}&landscape=${currentDetachedLandscape ? 1 : 0}`);
     } else {
-      void win.loadFile(path.join(__dirname, '../renderer/index.html'), { query: { windowType: 'preview', deviceId: currentDetachedDeviceId } });
+      void win.loadFile(path.join(__dirname, '../renderer/index.html'), { query: { windowType: 'preview', deviceId: currentDetachedDeviceId, landscape: currentDetachedLandscape ? '1' : '0' } });
     }
   };
 
-  ipcMain.handle(IPC_CHANNELS.PREVIEW_DETACH, async (_event, deviceId?: string, frame?: { width: number; height: number }) => {
-    const deviceChanged = !!deviceId && deviceId !== currentDetachedDeviceId;
+  ipcMain.handle(IPC_CHANNELS.PREVIEW_DETACH, async (_event, deviceId?: string, frame?: { width: number; height: number }, landscape?: boolean) => {
+    const deviceChanged = (!!deviceId && deviceId !== currentDetachedDeviceId) || !!landscape !== currentDetachedLandscape;
     if (deviceId) {
       currentDetachedDeviceId = deviceId;
     }
+    currentDetachedLandscape = !!landscape;
     const size = detachedWindowSize(frame);
 
     if (previewWindow && !previewWindow.isDestroyed()) {
@@ -724,10 +733,13 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
         sandbox: false,
         contextIsolation: true,
         nodeIntegration: false,
+        // Preview iframe's safe-area shim, as in the main window.
+        nodeIntegrationInSubFrames: true,
         webviewTag: true,
       },
     });
 
+    hideScrollbarsInPreviewFrames(previewWindow.webContents);
     loadDetachedPreview(previewWindow);
 
     previewWindow.on('closed', () => {

@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { IPC_CHANNELS, IPC_EVENTS } from '@peep/shared';
+import { installPreviewSafeArea } from './preview-safe-area';
 import type {
   SshTarget,
   AgentSendOptions,
@@ -74,10 +75,12 @@ const api: IpcApi = {
   rnReloadPreview: (processId: number) => ipcRenderer.invoke(IPC_CHANNELS.RN_RELOAD_PREVIEW, processId),
   getPreviewSession: () =>
     ipcRenderer.invoke(IPC_CHANNELS.PREVIEW_GET_SESSION) as Promise<PreviewSession | null>,
-  detachPreview: (deviceId?: string, frame?: { width: number; height: number }) =>
-    ipcRenderer.invoke(IPC_CHANNELS.PREVIEW_DETACH, deviceId, frame) as Promise<void>,
+  detachPreview: (deviceId?: string, frame?: { width: number; height: number }, landscape?: boolean) =>
+    ipcRenderer.invoke(IPC_CHANNELS.PREVIEW_DETACH, deviceId, frame, landscape) as Promise<void>,
   attachPreview: () => ipcRenderer.invoke(IPC_CHANNELS.PREVIEW_ATTACH) as Promise<void>,
   isPreviewDetached: () => ipcRenderer.invoke(IPC_CHANNELS.PREVIEW_IS_DETACHED) as Promise<boolean>,
+  samplePreviewStrips: (rects: Array<{ x: number; y: number; width: number; height: number }>) =>
+    ipcRenderer.invoke(IPC_CHANNELS.PREVIEW_SAMPLE_STRIPS, rects) as Promise<Array<{ luminance: number; rgb: [number, number, number] } | null>>,
   sendAgentMessage: (options: AgentSendOptions) => ipcRenderer.invoke(IPC_CHANNELS.AGENT_SEND, options),
   cancelAgent: () => ipcRenderer.invoke(IPC_CHANNELS.AGENT_CANCEL),
   approvePlan: (projectPath?: string) => ipcRenderer.invoke(IPC_CHANNELS.AGENT_APPROVE_PLAN, projectPath),
@@ -194,7 +197,14 @@ const api: IpcApi = {
   onBuildLogChunk: (callback: (payload: { id: string; chunk: string }) => void) => subscribe<{ id: string; chunk: string }>(IPC_EVENTS.BUILD_LOG_CHUNK, callback),
 };
 
-contextBridge.exposeInMainWorld('peep', {
-  ...api,
-  getInspectorPreloadPath: () => require('path').join(__dirname, 'inspector.js'),
-});
+// The window loads this preload in sub-frames too (nodeIntegrationInSubFrames), for the preview iframe's
+// safe-area shim. Only the app's own top-level page gets the IPC API: the preview iframe runs the user's
+// code, and a sub-frame gets nothing but the shim (see preview-safe-area.ts).
+if (process.isMainFrame) {
+  contextBridge.exposeInMainWorld('peep', {
+    ...api,
+    getInspectorPreloadPath: () => require('path').join(__dirname, 'inspector.js'),
+  });
+} else {
+  installPreviewSafeArea();
+}

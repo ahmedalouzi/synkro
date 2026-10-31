@@ -1,60 +1,93 @@
 import React from 'react';
-import { DeviceConfig } from '../../layout/PreviewPane';
-import { FrameBackground, FrameForeground } from './PhoneFrame';
+import { ChassisBack, ChassisFront, SystemBars } from './PhoneFrame';
+import { deviceGeometry, type DeviceConfig } from './devices';
+import type { SystemBarTones } from './usePreviewSafeArea';
 
 interface PreviewAssemblyProps {
   device: DeviceConfig;
+  landscape?: boolean;
+  /** Icon colours for the status bar and the home indicator: dark over a light app, light over a dark one. */
+  tone?: SystemBarTones;
+  /** The app's background colour, shown under the iframe; black until the app reports it. */
+  background?: string | null;
+  /** The app (iframe or placeholder). It fills the whole screen. */
   children: React.ReactNode;
 }
 
-export function PreviewAssembly({ device, children }: PreviewAssemblyProps) {
-  const r = device.screenCutout.cornerRadius;
+const DEFAULT_TONES: SystemBarTones = { top: 'dark', bottom: 'dark' };
+
+/** How far the bezel reaches over the screen's edge (CSS px), so its anti-aliased edge never shows. */
+const BEZEL_OVERLAP = 2;
+/** How far the bezel ring reaches outward, over the chassis (same colour), to cover any sub-pixel gap. */
+const BEZEL_OUTSET = 2;
+
+/**
+ * A device frame at its natural size (the frame's CSS px; the caller zooms it to fit), edge to edge like a
+ * simulator: the app fills the screen, and the status bar, home indicator, Dynamic Island and camera hole are
+ * drawn over it. The chassis art is laid out in portrait and rotated as a whole for landscape.
+ */
+export function PreviewAssembly({ device, landscape = false, tone = DEFAULT_TONES, background, children }: PreviewAssemblyProps) {
+  const g = deviceGeometry(device, landscape);
+  const portrait = deviceGeometry(device, false);
+  const r = device.screenRadius;
+  const underlay = background || '#000';
+
+  // The chassis art in portrait coordinates, turned a quarter to the left for landscape.
+  const art = (layer: React.ReactNode, z: number) => (
+    <div style={{
+      position: 'absolute',
+      width: portrait.frame.width,
+      height: portrait.frame.height,
+      left: (g.frame.width - portrait.frame.width) / 2,
+      top: (g.frame.height - portrait.frame.height) / 2,
+      transform: landscape ? 'rotate(-90deg)' : undefined,
+      pointerEvents: 'none',
+      zIndex: z,
+    }}>
+      {layer}
+    </div>
+  );
 
   return (
-    <div className="device-assembly" style={{
-      width: `${device.logicalViewport.width}px`,
-      height: `${device.logicalViewport.height}px`,
-      position: 'relative',
-    }}>
+    <div className="device-assembly" style={{ position: 'relative', width: g.frame.width, height: g.frame.height }}>
+      {art(<ChassisBack device={device} geometry={portrait} />, 0)}
 
-      {/* ── Frame Background (Chassis body) ── */}
-      <div style={{
-        position: 'absolute',
-        top: `-${device.screenCutout.y}px`,
-        left: `-${device.screenCutout.x}px`,
-        width: `${device.logicalViewport.width + device.screenCutout.x * 2}px`,
-        height: `${device.logicalViewport.height + device.screenCutout.y * 2}px`,
-        pointerEvents: 'none',
-      }}>
-        <FrameBackground device={device} />
-      </div>
-
-      {/* ── Screen Mask — clips content to the screen area ── */}
-      {/*   Inner box-shadow creates the "screen inset" bevel effect  */}
+      {/* The screen: the app edge to edge, the system bars over it. */}
       <div className="screen-mask" style={{
         position: 'absolute',
-        top: 0, left: 0, right: 0, bottom: 0,
+        left: g.screen.x,
+        top: g.screen.y,
+        width: g.screen.width,
+        height: g.screen.height,
         overflow: 'hidden',
-        borderRadius: `${r}px`,
+        borderRadius: r,
         clipPath: `inset(0 round ${r}px)`,
-        /* Subtle inset shadow so screen looks recessed into the chassis */
-        boxShadow: `inset 0 0 0 1px rgba(0,0,0,0.65), inset 0 2px 8px rgba(0,0,0,0.5)`,
+        background: underlay,
+        ['--preview-app-bg' as string]: underlay,
+        zIndex: 1,
       }}>
-        {children}
+        <div className="screen-app" style={{ position: 'absolute', inset: 0, overflow: 'hidden' }}>
+          {children}
+        </div>
+        <SystemBars device={device} geometry={g} landscape={landscape} tone={tone} />
       </div>
 
-      {/* ── Visual Overlay (Dynamic Island, status bar, buttons) ── */}
-      <div style={{
+      {/* The bezel's inner edge, laid over the screen's edge: a ring in the chassis colour, concentric with
+          the screen's corners, covering the last BEZEL_OVERLAP px of the screen so no seam shows there. */}
+      <div className="screen-bezel-edge" style={{
         position: 'absolute',
-        top: `-${device.screenCutout.y}px`,
-        left: `-${device.screenCutout.x}px`,
-        width: `${device.logicalViewport.width + device.screenCutout.x * 2}px`,
-        height: `${device.logicalViewport.height + device.screenCutout.y * 2}px`,
+        left: g.screen.x - BEZEL_OUTSET,
+        top: g.screen.y - BEZEL_OUTSET,
+        width: g.screen.width + 2 * BEZEL_OUTSET,
+        height: g.screen.height + 2 * BEZEL_OUTSET,
+        boxSizing: 'border-box',
+        border: `${BEZEL_OUTSET + BEZEL_OVERLAP}px solid #000`,
+        borderRadius: r > 0 ? r + BEZEL_OUTSET : 0,
         pointerEvents: 'none',
-      }}>
-        <FrameForeground device={device} />
-      </div>
+        zIndex: 2,
+      }} />
 
+      {art(<ChassisFront device={device} geometry={portrait} />, 2)}
     </div>
   );
 }
