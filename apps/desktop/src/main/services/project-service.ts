@@ -55,7 +55,12 @@ export class ProjectService {
       return await this.registry.getProvider('react-native-managed').createProject(name, options.parentPath, options.templateId);
     } catch (err) {
       // The folder did not exist before this call: remove what was half-created so the next try can use the name.
-      await rm(projectPath, { recursive: true, force: true }).catch(() => {});
+      // On Windows a file can still be locked for a moment (a package manager exiting, an antivirus scan), so retry.
+      const removed = await rm(projectPath, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 })
+        .then(() => true, () => false);
+      if (!removed && err instanceof Error) {
+        err.message += `\nThe half-created folder could not be removed: ${projectPath}. Delete it before trying again.`;
+      }
       throw err;
     }
   }
