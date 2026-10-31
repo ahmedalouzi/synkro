@@ -143,13 +143,19 @@ export function ChatPane({ onOpenSettings: _onOpenSettings }: ChatPaneProps) {
   const [historyOpen, setHistoryOpen] = useState(false);
   const historyRef = useRef<HTMLDivElement>(null);
 
+  // The check is on `prev`, not this render's openTabIds: an effect that runs twice before the state updates
+  // (React StrictMode does that on purpose) added the same tab twice, and every render after warned about a
+  // duplicate key.
   useEffect(() => {
-    if (activeThreadId && !openTabIds.includes(activeThreadId)) setOpenTabIds((prev) => [...prev, activeThreadId]);
-  }, [activeThreadId, openTabIds]);
+    if (activeThreadId) setOpenTabIds((prev) => (prev.includes(activeThreadId) ? prev : [...prev, activeThreadId]));
+  }, [activeThreadId]);
 
-  // Drop tabs whose thread was deleted.
+  // Drop tabs whose thread was deleted, and any duplicate.
   useEffect(() => {
-    setOpenTabIds((prev) => prev.filter((id) => id === activeThreadId || threads.some((t) => t.id === id)));
+    setOpenTabIds((prev) => {
+      const next = [...new Set(prev)].filter((id) => id === activeThreadId || threads.some((t) => t.id === id));
+      return next.length === prev.length ? prev : next;
+    });
   }, [threads, activeThreadId]);
 
   const firstUserText = messages.find((m) => m.role === 'user')?.content;
