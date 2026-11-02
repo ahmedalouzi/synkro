@@ -118,8 +118,8 @@ function pageShim(rewrite: (css: string) => string, isInsets: (data: unknown) =>
   const prefersDark = window.matchMedia('(prefers-color-scheme: dark)');
   const appScheme = () => (prefersDark.matches ? 'light' : 'dark'); // icon tone for 'auto'
   const roots = new Set<any>();
-  const fromStatusBar = (): [string, string] | null => {
-    let found: [string, string] | null = null;
+  const fromStatusBar = (): [string | null, string] | null => {
+    let found: [string | null, string] | null = null;
     for (const root of roots) {
       let node = root.current;
       let steps = 0;
@@ -133,8 +133,15 @@ function pageShim(rewrite: (css: string) => string, isInsets: (data: unknown) =>
           if (props.barStyle === 'light-content' || props.barStyle === 'dark-content') {
             found = [props.barStyle === 'light-content' ? 'light' : 'dark', `StatusBar barStyle=${props.barStyle}`];
           } else if (/StatusBar/.test(name) && ['light', 'dark', 'auto', 'inverted'].includes(props.style)) {
-            const auto = appScheme();
-            found = [props.style === 'auto' ? auto : props.style === 'inverted' ? (auto === 'light' ? 'dark' : 'light') : props.style, `expo-status-bar style=${props.style}`];
+
+            if (props.style === 'auto') {
+              found = [null, 'expo-status-bar style=auto'];
+            } else if (props.style === 'inverted') {
+              const auto = appScheme();
+              found = [auto === 'light' ? 'dark' : 'light', 'expo-status-bar style=inverted'];
+            } else {
+              found = [props.style, `expo-status-bar style=${props.style}`];
+            }
             expo = true; // the react-native StatusBar it renders only restates this
           }
         }
@@ -181,7 +188,7 @@ function pageShim(rewrite: (css: string) => string, isInsets: (data: unknown) =>
     // White or #1C1C1E (luminance 0.0117), whichever contrasts more.
     return 1.05 / (l + 0.05) >= (l + 0.05) / (0.0117 + 0.05) ? 'light' : 'dark';
   };
-  const fromMeta = (): [string, string] | null => {
+  const fromMeta = (): [string | null, string] | null => {
     for (const meta of Array.from(document.querySelectorAll('meta[name="theme-color"]'))) {
       const media = meta.getAttribute('media');
       if (media && !window.matchMedia(media).matches) continue;
@@ -191,7 +198,7 @@ function pageShim(rewrite: (css: string) => string, isInsets: (data: unknown) =>
     const scheme = (document.querySelector('meta[name="color-scheme"]')?.getAttribute('content') || '').toLowerCase().split(/\s+/);
     const dark = scheme.includes('dark');
     const light = scheme.includes('light');
-    if (dark && light) return [appScheme(), 'color-scheme'];
+    if (dark && light) return [null, 'color-scheme'];
     if (dark) return ['light', 'color-scheme'];
     if (light) return ['dark', 'color-scheme'];
     return null;

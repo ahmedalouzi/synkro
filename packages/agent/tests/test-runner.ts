@@ -14,7 +14,8 @@ try {
   const electronMock = {
     app: { getPath: () => '/tmp' },
     ipcMain: { handle: () => {} },
-    ipcRenderer: { invoke: () => {} }
+    ipcRenderer: { invoke: () => {} },
+    webFrame: { executeJavaScript: () => Promise.resolve() }
   };
   require('module').Module._cache[req.resolve('electron')] = { exports: electronMock };
   

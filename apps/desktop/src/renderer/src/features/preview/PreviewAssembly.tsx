@@ -14,7 +14,7 @@ interface PreviewAssemblyProps {
   children: React.ReactNode;
 }
 
-const DEFAULT_TONES: SystemBarTones = { top: 'dark', bottom: 'dark' };
+const DEFAULT_TONES: SystemBarTones = { top: 'light', bottom: 'light' };
 
 /** How far the bezel reaches over the screen's edge (CSS px), so its anti-aliased edge never shows. */
 const BEZEL_OVERLAP = 2;

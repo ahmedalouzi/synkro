@@ -20,7 +20,17 @@ const ISLAND_WIDTH = 126;
 const MARGIN = 4;
 
 /** White or #1C1C1E (relative luminance 0.0117), whichever contrasts more with a background of luminance l. */
-export function toneForLuminance(l: number): StatusBarTone {
+export const LUMINANCE_THRESHOLD = 0.2045;
+export const HYSTERESIS_LOW = 0.175;
+export const HYSTERESIS_HIGH = 0.235;
+
+export function toneForLuminance(l: number, currentTone?: StatusBarTone): StatusBarTone {
+  if (currentTone === 'light') {
+    return l >= HYSTERESIS_HIGH ? 'dark' : 'light';
+  }
+  if (currentTone === 'dark') {
+    return l <= HYSTERESIS_LOW ? 'light' : 'dark';
+  }
   return 1.05 / (l + 0.05) >= (l + 0.05) / (0.0117 + 0.05) ? 'light' : 'dark';
 }
 
@@ -69,6 +79,7 @@ export function usePreviewSafeArea(
   // app's origin as targetOrigin is refused with an origin-mismatch error (the insets then arrive on load).
   const loadedFrame = useRef<HTMLIFrameElement | null>(null);
   const send = useCallback(() => {
+    if (!mounted.current) return;
     const iframe = iframeRef.current;
     const target = iframe?.contentWindow;
     if (!iframe || !target || !url || loadedFrame.current !== iframe) return;
@@ -82,12 +93,16 @@ export function usePreviewSafeArea(
   }, [iframeRef, url, top, right, bottom, left]);
 
   // Sample the rendered strips; one capture at a time, and at most every 150 ms.
+  const mounted = useRef(true);
   const busy = useRef(false);
+  const pendingTrailing = useRef(false);
+  const lastTones = useRef<{ top?: StatusBarTone; bottom?: StatusBarTone }>({});
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // The callers build geometry on every render; read the latest from a ref so the sampler stays stable.
   const current = useRef({ device, geometry });
   current.current = { device, geometry };
   const sample = useCallback(async () => {
+    if (!mounted.current) return;
     const iframe = iframeRef.current;
     const { device, geometry } = current.current;
     if (!iframe || busy.current) return;
@@ -102,6 +117,7 @@ export function usePreviewSafeArea(
     busy.current = true;
     try {
       const results = await window.peep.samplePreviewStrips(rects);
+      if (!mounted.current) return;
       const average = (list: typeof results) => {
         const ok = list.filter((r): r is NonNullable<typeof r> => !!r);
         if (!ok.length) return null;
@@ -112,19 +128,44 @@ export function usePreviewSafeArea(
       const t = average(results.slice(0, statusBar.length));
       const b = average(results.slice(statusBar.length));
       if (t) {
-        setSampledTop({ tone: toneForLuminance(t.luminance), luminance: t.luminance });
+        const tone = toneForLuminance(t.luminance, lastTones.current.top);
+        lastTones.current.top = tone;
+        setSampledTop({ tone, luminance: t.luminance });
         setBackground(`rgb(${t.rgb[0]}, ${t.rgb[1]}, ${t.rgb[2]})`);
       } else if (!statusBar.length) {
+        lastTones.current.top = undefined;
         setSampledTop(null);
       }
-      setSampledBottom(b ? { tone: toneForLuminance(b.luminance), luminance: b.luminance } : null);
+      if (b) {
+        const tone = toneForLuminance(b.luminance, lastTones.current.bottom);
+        lastTones.current.bottom = tone;
+        setSampledBottom({ tone, luminance: b.luminance });
+      } else {
+        lastTones.current.bottom = undefined;
+        setSampledBottom(null);
+      }
     } finally {
       busy.current = false;
     }
   }, [iframeRef]);
   const scheduleSample = useCallback((delay = 150) => {
-    if (timer.current) return;
-    timer.current = setTimeout(() => { timer.current = null; void sample(); }, delay);
+    if (!mounted.current) return;
+    if (timer.current || busy.current) {
+      pendingTrailing.current = true;
+      return;
+    }
+    timer.current = setTimeout(async () => {
+      timer.current = null;
+      if (!mounted.current) return;
+      try {
+        await sample();
+      } finally {
+        if (mounted.current && pendingTrailing.current) {
+          pendingTrailing.current = false;
+          scheduleSample(50);
+        }
+      }
+    }, delay);
   }, [sample]);
 
   // New device or orientation: the app gets the new insets (and re-measures), then the strips are re-sampled.
@@ -137,7 +178,17 @@ export function usePreviewSafeArea(
     return () => clearInterval(id);
   }, [scheduleSample]);
 
-  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      pendingTrailing.current = false;
+      if (timer.current) {
+        clearTimeout(timer.current);
+        timer.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
@@ -165,15 +216,21 @@ export function usePreviewSafeArea(
     return () => window.removeEventListener('message', onMessage);
   }, [iframeRef, send, scheduleSample]);
 
-  // Another app: nothing known about it yet (black underlay, dark icons until sampled).
+  // Another app: nothing known about it yet (black underlay, light icons until sampled).
   useEffect(() => {
+    if (timer.current) {
+      clearTimeout(timer.current);
+      timer.current = null;
+    }
+    pendingTrailing.current = false;
+    lastTones.current = {};
     setDeclared(null);
     setSampledTop(null);
     setSampledBottom(null);
     setBackground(null);
   }, [url]);
 
-  const topTone: StatusBarTone = declared?.tone ?? sampledTop?.tone ?? 'dark';
+  const topTone: StatusBarTone = declared?.tone ?? sampledTop?.tone ?? 'light';
   const bottomTone: StatusBarTone = sampledBottom?.tone ?? topTone;
 
   // Dev: say why, whenever the decision changes.

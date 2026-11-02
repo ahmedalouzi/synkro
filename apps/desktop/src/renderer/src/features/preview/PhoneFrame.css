@@ -141,7 +141,7 @@
 /* Icon colour follows the app behind the bars, like a phone: full-opacity white over a dark app, near-black
    over a light one, fading when the app behind changes. */
 .pf-tone {
-  transition: color 0.25s ease, background-color 0.25s ease;
+  transition: color 0.18s ease-out, background-color 0.18s ease-out;
 }
 .pf-tone--dark { color: #1c1c1e; --pf-indicator: #1c1c1e; }
 .pf-tone--light { color: #fff; --pf-indicator: #fff; }
