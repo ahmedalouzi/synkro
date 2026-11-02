@@ -1,5 +1,6 @@
 // QA Edit Injection Test - Concurrent Modification Triggered!
-import { ipcMain, dialog, app, BrowserWindow, screen, shell } from 'electron';
+import { ipcMain, dialog, app, BrowserWindow, screen } from 'electron';
+import { handleWindowOpenSafely } from '../safe-external';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import { IPC_CHANNELS, IPC_EVENTS, parsePreviewRuntimeReport } from '@peep/shared';
@@ -665,7 +666,7 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
         sandbox: false,
         contextIsolation: true,
         nodeIntegration: false,
-        webviewTag: true,
+        // No webviewTag: Settings shows no <webview>, so it should not be able to create one.
       },
     });
 
@@ -679,19 +680,11 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
       settingsWindow = null;
     });
 
-    settingsWindow.webContents.setWindowOpenHandler((details) => {
-      shell.openExternal(details.url);
-      return { action: 'deny' };
-    });
+    // Also set app-wide (web-contents-created); here so the rule does not depend on that hook's timing.
+    handleWindowOpenSafely(settingsWindow.webContents);
   };
 
   ipcMain.handle(IPC_CHANNELS.SETTINGS_OPEN_WINDOW, (_event, section?: string) => {
-    openSettingsWindow(section);
-  });
-  ipcMain.handle('window:open-settings', (_event, section?: string) => {
-    openSettingsWindow(section);
-  });
-  ipcMain.on('window:open-settings', (_event, section?: string) => {
     openSettingsWindow(section);
   });
 

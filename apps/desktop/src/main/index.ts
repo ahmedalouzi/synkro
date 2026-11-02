@@ -1,5 +1,6 @@
 import './migrate-user-data';
-import { app, BrowserWindow, Menu, shell } from 'electron';
+import { app, BrowserWindow, Menu } from 'electron';
+import { handleWindowOpenSafely } from './safe-external';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { cleanupServices, registerIpcHandlers, setMainWindow } from './ipc';
@@ -166,12 +167,12 @@ function createWindow(): void {
     mainWindow = null;
   });
 
-  mainWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url);
-    return { action: 'deny' };
-  });
+  // Links from window.open go to the browser only if they are https/http/mailto (safe-external.ts).
+  handleWindowOpenSafely(mainWindow.webContents);
 
   app.on('web-contents-created', (_e, contents) => {
+    // Every later window and <webview> (settings, detached preview, guests) gets the same rule.
+    handleWindowOpenSafely(contents);
     contents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
       log.error(`[DID-FAIL-LOAD] Error Code: ${errorCode}, Description: ${errorDescription}, URL: ${validatedURL}`);
     });
