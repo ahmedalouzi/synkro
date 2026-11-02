@@ -70,6 +70,8 @@ interface WorkspaceState {
   toggleFolder: (path: string) => void;
   updateDirectoryChildren: (path: string, children: FileEntry[]) => void;
   mergeRootChildren: (children: FileEntry[]) => void;
+  /** A loaded folder's fresh listing (from the file watcher), keeping its expanded subfolders' contents. */
+  mergeDirectoryChildren: (path: string, children: FileEntry[]) => void;
 }
 
 const STATUS_BAR_KEY = 'synkro.statusBarVisible';
@@ -248,6 +250,21 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         return node;
       });
     };
+    set({ fileTree: updateNode(get().fileTree) });
+  },
+  mergeDirectoryChildren: (path, newChildren) => {
+    // A folder's fresh listing, keeping the loaded children of subfolders that are still there (an expanded
+    // folder stays expanded with its contents when a sibling file is added).
+    const norm = (p: string) => p.replace(/\\/g, '/').replace(/\/+$/, '');
+    const target = norm(path);
+    const merge = (existing: FileEntry[] | undefined) => newChildren.map((child) => {
+      const old = existing?.find((n) => norm(n.path) === norm(child.path));
+      return old && old.type === 'directory' && child.type === 'directory' ? { ...child, children: old.children } : child;
+    });
+    const updateNode = (nodes: FileEntry[]): FileEntry[] => nodes.map((node) => {
+      if (norm(node.path) === target) return { ...node, children: merge(node.children) };
+      return node.children ? { ...node, children: updateNode(node.children) } : node;
+    });
     set({ fileTree: updateNode(get().fileTree) });
   },
   mergeRootChildren: (newChildren) => {

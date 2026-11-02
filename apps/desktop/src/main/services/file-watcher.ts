@@ -2,7 +2,9 @@ import chokidar, { type FSWatcher } from 'chokidar';
 import type { BrowserWindow } from 'electron';
 import { IPC_EVENTS } from '@peep/shared';
 
-const IGNORED = /(^|[\\/])(\.git|node_modules|\.dart_tool|build|\.peep|\.atomvs)([\\/]|$)/;
+// Not watched: dependencies, VCS data, Atomvs's own folders, and build output (android/app/build, ios/build,
+// .gradle, Pods, Expo's .expo cache), which change by the thousand during a build.
+const IGNORED = /(^|[\\/])(\.git|node_modules|\.dart_tool|build|\.expo|\.gradle|Pods|\.peep|\.atomvs)([\\/]|$)/;
 
 export class FileWatcherService {
   private watcher: FSWatcher | null = null;

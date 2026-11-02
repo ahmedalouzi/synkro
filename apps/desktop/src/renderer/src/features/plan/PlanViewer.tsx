@@ -2,6 +2,19 @@ import { useChatStore } from '../../stores/chat-store';
 import { useWorkspaceStore } from '../../stores/workspace-store';
 import { useDiagnosticsStore } from '../../stores/preview-store';
 import './PlanViewer.css';
+import { useEffect, useState } from 'react';
+import { useShallow } from 'zustand/react/shallow';
+import type { AgentTimelineActivity } from '@peep/shared';
+import { planState, stepsDone, type PlanFile, type PlanState } from './plan-status';
+
+const NO_ACTIVITIES: AgentTimelineActivity[] = [];
+
+const PLAN_TEXT: Record<PlanState, string> = {
+  in_progress: 'The agent is working through these tasks.',
+  done: 'The agent implemented this plan.',
+  waiting: 'The agent wrote this plan and is waiting for you: click Proceed, or reply in the chat.',
+  unknown: 'To build or change it, ask the agent in the chat.',
+};
 
 interface PlanViewerProps {
   content: string;
@@ -10,8 +23,22 @@ interface PlanViewerProps {
 
 export function PlanViewer({ content, mode = 'plan' }: PlanViewerProps) {
   const project = useWorkspaceStore((s) => s.project);
-  // The agent usually builds its plan in the same turn; Proceed is for when it stopped to ask.
+  // The agent usually builds its plan in the same turn; Proceed is only for when it stopped to ask.
   const agentBusy = useChatStore((s) => s.isStreaming);
+  const lastRun = useChatStore(useShallow((s) => {
+    const runId = s.currentRunId ?? s.runs[s.runs.length - 1]?.run_id;
+    return runId ? s.timelineActivities.filter((a) => a.runId === runId) : NO_ACTIVITIES;
+  }));
+  const [plan, setPlan] = useState<PlanFile | null>(null);
+  useEffect(() => {
+    if (!project || mode !== 'plan') return;
+    const path = `${project.path}/.peep/plan.json`.replace(/\\/g, '/');
+    const load = () => void window.peep.readFile(path).then((text) => setPlan(JSON.parse(text))).catch(() => setPlan(null));
+    load();
+    return (window.peep as any).onPlanUpdated?.(load);
+  }, [project?.path, mode, content]);
+  const state = planState({ busy: agentBusy, lastRun, plan });
+  const progress = stepsDone(plan);
 
   const handleProceed = () => {
     const chatStore = useChatStore.getState();
@@ -110,15 +137,19 @@ export function PlanViewer({ content, mode = 'plan' }: PlanViewerProps) {
           <p>
             {isWalkthrough
               ? 'Review the completed feature checklist and manual verification steps below.'
-              : agentBusy
-                ? 'The agent is working through these tasks.'
-                : 'The agent builds its plan right away. If it stopped to ask first, click Proceed to go ahead.'}
+              : PLAN_TEXT[state]}
+            {!isWalkthrough && progress && state !== 'waiting' ? ` · ${progress}` : ''}
           </p>
         </div>
-        {!isWalkthrough && (
-          <button type="button" className="btn-proceed" onClick={handleProceed} disabled={!project || agentBusy}>
+        {!isWalkthrough && state === 'waiting' && (
+          <button type="button" className="btn-proceed" onClick={handleProceed} disabled={!project}>
             Proceed with Implementation ➔
           </button>
+        )}
+        {!isWalkthrough && (state === 'in_progress' || state === 'done') && (
+          <span className={`plan-status plan-status--${state}`} data-testid="plan-status">
+            {state === 'in_progress' ? 'In progress' : 'Done'}
+          </span>
         )}
       </div>
       <div className="plan-viewer__body">

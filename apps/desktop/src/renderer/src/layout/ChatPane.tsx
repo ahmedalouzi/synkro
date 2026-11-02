@@ -27,26 +27,30 @@ const WELCOME_ID = 'welcome';
 
 const fileName = (path: string) => path.split(/[\\/]/).pop() ?? path;
 
-/** Line counts and the first few changed lines, for edit cards. */
+/** The file's folder relative to the project ("src/screens"), for the changed-files list. */
+function relativeDir(path: string, projectPath?: string): string {
+  const norm = (p: string) => p.replace(/\\/g, '/');
+  const file = norm(path);
+  const root = projectPath ? `${norm(projectPath).replace(/\/+$/, '')}/` : '';
+  const rel = root && file.toLowerCase().startsWith(root.toLowerCase()) ? file.slice(root.length) : file;
+  const cut = rel.lastIndexOf('/');
+  return cut > 0 ? rel.slice(0, cut) : '';
+}
+
+/** Added and removed line counts, for the changed-files list. */
 function diffSummary(original: string, proposed: string) {
   let added = 0;
   let removed = 0;
-  const preview: { kind: '+' | '-'; text: string }[] = [];
   try {
     const lines = createTwoFilesPatch('a', 'b', original, proposed).split('\n').slice(4);
     for (const line of lines) {
-      if (line.startsWith('+') && !line.startsWith('+++')) {
-        added++;
-        if (preview.length < 4) preview.push({ kind: '+', text: line.slice(1) });
-      } else if (line.startsWith('-') && !line.startsWith('---')) {
-        removed++;
-        if (preview.length < 4) preview.push({ kind: '-', text: line.slice(1) });
-      }
+      if (line.startsWith('+') && !line.startsWith('+++')) added++;
+      else if (line.startsWith('-') && !line.startsWith('---')) removed++;
     }
   } catch (e) {
     console.error(e);
   }
-  return { added, removed, preview };
+  return { added, removed };
 }
 
 /** One line per agent step; the resolved event replaces its in-progress twin. */
@@ -553,26 +557,19 @@ export function ChatPane({ onOpenSettings: _onOpenSettings }: ChatPaneProps) {
           <div className="cx-thinking">{streamStatus || 'Thinking…'}</div>
         ) : null}
 
+        {/* One compact line per changed file (like Cursor / Claude Code): name, folder, +/- counts. The code
+            is in the diff that a click opens, not dumped into the reply. */}
         {showEdits && (
-          <div className="cx-edits">
-            {editSummaries.map(({ edit, added, removed, preview }) => (
-              <button key={edit.id} type="button" className="cx-edit-card" onClick={() => openEditPreview(edit)} title={edit.path}>
-                <div className="cx-edit-card__head">
-                  <Icon d={ICON.file} size={13} />
-                  <span className="cx-edit-card__name">{fileName(edit.path)}</span>
+          <div className="cx-edits" data-testid="chat-changed-files">
+            {editSummaries.map(({ edit, added, removed }) => (
+              <button key={edit.id} type="button" className="cx-edit-row" onClick={() => openEditPreview(edit)} title={`Open the diff of ${edit.path}`}>
+                <Icon d={ICON.file} size={13} />
+                <span className="cx-edit-row__name">{fileName(edit.path)}</span>
+                <span className="cx-edit-row__dir">{relativeDir(edit.path, project?.path)}</span>
+                <span className="cx-edit-row__counts">
                   {added > 0 && <span className="cx-add">+{added}</span>}
                   {removed > 0 && <span className="cx-del">-{removed}</span>}
-                </div>
-                {preview.length > 0 && (
-                  <div className="cx-edit-card__diff">
-                    {preview.map((line, i) => (
-                      <div key={i} className={`cx-diff-line cx-diff-line--${line.kind === '+' ? 'add' : 'del'}`}>
-                        <span className="cx-diff-line__sign">{line.kind}</span>
-                        <span>{line.text || ' '}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                </span>
               </button>
             ))}
           </div>

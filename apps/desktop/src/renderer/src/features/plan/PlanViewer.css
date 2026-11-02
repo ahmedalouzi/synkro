@@ -166,3 +166,19 @@
   margin: 4px 0 0 0;
   font-size: 13px;
 }
+
+/* Where the plan stands, shown instead of Proceed when the agent did not stop to ask. */
+.plan-status {
+  flex-shrink: 0;
+  align-self: center;
+  padding: 4px 10px;
+  border: 1px solid var(--border-bright);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.plan-status--done {
+  border-color: rgba(74, 222, 128, 0.45);
+  color: #4ade80;
+}

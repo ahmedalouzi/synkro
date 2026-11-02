@@ -3,6 +3,7 @@ import { usePreviewStore, useDiagnosticsStore } from '../stores/preview-store';
 import { useChatStore } from '../stores/chat-store';
 import { useWorkspaceStore } from '../stores/workspace-store';
 import { useComposerStore } from '../stores/composer-store';
+import { findNode, foldersToRefresh, samePath, type WatchEvent } from '../features/explorer/live-tree';
 
 export function usePeepEvents(): void {
   const setSession = usePreviewStore((s) => s.setSession);
@@ -72,11 +73,15 @@ export function usePeepEvents(): void {
       const isComposer = useComposerStore.getState().isOpen;
       const workspaceStore = useWorkspaceStore.getState();
 
-      // Sync active editor tabs immediately so changes reflect on screen
+      // The agent has already written these files: open tabs show the new content as saved. A tab with the
+      // user's own unsaved edits keeps them and shows the "changed on disk" notice instead.
       for (const edit of edits) {
-        const existing = workspaceStore.openFiles.find((f) => f.path === edit.path);
-        if (existing) {
-          workspaceStore.openFile({ ...existing, content: edit.proposedContent, dirty: true });
+        const existing = workspaceStore.openFiles.find((f) => samePath(f.path, edit.path));
+        if (!existing) continue;
+        if (existing.dirty && existing.content !== edit.proposedContent) {
+          workspaceStore.setFileExternallyModified(existing.path, true);
+        } else {
+          workspaceStore.syncFileContent(existing.path, edit.proposedContent);
         }
       }
 
@@ -117,19 +122,42 @@ export function usePeepEvents(): void {
       });
     });
 
+    // A file changed on disk (the agent, a terminal command, another editor): an open tab reloads it, or, if it
+    // has unsaved edits, shows the "changed on disk" notice. The watcher's path uses "/", the tab's may use "\".
     const unsubFileChanged = window.peep.onFileChanged((path: string) => {
       const workspaceStore = useWorkspaceStore.getState();
-      const existing = workspaceStore.openFiles.find((f) => f.path === path);
-      if (existing) {
-        if (existing.dirty) {
-          workspaceStore.setFileExternallyModified(path, true);
-        } else {
-          void window.peep.readFile(path).then((newContent) => {
-            workspaceStore.syncFileContent(path, newContent);
-          }).catch(() => {});
-        }
-      }
+      const existing = workspaceStore.openFiles.find((f) => samePath(f.path, path));
+      if (!existing) return;
+      void window.peep.readFile(existing.path).then((newContent) => {
+        const current = useWorkspaceStore.getState().openFiles.find((f) => f.path === existing.path);
+        if (!current || current.content === newContent) return;
+        if (current.dirty) useWorkspaceStore.getState().setFileExternallyModified(current.path, true);
+        else useWorkspaceStore.getState().syncFileContent(current.path, newContent);
+      }).catch(() => {});
     });
+
+    // Files added, removed or renamed in the project (by the agent, a command, or outside Atomvs): the Explorer
+    // re-lists the folders that changed, if they are loaded. A folder not loaded yet lists itself when opened.
+    const unsubTree = window.peep.onWorkspaceChangedBatch?.((payload: { events?: WatchEvent[] }) => {
+      const events = Array.isArray(payload?.events) ? payload.events : [];
+      const project = useWorkspaceStore.getState().project;
+      if (!project || events.length === 0) return;
+      void (async () => {
+        for (const dir of foldersToRefresh(events)) {
+          try {
+            if (samePath(dir, project.path)) {
+              useWorkspaceStore.getState().mergeRootChildren(await window.peep.listDir(project.path, 1));
+              continue;
+            }
+            const node = findNode(useWorkspaceStore.getState().fileTree, dir);
+            if (!node || node.type !== 'directory' || !node.children) continue;
+            useWorkspaceStore.getState().mergeDirectoryChildren(node.path, await window.peep.listDir(node.path, 0));
+          } catch {
+            // The folder went away too: its parent's listing (also in this batch) removes it.
+          }
+        }
+      })();
+    }) ?? (() => {});
 
     const unsubPlan = (window.peep as any).onPlanUpdated?.(() => {
       const workspaceStore = useWorkspaceStore.getState();
@@ -160,6 +188,7 @@ export function usePeepEvents(): void {
       unsubTimeline();
       unsubOpenFile();
       unsubFileChanged();
+      unsubTree();
       unsubPlan?.();
       unsubPhase();
     };
