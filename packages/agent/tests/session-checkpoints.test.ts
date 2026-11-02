@@ -64,7 +64,13 @@ export default async function run() {
     if (kept.length !== CHECKPOINT_LIMITS.maxCount || kept.includes('m0') || !kept.includes(`m${CHECKPOINT_LIMITS.maxCount + 2}`)) {
       throw new Error(`count limit: kept ${kept.length}, first ${kept[0]}`);
     }
-    if (fs.readdirSync(dir).filter((n) => n.endsWith('.json')).length !== CHECKPOINT_LIMITS.maxCount) throw new Error('Disk not pruned to the limit');
+    let jsonCount = 0;
+    for (let attempt = 0; attempt < 10; attempt++) {
+      jsonCount = fs.readdirSync(dir).filter((n) => n.endsWith('.json')).length;
+      if (jsonCount === CHECKPOINT_LIMITS.maxCount) break;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    if (jsonCount !== CHECKPOINT_LIMITS.maxCount) throw new Error(`Disk not pruned to the limit: expected ${CHECKPOINT_LIMITS.maxCount}, found ${jsonCount}`);
   } finally {
     fs.rmSync(project, { recursive: true, force: true });
   }
