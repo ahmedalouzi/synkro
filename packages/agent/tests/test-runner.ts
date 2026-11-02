@@ -92,6 +92,7 @@ async function main() {
     'p314-e2e-validation.test.ts',
     'p315-auth-production.test.ts',
     'production-gateway.test.ts',
+    'router-rls-identity.test.ts',
     'server-router.test.ts',
     'signing-keys-db.test.ts',
     'streaming-usage.test.ts',
