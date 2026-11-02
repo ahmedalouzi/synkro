@@ -315,6 +315,30 @@ Please modify the selected element and its corresponding component files as foll
     );
   };
 
+  const isFlutterSdkMissing =
+    platform === 'flutter' &&
+    !!session?.error &&
+    (session.error.includes('Flutter SDK not found') ||
+     session.error.toLowerCase().includes('flutter.bat') ||
+     session.error.toLowerCase().includes('not recognized') ||
+     session.error.toLowerCase().includes('command not found') ||
+     session.error.toLowerCase().includes('enoent') ||
+     session.error.includes('Is Flutter SDK installed?'));
+
+  const handleOpenSdkSettings = () => {
+    if (typeof (window.peep as any)?.openSettings === 'function') {
+      (window.peep as any).openSettings('sdk');
+    } else {
+      window.dispatchEvent(
+        new CustomEvent('peep:open-settings', { detail: { section: 'sdk' } })
+      );
+    }
+  };
+
+  const handleOpenInstallDocs = () => {
+    window.open('https://docs.flutter.dev/get-started/install', '_blank', 'noopener');
+  };
+
   return (
     <section className="preview-panel" ref={paneRef}>
 
@@ -464,7 +488,45 @@ Please modify the selected element and its corresponding component files as foll
                       <p>{getStartingMsg(platform)}</p>
                     </div>
                   )}
-                  {session?.status === 'error' && (
+                  {session?.status === 'error' && isFlutterSdkMissing ? (
+                    <div className="preview-placeholder preview-placeholder--error" style={{ maxWidth: '340px', margin: '0 auto', padding: '24px 16px' }}>
+                      <span className="preview-placeholder__icon">📦</span>
+                      <h3>Flutter SDK Required</h3>
+                      <p style={{ color: 'var(--text-secondary)', fontSize: '11px', lineHeight: '1.5' }}>
+                        Live preview runs locally and requires the Flutter SDK. Install Flutter or configure its path in Settings.
+                      </p>
+                      <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', background: 'rgba(255,255,255,0.04)', padding: '6px 10px', borderRadius: '4px', margin: '6px 0 10px' }}>
+                        Managed Flutter projects can still be edited and built via Cloud Build without a local SDK.
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
+                        <button
+                          type="button"
+                          className="preview-retry-btn"
+                          style={{ background: 'var(--gold)', color: '#000', borderColor: 'var(--gold)', fontWeight: 600 }}
+                          onClick={handleOpenSdkSettings}
+                        >
+                          ⚙️ Configure SDK in Settings
+                        </button>
+                        <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                          <button
+                            type="button"
+                            className="preview-retry-btn"
+                            onClick={handleOpenInstallDocs}
+                          >
+                            🌐 Install Flutter Guide
+                          </button>
+                          <button
+                            type="button"
+                            className="preview-retry-btn"
+                            onClick={handleStart}
+                            disabled={!project}
+                          >
+                            Retry
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : session?.status === 'error' ? (
                     <div className="preview-placeholder preview-placeholder--error">
                       <span className="preview-placeholder__icon">⚠️</span>
                       <h3>Preview failed</h3>
@@ -478,7 +540,7 @@ Please modify the selected element and its corresponding component files as foll
                         ✨ Auto-Fix Build
                       </button>
                     </div>
-                  )}
+                  ) : null}
                   {selectedDeviceId !== 'browser' && isRunning && (
                     <div className="preview-placeholder preview-placeholder--native" style={{ padding: '20px', textAlign: 'center' }}>
                       <span className="preview-placeholder__icon" style={{ fontSize: '32px' }}>📲</span>

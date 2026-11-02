@@ -1,9 +1,28 @@
-import { access, readdir } from 'node:fs/promises';
+import { access, mkdir, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Diagnostic, MobileEnvironment } from '@peep/shared';
-import { parseFlutterAnalyze } from '@peep/flutter-adapter';
+import { getTemplate, parseFlutterAnalyze } from '@peep/flutter-adapter';
 import type { ProcessManager } from './process-manager';
 import { FrameworkProvider, type ProviderPreviewSession } from './providers/base-provider';
+
+export function isFlutterSdkNotFoundError(msg: string): boolean {
+  if (!msg) return false;
+  const lower = msg.toLowerCase();
+  return (
+    lower.includes('flutter.bat') ||
+    lower.includes('not recognized as an internal or external command') ||
+    (lower.includes('command not found') && lower.includes('flutter')) ||
+    lower.includes('flutter: command not found') ||
+    lower.includes('flutter: not found') ||
+    lower.includes('the system cannot find the path specified') ||
+    lower.includes('the system cannot find the file specified') ||
+    lower.includes('spawn flutter enoent') ||
+    (lower.includes('enoent') && (lower.includes('flutter') || lower.includes('bin'))) ||
+    lower.includes('is flutter sdk installed') ||
+    lower.includes('flutter sdk not found') ||
+    lower.includes('exited with code 127')
+  );
+}
 
 export interface SdkInfo {
   path: string;
@@ -12,6 +31,8 @@ export interface SdkInfo {
 
 const PREVIEW_PORT = 5174;
 const PREVIEW_STARTUP_MS = 120_000;
+export const FLUTTER_SDK_NOT_FOUND_MSG =
+  'Flutter SDK not found. A local Flutter SDK is required for live preview. Please install Flutter or configure its path in Settings.';
 
 export class FlutterService extends FrameworkProvider {
   readonly id = 'flutter-local';
@@ -60,9 +81,40 @@ export class FlutterService extends FrameworkProvider {
     }
   }
 
-  async createProject(name: string, parentPath: string, _templateId?: string): Promise<string> {
-    await this.runCommand(['create', name, '--project-name', name], parentPath);
-    return join(parentPath, name);
+  async createProject(name: string, parentPath: string, templateId?: string): Promise<string> {
+    // Pass --org com.atomvs to ensure package namespace is not com.example (rejected by Google Play)
+    await this.runCommand(['create', name, '--project-name', name, '--org', 'com.atomvs'], parentPath);
+    const projectPath = join(parentPath, name);
+
+    // Apply template files if specified (or default to material-app)
+    const effectiveTemplateId = templateId || 'material-app';
+    const template = getTemplate(effectiveTemplateId);
+
+    if (template && template.files.length > 0) {
+      for (const file of template.files) {
+        const fullPath = join(projectPath, file.relativePath);
+        await mkdir(join(fullPath, '..'), { recursive: true });
+        await writeFile(fullPath, file.content, 'utf-8');
+      }
+
+      // Update test/widget_test.dart to test app entrypoint without hardcoding MyApp
+      const testPath = join(projectPath, 'test', 'widget_test.dart');
+      const testContent = `import 'package:flutter_test/flutter_test.dart';
+import 'package:${name}/main.dart' as app;
+
+void main() {
+  testWidgets('app starts', (tester) async {
+    app.main();
+    await tester.pump();
+  });
+}
+`;
+      await mkdir(join(testPath, '..'), { recursive: true });
+      await writeFile(testPath, testContent, 'utf-8');
+    }
+
+    return projectPath;
+
   }
 
   async pubGet(projectRoot: string): Promise<void> {
@@ -124,13 +176,23 @@ export class FlutterService extends FrameworkProvider {
 
       info.process.on('error', (error) => {
         clearTimeout(timeout);
-        reject(error);
+        const msg = error instanceof Error ? error.message : String(error);
+        if ((error as any)?.code === 'ENOENT' || isFlutterSdkNotFoundError(msg)) {
+          reject(new Error(FLUTTER_SDK_NOT_FOUND_MSG));
+        } else {
+          reject(error);
+        }
       });
 
       info.process.on('exit', (code) => {
         if (code !== 0 && code !== null) {
           clearTimeout(timeout);
-          reject(new Error(logs.join('\n') || `flutter run exited with code ${code}`));
+          const fullLog = logs.join('\n');
+          if (code === 127 || isFlutterSdkNotFoundError(fullLog)) {
+            reject(new Error(FLUTTER_SDK_NOT_FOUND_MSG));
+          } else {
+            reject(new Error(fullLog || `flutter run exited with code ${code}`));
+          }
         }
       });
     });
@@ -194,14 +256,25 @@ export class FlutterService extends FrameworkProvider {
         stderr += chunk.toString();
       });
 
-      info.process.on('error', reject);
+      info.process.on('error', (err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        if ((err as any)?.code === 'ENOENT' || isFlutterSdkNotFoundError(msg)) {
+          reject(new Error(FLUTTER_SDK_NOT_FOUND_MSG));
+        } else {
+          reject(err);
+        }
+      });
 
       info.process.on('close', (code) => {
         const output = stdout + stderr;
         if (code === 0) {
           resolve(output);
         } else {
-          reject(new Error(output || `flutter exited with code ${code}`));
+          if (code === 127 || isFlutterSdkNotFoundError(output)) {
+            reject(new Error(FLUTTER_SDK_NOT_FOUND_MSG));
+          } else {
+            reject(new Error(output || `flutter exited with code ${code}`));
+          }
         }
       });
     });
