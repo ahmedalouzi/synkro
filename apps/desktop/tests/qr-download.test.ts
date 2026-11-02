@@ -25,9 +25,12 @@ function makeJob(overrides: Partial<CloudBuildJob> = {}): CloudBuildJob {
 async function runTests() {
   console.log('\n  Running QR Code & Signed Download Token Tests...\n');
 
+  // A key for this test: the server has no fallback key (it is read on first use).
+  process.env.DOWNLOAD_TOKEN_SECRET = 'qr-download-test-secret-0123456789abcdef';
+
   // Test 1: Generate valid 15m signed token
   const jobId = 'a1234567-89ab-cdef-0123-456789abcdef';
-  const userId = 'u1234567-89ab-cdef-0123-456789abcdef';
+  const userId = 'b1234567-89ab-cdef-0123-456789abcdef';
   const { token, expiresAt } = createDownloadToken(jobId, userId);
 
   assert.ok(token.includes('.'), 'Token must be dot-separated payload and HMAC signature');
@@ -46,7 +49,7 @@ async function runTests() {
   // Test 3: Token bound to specific jobId — reject mismatch
   const wrongJobVerified = verifyDownloadToken(token, 'different-job-id-12345678');
   assert.strictEqual(wrongJobVerified.valid, false);
-  assert.strictEqual(wrongJobVerified.reason, 'Token is not bound to this job');
+  assert.strictEqual(wrongJobVerified.reason, 'Token is not for this build');
   console.log('  ✓ [Test 3] Token rejected when used for a different jobId');
 
   // Test 4: Tampered signature rejection
@@ -65,14 +68,14 @@ async function runTests() {
     tokenId: 'expired-test',
   };
   const data = Buffer.from(JSON.stringify(expiredPayload)).toString('base64url');
-  const secret = process.env.DOWNLOAD_TOKEN_SECRET || process.env.JWT_SECRET || process.env.SESSION_SECRET || 'synkro-download-secret-fallback-key-32b';
+  const secret = process.env.DOWNLOAD_TOKEN_SECRET as string;
   const crypto = await import('node:crypto');
   const sig = crypto.createHmac('sha256', secret).update(data).digest('base64url');
   const expiredToken = `${data}.${sig}`;
 
   const expiredVerified = verifyDownloadToken(expiredToken, jobId);
   assert.strictEqual(expiredVerified.valid, false);
-  assert.strictEqual(expiredVerified.reason, 'Download token has expired');
+  assert.strictEqual(expiredVerified.reason, 'Download link has expired');
   console.log('  ✓ [Test 5] Expired token correctly rejected');
 
   // Test 6: QR Code generation produces valid image data URL

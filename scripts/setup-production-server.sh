@@ -270,6 +270,11 @@ cat <<'WARNING'
       too, and their apps can no longer be updated on Google Play.
     - Do not change it on a running system: a new key needs a re-encrypt
       step for every stored signing key first.
+[!] DOWNLOAD_TOKEN_SECRET (in the server .env) signs the APK download links.
+    The server does not start in production without it. Make one with:
+        openssl rand -base64 48
+    It must be its own value (not a session/JWT secret). Rotating it is safe:
+    it only expires the download links already handed out.
 ==============================================================================
 WARNING
 

@@ -1,4 +1,3 @@
-import crypto from 'node:crypto';
 import pino from 'pino';
 import express, { Router } from 'express';
 import multer from 'multer';
@@ -23,65 +22,16 @@ const authService = new AuthenticationRouter();
 
 const logger = pino({ name: 'build-download' });
 
-const DOWNLOAD_TOKEN_SECRET = process.env.DOWNLOAD_TOKEN_SECRET || process.env.JWT_SECRET || process.env.SESSION_SECRET || 'synkro-download-secret-fallback-key-32b';
-const DOWNLOAD_TOKEN_TTL_MS = 15 * 60 * 1000; // 15 minutes
+// Signed download links (download-token.ts); re-exported for the tests that import them from here.
+import { createDownloadToken, verifyDownloadToken } from './download-token';
+export { createDownloadToken, verifyDownloadToken };
+export type { DownloadTokenPayload } from './download-token';
 
-export interface DownloadTokenPayload {
-  jobId: string;
-  userId: string;
-  purpose: 'apk-download';
-  exp: number; // timestamp in ms
-  tokenId: string;
-}
-
-export function createDownloadToken(jobId: string, userId: string): { token: string; expiresAt: number } {
-  const expiresAt = Date.now() + DOWNLOAD_TOKEN_TTL_MS;
-  const payload: DownloadTokenPayload = {
-    jobId,
-    userId,
-    purpose: 'apk-download',
-    exp: expiresAt,
-    tokenId: crypto.randomBytes(8).toString('hex'),
-  };
-  const data = Buffer.from(JSON.stringify(payload)).toString('base64url');
-  const sig = crypto.createHmac('sha256', DOWNLOAD_TOKEN_SECRET).update(data).digest('base64url');
-  return { token: `${data}.${sig}`, expiresAt };
-}
-
-export function verifyDownloadToken(token: string, expectedJobId: string): { valid: boolean; payload?: DownloadTokenPayload; reason?: string } {
-  try {
-    const parts = token.split('.');
-    if (parts.length !== 2) {
-      return { valid: false, reason: 'Malformed token format' };
-    }
-    const [data, sig] = parts;
-    const expectedSig = crypto.createHmac('sha256', DOWNLOAD_TOKEN_SECRET).update(data).digest('base64url');
-    const sigBuf = Buffer.from(sig);
-    const expBuf = Buffer.from(expectedSig);
-    if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
-      return { valid: false, reason: 'Invalid signature' };
-    }
-    const payload: DownloadTokenPayload = JSON.parse(Buffer.from(data, 'base64url').toString('utf8'));
-    if (payload.purpose !== 'apk-download') {
-      return { valid: false, reason: 'Invalid token purpose' };
-    }
-    if (payload.jobId !== expectedJobId) {
-      return { valid: false, reason: 'Token is not bound to this job' };
-    }
-    if (Date.now() > payload.exp) {
-      return { valid: false, reason: 'Download token has expired' };
-    }
-    return { valid: true, payload };
-  } catch (err: any) {
-    return { valid: false, reason: err?.message || 'Token verification failed' };
-  }
-}
-
-
-// Middleware for true authentication
+// Middleware for true authentication. The session token comes in a header only, never in the URL (?token=):
+// URLs end up in proxy and access logs, browser history and Referer headers.
 const requireAuth = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
   try {
-    const token = (req.headers['authorization'] || '').replace('Bearer ', '') || (req.headers['session'] as string) || (req.query.token as string);
+    const token = (req.headers['authorization'] || '').replace('Bearer ', '') || (req.headers['session'] as string);
     if (!token) {
       res.status(401).json({ error: 'Unauthorized: Missing session token' });
       return;
@@ -363,37 +313,22 @@ buildRouter.get('/:jobId/download', async (req, res) => {
     return;
   }
 
-  const rawToken = (req.query.token as string) || (req.headers['authorization'] || '').replace('Bearer ', '') || (req.headers['session'] as string);
+  // Only a signed download link (?token= is that short-lived, job-bound token, never a session token).
+  const rawToken = typeof req.query.token === 'string' ? req.query.token : '';
   if (!rawToken) {
     logger.warn({ event: 'apk_download_rejected', jobId, ip: clientIp, userAgent, reason: 'Missing token' }, 'APK download missing token');
     res.status(401).json({ error: 'Unauthorized: Missing download token' });
     return;
   }
 
-  let userId: string;
-  let tokenId: string;
-
-  if (rawToken.includes('.')) {
-    const verified = verifyDownloadToken(rawToken, jobId);
-    if (!verified.valid || !verified.payload) {
-      logger.warn({ event: 'apk_download_rejected', jobId, ip: clientIp, userAgent, reason: verified.reason }, 'APK download token verification failed');
-      res.status(401).json({ error: `Unauthorized: ${verified.reason}` });
-      return;
-    }
-    userId = verified.payload.userId;
-    tokenId = verified.payload.tokenId;
-  } else {
-    // Session token fallback
-    try {
-      const session = await authService.validateSession(rawToken);
-      userId = session.userId;
-      tokenId = 'session';
-    } catch (err: any) {
-      logger.warn({ event: 'apk_download_rejected', jobId, ip: clientIp, userAgent, reason: 'Invalid session token' }, 'APK download session invalid');
-      res.status(401).json({ error: 'Unauthorized: ' + (err.message || 'Invalid session') });
-      return;
-    }
+  const verified = verifyDownloadToken(rawToken, jobId);
+  if (!verified.valid || !verified.payload) {
+    logger.warn({ event: 'apk_download_rejected', jobId, ip: clientIp, userAgent, reason: verified.reason }, 'APK download token verification failed');
+    res.status(401).json({ error: `Unauthorized: ${verified.reason}` });
+    return;
   }
+  const userId = verified.payload.userId;
+  const tokenId = verified.payload.tokenId;
 
   try {
     const dbClient = await client.connect();
@@ -402,13 +337,14 @@ buildRouter.get('/:jobId/download', async (req, res) => {
       await dbClient.query('BEGIN');
       await dbClient.query('SET LOCAL ROLE api_user');
       await dbClient.query('SELECT set_config($1, $2, true)', ['app.current_user_id', userId]);
-      
+
+      // The job must belong to the token's user: RLS enforces it, and the query says so too.
       const result = await dbClient.query(`
         SELECT id, status, artifact_url
         FROM build_jobs
-        WHERE id = $1
-      `, [jobId]);
-      
+        WHERE id = $1 AND user_id = $2
+      `, [jobId, userId]);
+
       await dbClient.query('COMMIT');
       job = result.rows[0];
     } catch (e) {

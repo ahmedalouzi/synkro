@@ -171,19 +171,18 @@ export class CloudBuildService {
       const settings = this.db.getSettingsRaw();
       if (!settings.sessionToken) return;
 
-      const url = `${this.getGatewayUrl()}/api/build/${id}/stream?token=${encodeURIComponent(settings.sessionToken)}`;
+      // The session goes in the Authorization header, never in the URL (it would land in server and proxy logs).
+      // eventsource v5 takes headers through a custom fetch; its old `headers` / `fetchParameters` options are
+      // ignored, which is why the token used to travel as ?token=.
+      const url = `${this.getGatewayUrl()}/api/build/${id}/stream`;
+      const sessionToken = settings.sessionToken;
       const EventSourceModule = await import('eventsource') as any;
       const EventSource = EventSourceModule.EventSource || EventSourceModule.default || EventSourceModule;
       const es = new EventSource(url, {
-        fetchParameters: {
-          headers: {
-            'Authorization': `Bearer ${settings.sessionToken}`,
-          }
-        },
-        // Fallback for older eventsource package versions just in case
-        headers: {
-          'Authorization': `Bearer ${settings.sessionToken}`,
-        }
+        fetch: (input: string | URL, init: RequestInit) => fetch(input, {
+          ...init,
+          headers: { ...(init?.headers as Record<string, string> | undefined), Authorization: `Bearer ${sessionToken}` },
+        }),
       });
 
       es.onmessage = (event: any) => {

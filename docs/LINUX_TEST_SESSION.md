@@ -44,6 +44,7 @@ sudo mount -a && mount | grep /var/lib/docker        # must show xfs and prjquot
 | `NODE_ENV` | `production` |
 | `DATABASE_URL` | a Postgres for the session (e.g. `docker compose -f docker-compose.test.yml up -d`) |
 | `SYNKRO_SIGNING_ENC_KEY` | from step 0 |
+| `DOWNLOAD_TOKEN_SECRET` | `openssl rand -base64 48` (its own value; signs the APK download links) |
 | `ARTIFACT_DIR` | `/var/lib/synkro/artifacts` |
 | `GOOGLE_API_KEY` | only if you also test the AI agent |
 
@@ -65,7 +66,10 @@ sudo mount -a && mount | grep /var/lib/docker        # must show xfs and prjquot
 - [ ] As synkro, start the server with `NODE_ENV=production` and **no** `SYNKRO_SIGNING_ENC_KEY`: it must exit with
       `[BOOT] SYNKRO_SIGNING_ENC_KEY is not set. Refusing to start.`
 - [ ] Same with a 16-byte key (`openssl rand -base64 16`): exits with "must be 32 bytes".
-- [ ] With the real key: starts; `pm2 start npx --name synkro-server -- tsx apps/server/src/index.ts` as synkro.
+- [ ] With the signing key but **no** `DOWNLOAD_TOKEN_SECRET`: exits with
+      `[BOOT] DOWNLOAD_TOKEN_SECRET is not set (generate one with: openssl rand -base64 48). Refusing to start.`;
+      with a short one (`openssl rand -base64 16`): exits with "shorter than 32 bytes".
+- [ ] With both keys: starts; `pm2 start npx --name synkro-server -- tsx apps/server/src/index.ts` as synkro.
 - [ ] `ps -o user= -p $(pgrep -f apps/server/src/index.ts)` prints `synkro` (the worker is not root).
 
 ## 6. Signed builds through the API (worker as synkro)

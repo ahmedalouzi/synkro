@@ -13,6 +13,7 @@ import express from 'express';
 import * as Sentry from '@sentry/node';
 import { BackendAIGateway, initDbSchema, startBuildWorker, loadSigningEncKey } from '@peep/agent/server';
 import { fetchProductionSecrets } from './secrets';
+import { downloadTokenSecret } from './download-token';
 import { execSync } from 'node:child_process';
 import { buildRouter } from './build-router';
 import { threadsRouter } from './threads-router';
@@ -47,12 +48,15 @@ async function bootstrap() {
   if (secrets.LEMONSQUEEZY_WEBHOOK_SECRET) process.env.LEMONSQUEEZY_WEBHOOK_SECRET = secrets.LEMONSQUEEZY_WEBHOOK_SECRET;
   if (secrets.STRIPE_WEBHOOK_SECRET) process.env.STRIPE_WEBHOOK_SECRET = secrets.STRIPE_WEBHOOK_SECRET;
   if (secrets.SYNKRO_SIGNING_ENC_KEY) process.env.SYNKRO_SIGNING_ENC_KEY = secrets.SYNKRO_SIGNING_ENC_KEY;
+  if (secrets.DOWNLOAD_TOKEN_SECRET) process.env.DOWNLOAD_TOKEN_SECRET = secrets.DOWNLOAD_TOKEN_SECRET;
 
   // Every Cloud Build is signed with a key stored encrypted under SYNKRO_SIGNING_ENC_KEY: without it no build
-  // can be signed, so production does not start.
+  // can be signed, so production does not start. Same for DOWNLOAD_TOKEN_SECRET, which signs the APK download
+  // links: without its own key (>= 32 bytes) anyone could sign one.
   if (process.env.NODE_ENV === 'production') {
     try {
       loadSigningEncKey();
+      downloadTokenSecret();
     } catch (err: any) {
       console.error(`[BOOT] ${err.message}. Refusing to start.`);
       process.exit(1);

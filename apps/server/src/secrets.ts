@@ -13,6 +13,7 @@ export async function fetchProductionSecrets(): Promise<Record<string, string>> 
       DATABASE_URL: process.env.DATABASE_URL || '',
       LEMONSQUEEZY_WEBHOOK_SECRET: process.env.LEMONSQUEEZY_WEBHOOK_SECRET || '',
       STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET || '',
+      DOWNLOAD_TOKEN_SECRET: process.env.DOWNLOAD_TOKEN_SECRET || '',
     };
   }
 

@@ -8,7 +8,8 @@ const authService = new AuthenticationRouter();
 
 const requireAuth = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
   try {
-    const token = (req.headers['authorization'] || '').replace('Bearer ', '') || (req.headers['session'] as string) || (req.query.token as string);
+    // Header only: a session token in the URL (?token=) lands in access logs and browser history.
+    const token = (req.headers['authorization'] || '').replace('Bearer ', '') || (req.headers['session'] as string);
     if (!token) {
       res.status(401).json({ error: 'Unauthorized: Missing session token' });
       return;

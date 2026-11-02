@@ -95,6 +95,7 @@ async function main() {
     'server-router.test.ts',
     'signing-keys-db.test.ts',
     'streaming-usage.test.ts',
+    'token-download-route.test.ts',
     'usage.test.ts',
     'worker-cancel.test.ts',
     'worker-crash-recovery.test.ts',
