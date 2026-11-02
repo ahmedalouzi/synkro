@@ -191,9 +191,10 @@ export function shouldUseRealBuildApi(envValue: string | undefined | boolean): b
 }
 
 export const buildApi: IBuildApi = (() => {
-  const envVal = (import.meta as any).env?.VITE_USE_REAL_BUILD_API;
-  const useReal = shouldUseRealBuildApi(envVal);
-  console.log('[BUILD API] VITE_USE_REAL_BUILD_API raw env value:', envVal);
-  console.log('[BUILD API] Resolved shouldUseRealBuildApi:', useReal);
+  const env = (import.meta as any).env ?? {};
+  // A release build always talks to the real Cloud Build server: without VITE_USE_REAL_BUILD_API (set nowhere)
+  // the packaged app fell back to the mock, which fakes builds. The mock is a dev-only option.
+  const useReal = env.PROD === true || shouldUseRealBuildApi(env.VITE_USE_REAL_BUILD_API);
+  if (env.DEV) console.log('[BUILD API] using', useReal ? 'the real Cloud Build API' : 'the mock (set VITE_USE_REAL_BUILD_API=true for the real one)');
   return useReal ? new RealBuildApi() : new MockBuildApi();
 })();

@@ -1,3 +1,4 @@
+import { app } from 'electron';
 import { ProductionAIGateway, MockAIGateway, GoogleGeminiAdapter } from '@peep/agent';
 import type { AIGateway, Settings } from '@peep/shared';
 import type { DatabaseService } from './db';
@@ -47,8 +48,9 @@ export function createAIGateway(db: DatabaseService, settings: Settings, options
   }
 
   // Fallback to local AI Provider for development without SaaS session
-  // SECURITY GUARD: client-side key fallback is strictly prohibited in production.
-  if (process.env.NODE_ENV === 'production') {
+  // SECURITY GUARD: client-side key fallback is strictly prohibited in production. An installed app has no
+  // NODE_ENV (the bundler does not bake it into the main process), so `app.isPackaged` is what tells a release.
+  if (app.isPackaged || process.env.NODE_ENV === 'production') {
     return { error: 'AUTH_REQUIRED: No session token present. Client-side key fallback is disabled in production. Please sign in via Settings → Account.' };
   }
   const providerName = settings.aiProvider || 'gemini';

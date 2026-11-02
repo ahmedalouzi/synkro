@@ -20,10 +20,6 @@
   "dependencies": {
     "@lydell/node-pty": "1.2.0-beta.15",
     "@monaco-editor/react": "^4.7.0",
-    "@peep/agent": "workspace:*",
-    "@peep/flutter-adapter": "workspace:*",
-    "@peep/platform-core": "workspace:*",
-    "@peep/shared": "workspace:*",
     "@sentry/electron": "^7.16.0",
     "@sentry/react": "^10.73.0",
     "@tanstack/react-virtual": "^3.14.9",
@@ -51,6 +47,10 @@
     "zustand": "^5.0.2"
   },
   "devDependencies": {
+    "@peep/agent": "workspace:*",
+    "@peep/flutter-adapter": "workspace:*",
+    "@peep/platform-core": "workspace:*",
+    "@peep/shared": "workspace:*",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/react": "^16.3.2",
     "@types/diff": "^5.2.3",

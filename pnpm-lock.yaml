@@ -16,18 +16,6 @@ importers:
       '@monaco-editor/react':
         specifier: ^4.7.0
         version: 4.7.0(monaco-editor@0.52.2)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      '@peep/agent':
-        specifier: workspace:*
-        version: link:../../packages/agent
-      '@peep/flutter-adapter':
-        specifier: workspace:*
-        version: link:../../packages/flutter-adapter
-      '@peep/platform-core':
-        specifier: workspace:*
-        version: link:../../packages/platform-core
-      '@peep/shared':
-        specifier: workspace:*
-        version: link:../../packages/shared
       '@sentry/electron':
         specifier: ^7.16.0
         version: 7.16.0(@opentelemetry/core@2.10.0(@opentelemetry/api@1.9.1))
@@ -104,6 +92,18 @@ importers:
         specifier: ^5.0.2
         version: 5.0.14(@types/react@18.3.31)(react@18.3.1)
     devDependencies:
+      '@peep/agent':
+        specifier: workspace:*
+        version: link:../../packages/agent
+      '@peep/flutter-adapter':
+        specifier: workspace:*
+        version: link:../../packages/flutter-adapter
+      '@peep/platform-core':
+        specifier: workspace:*
+        version: link:../../packages/platform-core
+      '@peep/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@testing-library/dom':
         specifier: ^10.4.1
         version: 10.4.1

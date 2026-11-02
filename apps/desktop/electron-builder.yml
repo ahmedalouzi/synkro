@@ -9,10 +9,14 @@ files:
 # node-pty's native binaries (.node, conpty.dll, OpenConsole.exe) can't be loaded from inside the asar.
 asarUnpack:
   - "**/node_modules/@lydell/node-pty*/**"
+# Releases go to the public atomvs-releases repo (not the private source repo); electron-updater reads
+# app-update.yml from the same place. A publish creates a draft release: it goes live (and the website's
+# "latest" download link and auto-update see it) only when it is published on GitHub.
 publish:
   provider: github
   owner: ahmedalouzi
-  repo: synkro
+  repo: atomvs-releases
+  releaseType: draft
 win:
   target: nsis
   icon: resources/icons/icon.ico
@@ -29,6 +33,10 @@ mac:
   # gatekeeperAssess: false
   # hardentedRuntime: true
 nsis:
+  # Atomvs-Setup-0.1.0.exe (no spaces: the website links to it by name).
+  artifactName: Atomvs-Setup-${version}.${ext}
+  installerIcon: resources/icons/icon.ico
+  uninstallerIcon: resources/icons/icon.ico
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
