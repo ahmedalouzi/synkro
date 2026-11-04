@@ -11,7 +11,7 @@ config({ path: path.join(__dirname, '../../../.env') });
 
 import express from 'express';
 import * as Sentry from '@sentry/node';
-import { BackendAIGateway, initDbSchema, startBuildWorker, loadSigningEncKey } from '@peep/agent/server';
+import { BackendAIGateway, initDbSchema, startBuildWorker, loadSigningEncKey, db, scrubString } from '@peep/agent/server';
 import { fetchProductionSecrets } from './secrets';
 import { downloadTokenSecret } from './download-token';
 import { execSync } from 'node:child_process';
@@ -26,6 +26,29 @@ async function bootstrap() {
       dsn: process.env.SENTRY_DSN,
       tracesSampleRate: 1.0,
       debug: false,
+      beforeSend(event) {
+        if (event.message) event.message = scrubString(event.message);
+        if (event.exception?.values) {
+          for (const val of event.exception.values) {
+            if (val.value) val.value = scrubString(val.value);
+          }
+        }
+        if (event.breadcrumbs) {
+          for (const bc of event.breadcrumbs) {
+            if (bc.message) bc.message = scrubString(bc.message);
+            if (bc.data) {
+              for (const key of Object.keys(bc.data)) {
+                if (typeof bc.data[key] === 'string') bc.data[key] = scrubString(bc.data[key]);
+              }
+            }
+          }
+        }
+        if (event.request?.headers) {
+          if (event.request.headers['authorization']) event.request.headers['authorization'] = '[REDACTED]';
+          if (event.request.headers['session']) event.request.headers['session'] = '[REDACTED]';
+        }
+        return event;
+      },
     });
   }
 
@@ -145,9 +168,29 @@ async function bootstrap() {
   }));
   app.use(ipRateLimiter());
 
-  // Healthcheck endpoint for AWS ECS Load Balancer
-  app.get('/health', (_req, res) => {
-    res.status(200).json({ status: 'ok' });
+  // Deep healthcheck endpoint for load balancers and uptime monitoring (BetterStack / UptimeRobot)
+  app.get('/health', async (_req, res) => {
+    const startTime = Date.now();
+    try {
+      await db.query('SELECT 1');
+      const latencyMs = Date.now() - startTime;
+      res.status(200).json({
+        status: 'ok',
+        db: 'healthy',
+        latencyMs,
+        version: commitHash,
+        uptimeSec: Math.floor(process.uptime()),
+      });
+    } catch (err: any) {
+      console.error('[HEALTH_CHECK_FAILURE]', err.message);
+      res.status(503).json({
+        status: 'error',
+        db: 'unhealthy',
+        error: err.message,
+        version: commitHash,
+        uptimeSec: Math.floor(process.uptime()),
+      });
+    }
   });
 
   // Attach Android Cloud Build Router
@@ -276,6 +319,10 @@ async function bootstrap() {
       res.status(500).json({ error: 'Internal Server Error' });
     }
   });
+
+  if (process.env.SENTRY_DSN) {
+    Sentry.setupExpressErrorHandler(app);
+  }
 
   const PORT = process.env.PORT || 8080;
   app.listen(PORT, () => {
