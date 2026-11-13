@@ -11,11 +11,5 @@
     "electron.vite.config.ts",
     "src/main/**/*",
     "src/preload/**/*"
-  ],
-  "references": [
-    { "path": "../../packages/shared" },
-    { "path": "../../packages/platform-core" },
-    { "path": "../../packages/flutter-adapter" },
-    { "path": "../../packages/agent" }
   ]
 }
