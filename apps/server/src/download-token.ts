@@ -50,19 +50,22 @@ export function downloadTokenSecret(): Buffer {
   return secret;
 }
 
-function sign(key: Buffer, data: string): string {
-  return crypto.createHmac('sha256', key).update(data).digest('base64url');
+function sign(key: Buffer, jobId: string, data: string): string {
+  // Bind jobId and purpose into the HMAC input so neither needs to be repeated in the URL token.
+  return crypto.createHmac('sha256', key).update(`${jobId}:apk-download:${data}`).digest('base64url');
 }
 
 export function createDownloadToken(
   jobId: string, userId: string, key: Buffer = downloadTokenSecret(), now = Date.now(),
 ): { token: string; expiresAt: number } {
   const expiresAt = now + DOWNLOAD_TOKEN_TTL_MS;
-  const payload: DownloadTokenPayload = {
-    jobId, userId, purpose: 'apk-download', exp: expiresAt, tokenId: crypto.randomBytes(8).toString('hex'),
+  const compactPayload = {
+    userId,
+    exp: expiresAt,
+    tokenId: crypto.randomBytes(8).toString('hex'),
   };
-  const data = Buffer.from(JSON.stringify(payload)).toString('base64url');
-  return { token: `${data}.${sign(key, data)}`, expiresAt };
+  const data = Buffer.from(JSON.stringify(compactPayload)).toString('base64url');
+  return { token: `${data}.${sign(key, jobId, data)}`, expiresAt };
 }
 
 export function verifyDownloadToken(
@@ -72,21 +75,29 @@ export function verifyDownloadToken(
   if (parts.length !== 2 || !parts[0] || !parts[1]) return { valid: false, reason: 'Malformed token' };
   const [data, sig] = parts;
   const given = Buffer.from(sig);
-  const expected = Buffer.from(sign(key, data));
+  const expected = Buffer.from(sign(key, expectedJobId, data));
   if (given.length !== expected.length || !crypto.timingSafeEqual(given, expected)) {
     return { valid: false, reason: 'Invalid signature' };
   }
-  let payload: DownloadTokenPayload;
+  let raw: { userId?: unknown; exp?: unknown; tokenId?: unknown };
   try {
-    payload = JSON.parse(Buffer.from(data, 'base64url').toString('utf8'));
+    raw = JSON.parse(Buffer.from(data, 'base64url').toString('utf8'));
   } catch {
     return { valid: false, reason: 'Malformed token' };
   }
-  if (!payload || payload.purpose !== 'apk-download' || typeof payload.exp !== 'number'
-    || typeof payload.userId !== 'string' || !UUID.test(payload.userId) || typeof payload.tokenId !== 'string') {
+  if (!raw || typeof raw.exp !== 'number'
+    || typeof raw.userId !== 'string' || !UUID.test(raw.userId) || typeof raw.tokenId !== 'string') {
     return { valid: false, reason: 'Malformed token' };
   }
-  if (payload.jobId !== expectedJobId) return { valid: false, reason: 'Token is not for this build' };
-  if (now > payload.exp) return { valid: false, reason: 'Download link has expired' };
-  return { valid: true, payload };
+  if (now > raw.exp) return { valid: false, reason: 'Download link has expired' };
+  return {
+    valid: true,
+    payload: {
+      jobId: expectedJobId,
+      userId: raw.userId,
+      purpose: 'apk-download',
+      exp: raw.exp,
+      tokenId: raw.tokenId,
+    },
+  };
 }

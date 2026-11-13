@@ -1,10 +1,11 @@
-import QRCode from 'qrcode';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { useBuildStore } from '../../stores/build-store';
 import { buildApi } from '../../services/build-api';
-import { CloudBuildJob } from '@peep/shared';
+import { CloudBuildJob, CloudBuildStatus } from '@peep/shared';
 import { useI18n, t as i18nT } from '../../i18n';
+import { DepsCheckCard } from './DepsCheckCard';
+import { SpaceQrPopup } from './SpaceQrPopup';
 // Styles (BuildPanel.css, xterm.css) are imported by BottomPanel.tsx: this module is also
 // loaded by the Node test harness, which can't import CSS. (An unused `?inline` import here
 // was silently dropped by the TypeScript transform, so the panel rendered unstyled.)
@@ -27,6 +28,26 @@ const ICON = {
   refresh: 'M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67',
 };
 
+export const QR_INLINE_OPTIONS = {
+  width: 256,
+  margin: 4,
+  errorCorrectionLevel: 'M' as const,
+  color: {
+    dark: '#000000',
+    light: '#ffffff',
+  },
+};
+
+export const QR_MODAL_OPTIONS = {
+  width: 400,
+  margin: 4,
+  errorCorrectionLevel: 'M' as const,
+  color: {
+    dark: '#000000',
+    light: '#ffffff',
+  },
+};
+
 export function BuildPanel() {
   const { t } = useI18n();
   const currentBuild = useBuildStore((s) => s.currentBuild);
@@ -35,77 +56,76 @@ export function BuildPanel() {
   const termInstance = useRef<Terminal | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'failed'>('idle');
-  const [qrDataUrl, setQrDataUrl] = useState<string>('');
-  const [downloadUrl, setDownloadUrl] = useState<string>(currentBuild?.artifactUrl || '');
-  const [expiresAt, setExpiresAt] = useState<number>(currentBuild?.downloadExpiresAt || (Date.now() + 15 * 60 * 1000));
-  const [isRefreshingQr, setIsRefreshingQr] = useState(false);
-  const [now, setNow] = useState(Date.now());
+  const [qrFullPageOpen, setQrFullPageOpen] = useState(false);
+  const [qrUrl, setQrUrl] = useState<string>(currentBuild?.shortUrl || '');
+  const [expiresAt, setExpiresAt] = useState<number>(currentBuild?.shortExpiresAt || (Date.now() + 15 * 60 * 1000));
+  const showQrBtnRef = useRef<HTMLButtonElement>(null);
+  const prevBuildRef = useRef<{ id: string; status: CloudBuildStatus } | null>(null);
+  const autoOpenedJobsRef = useRef<Set<string>>(new Set());
 
+  // Auto-open once when a build transitions to SUCCESS for an APK build
   useEffect(() => {
-    if (currentBuild?.status === 'success' && currentBuild.artifactUrl) {
-      setDownloadUrl(currentBuild.artifactUrl);
-      if (currentBuild.downloadExpiresAt) {
-        setExpiresAt(currentBuild.downloadExpiresAt);
-      }
+    if (!currentBuild) {
+      prevBuildRef.current = null;
+      return;
     }
-  }, [currentBuild?.id, currentBuild?.status, currentBuild?.artifactUrl, currentBuild?.downloadExpiresAt]);
+    const prev = prevBuildRef.current;
+    const isTransitionToSuccess =
+      prev !== null &&
+      prev.id === currentBuild.id &&
+      (prev.status === 'running' || prev.status === 'queued') &&
+      currentBuild.status === 'success';
+
+    const isApk = (currentBuild.target || 'apk') === 'apk' || currentBuild.target === 'both';
+
+    if (isTransitionToSuccess && isApk && !autoOpenedJobsRef.current.has(currentBuild.id)) {
+      autoOpenedJobsRef.current.add(currentBuild.id);
+      setQrFullPageOpen(true);
+    }
+
+    prevBuildRef.current = { id: currentBuild.id, status: currentBuild.status };
+  }, [currentBuild?.id, currentBuild?.status, currentBuild?.target]);
 
   useEffect(() => {
     if (currentBuild?.status !== 'success') return;
-    const interval = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(interval);
-  }, [currentBuild?.status]);
-
-  useEffect(() => {
-    if (!downloadUrl) {
-      setQrDataUrl('');
+    if (currentBuild.shortUrl) {
+      setQrUrl(currentBuild.shortUrl);
+      if (currentBuild.shortExpiresAt) {
+        setExpiresAt(currentBuild.shortExpiresAt);
+      }
       return;
     }
-    let active = true;
-    QRCode.toDataURL(downloadUrl, {
-      width: 140,
-      margin: 1,
-      color: {
-        dark: '#0f172a',
-        light: '#ffffff',
-      },
-    }).then((url) => {
-      if (active) setQrDataUrl(url);
-    }).catch((err) => {
-      console.error('Failed to generate QR code', err);
-    });
-    return () => { active = false; };
-  }, [downloadUrl]);
-
-  const remainingSec = Math.max(0, Math.floor((expiresAt - now) / 1000));
-  const isExpired = remainingSec <= 0;
-  const remainingMin = Math.ceil(remainingSec / 60);
-
-  const handleRefreshQr = useCallback(async () => {
-    if (!currentBuild) return;
-    setIsRefreshingQr(true);
-    try {
-      if (buildApi.getDownloadToken) {
-        const res = await buildApi.getDownloadToken(currentBuild.id);
-        setDownloadUrl(res.downloadUrl);
-        setExpiresAt(res.expiresAt);
-        updateCurrentBuild({
-          artifactUrl: res.downloadUrl,
-          downloadToken: res.token,
-          downloadExpiresAt: res.expiresAt,
+    if (buildApi.createShortLink) {
+      let active = true;
+      buildApi.createShortLink(currentBuild.id)
+        .then((res) => {
+          if (!active) return;
+          setQrUrl(res.url);
+          setExpiresAt(res.expiresAt);
+          updateCurrentBuild({ shortUrl: res.url, shortExpiresAt: res.expiresAt });
+        })
+        .catch((err) => {
+          console.error('Failed to create APK short link', err);
         });
-      } else {
-        const updated = await buildApi.getBuild(currentBuild.id);
-        updateCurrentBuild(updated);
-        if (updated.artifactUrl) setDownloadUrl(updated.artifactUrl);
-        if (updated.downloadExpiresAt) setExpiresAt(updated.downloadExpiresAt);
-      }
-    } catch (err) {
-      console.error('Failed to refresh download token', err);
-    } finally {
-      setIsRefreshingQr(false);
+      return () => { active = false; };
     }
-  }, [currentBuild?.id, updateCurrentBuild]);
+  }, [currentBuild?.id, currentBuild?.status, currentBuild?.shortUrl, currentBuild?.shortExpiresAt, updateCurrentBuild]);
+
+  const handleCloseQrPopup = useCallback(() => {
+    setQrFullPageOpen(false);
+    setTimeout(() => {
+      showQrBtnRef.current?.focus();
+    }, 0);
+  }, []);
+
+  const handleShortLinkUpdated = useCallback(
+    (url: string, exp: number) => {
+      setQrUrl(url);
+      setExpiresAt(exp);
+      updateCurrentBuild({ shortUrl: url, shortExpiresAt: exp });
+    },
+    [updateCurrentBuild]
+  );
 
   // Status polling timer
   useEffect(() => {
@@ -189,9 +209,9 @@ export function BuildPanel() {
   }, [currentBuild]);
 
   const handleDownload = useCallback(() => {
-    const url = downloadUrl || currentBuild?.artifactUrl;
+    const url = currentBuild?.artifactUrl;
     if (url) window.open(url, '_blank');
-  }, [downloadUrl, currentBuild?.artifactUrl]);
+  }, [currentBuild?.artifactUrl]);
 
   const handleCopyLog = useCallback(() => {
     const term = termInstance.current;
@@ -221,6 +241,7 @@ export function BuildPanel() {
   if (!currentBuild) {
     return (
       <div id="build-panel-empty" className="build-panel empty">
+        <DepsCheckCard />
         <div className="build-empty-icon"><Icon d={ICON.build} /></div>
         <div className="build-empty-title">{t('build.noActiveBuild')}</div>
         <div className="build-empty-hint">{t('build.emptyHintPre')} <strong>{t('build.buildApk')}</strong> {t('build.emptyHintMid')} <kbd>Ctrl+Shift+B</kbd> {t('build.emptyHintPost')}</div>
@@ -231,6 +252,7 @@ export function BuildPanel() {
 
   return (
     <div id="build-panel" className="build-panel">
+      <DepsCheckCard />
       <div className="build-header">
         <div className="build-info">
           <span id="build-status-badge" className={`status-badge ${currentBuild.status || 'unknown'}`} data-status={currentBuild.status || 'unknown'}>
@@ -272,44 +294,33 @@ export function BuildPanel() {
         </div>
       )}
 
-      {currentBuild.status === 'success' && (downloadUrl || currentBuild.artifactUrl) && (
-        <div id="build-qr-banner" className="build-qr-banner">
-          <div className="build-qr-preview">
-            {qrDataUrl ? (
-              <img id="build-qr-img" className="build-qr-img" src={qrDataUrl} alt="APK Download QR Code" />
-            ) : (
-              <div className="build-qr-skeleton" />
-            )}
+      {currentBuild.status === 'success' && (
+        <div id="build-phone-install-row" className="build-phone-install-row">
+          <div className="build-phone-install-info">
+            <Icon d={ICON.phone} />
+            <span className="build-phone-install-label">{t('build.installOnPhone')}</span>
           </div>
-          <div className="build-qr-details">
-            <div className="build-qr-title">
-              <Icon d={ICON.phone} />
-              <span>{t('build.scanWithPhone')}</span>
-            </div>
-            <div className="build-qr-expiry">
-              {isExpired ? (
-                <span className="build-qr-expired-badge">{t('build.qrExpired')}</span>
-              ) : (
-                <span className="build-qr-expiry-text">
-                  {t('build.qrExpiresIn', { time: `${remainingMin}m` })}
-                </span>
-              )}
-            </div>
-            <div className="build-qr-actions">
-              <button
-                id="build-qr-refresh-btn"
-                type="button"
-                className="btn-qr-refresh"
-                onClick={handleRefreshQr}
-                disabled={isRefreshingQr}
-                title={t('build.refreshQr')}
-              >
-                <Icon d={ICON.refresh} />
-                {isRefreshingQr ? t('build.refreshing') : t('build.refreshQr')}
-              </button>
-            </div>
-          </div>
+          <button
+            ref={showQrBtnRef}
+            id="build-show-qr-btn"
+            type="button"
+            className="btn-show-qr"
+            onClick={() => setQrFullPageOpen(true)}
+            title={t('build.showQr')}
+          >
+            {t('build.showQr')}
+          </button>
         </div>
+      )}
+
+      {qrFullPageOpen && currentBuild && (
+        <SpaceQrPopup
+          jobId={currentBuild.id}
+          initialShortUrl={qrUrl}
+          initialExpiresAt={expiresAt}
+          onClose={handleCloseQrPopup}
+          onShortLinkUpdated={handleShortLinkUpdated}
+        />
       )}
 
       <div id="build-logs-container" className="build-logs-container" ref={termRef} />
@@ -423,15 +434,27 @@ export function renderBuildPanel(opts: BuildPanelOpts, doc: Document): HTMLEleme
     root.append(banner);
   }
 
-  if (currentBuild.status === 'success' && currentBuild.artifactUrl) {
-    const qrBanner = doc.createElement('div');
-    qrBanner.id = 'build-qr-banner';
-    qrBanner.className = 'build-qr-banner';
-    const qrTitle = doc.createElement('div');
-    qrTitle.className = 'build-qr-title';
-    qrTitle.textContent = i18nT('build.scanWithPhone');
-    qrBanner.append(qrTitle);
-    root.append(qrBanner);
+  if (currentBuild.status === 'success') {
+    const installRow = doc.createElement('div');
+    installRow.id = 'build-phone-install-row';
+    installRow.className = 'build-phone-install-row';
+
+    const info = doc.createElement('div');
+    info.className = 'build-phone-install-info';
+
+    const label = doc.createElement('span');
+    label.className = 'build-phone-install-label';
+    label.textContent = i18nT('build.installOnPhone');
+    info.append(label);
+
+    const showQrBtn = doc.createElement('button');
+    showQrBtn.id = 'build-show-qr-btn';
+    showQrBtn.type = 'button';
+    showQrBtn.className = 'btn-show-qr';
+    showQrBtn.textContent = i18nT('build.showQr');
+
+    installRow.append(info, showQrBtn);
+    root.append(installRow);
   }
 
   // Log container (xterm target in real React; a <div> in test harness)

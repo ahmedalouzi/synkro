@@ -102,11 +102,14 @@ const CHECK_FAILED = /Error lines in the output \(|^Preview: (error|not running)
 
 const CHANGE_TOOLS = new Set(['propose_file_edit', 'patch_file', 'delete_file', 'rename_file', 'bootstrap_project']);
 const PACKAGE_COMMAND = /\b(npm|pnpm|yarn|bun)\s+(install|i|ci|add|remove|uninstall|rm)\b|\bexpo\s+install\b/i;
-const DEPS_CHECK_COMMAND = /\bexpo\s+install\b.*--check\b/i;
+const DEPS_CHECK_COMMAND = /\bexpo\s+install\b.*--check\b|\bnpm\s+(ls|list)\b/i;
 const TYPECHECK_COMMAND = /\btsc\b|\b(flutter|dart)\s+analyze\b/i;
 /** Notes, not the app: the plan and walkthrough under .peep/, Markdown and text files. */
 const NOTES = /(^|[\\/])\.peep[\\/]|\.(md|txt)$/i;
-/** The Expo dependency check the app appends to a package command's output (agent-service run_command). */
+/**
+ * The Expo dependency check the app appends to a package command's output (agent-service run_command), followed
+ * by `npm ls --depth=0` in npm projects: a non-zero exit in either fails the check.
+ */
 const DEPS_CHECK_MARKER = 'npx expo install --check:';
 
 export type VerificationRole = 'change' | 'deps' | 'depscheck' | 'typecheck' | 'preview' | null;
@@ -180,7 +183,7 @@ export class RunVerification {
     if (this.checks.typecheck === 'failed') gaps.push('the type check reports errors');
     if (this.checks.preview === 'missing') gaps.push('the preview was not checked after the last change');
     if (this.checks.preview === 'failed') gaps.push('the preview shows errors or an empty screen');
-    if (this.deps === 'failed') gaps.push("some packages do not match the project's Expo SDK (npx expo install --check)");
+    if (this.deps === 'failed') gaps.push("some packages do not match the project's Expo SDK or each other's peer dependencies (npx expo install --check, npm ls --depth=0); Cloud Build would fail on them");
     return gaps;
   }
 

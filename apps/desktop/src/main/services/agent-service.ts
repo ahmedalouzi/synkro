@@ -53,7 +53,7 @@ import { ProjectIndexer, ProjectRetrieval, MemoryManager, MemoryRetrieval } from
 import type { PlatformRegistry } from './platform-registry';
 import type { PreviewManager } from './preview-manager';
 import { formatPreviewReport, waitForBundle } from './preview-log';
-import { EXPO_DEPS_CHECK, changesDependencies, isExpoProject, toExpoInstall } from './expo-deps';
+import { EXPO_DEPS_CHECK, NPM_PEERS_CHECK, changesDependencies, isExpoProject, toExpoInstall, usesNpm } from './expo-deps';
 
 export class AgentService {
   private pendingEdits: ProposedEdit[] = [];
@@ -497,9 +497,11 @@ export class AgentService {
             };
 
             let result = rewriteNote + await runCaptured(commandStr);
-            // After a dependency change in an Expo project, check every package against the SDK.
+            // After a dependency change in an Expo project, check every package against the SDK, and (npm) for
+            // unmet peer dependencies: Cloud Build's npm ci fails on those even when the preview runs.
             if (expoProject && changesDependencies(commandStr)) {
               result += `\n\n${EXPO_DEPS_CHECK}:\n${await runCaptured(EXPO_DEPS_CHECK)}`;
+              if (await usesNpm(projectPath)) result += `\n\n${NPM_PEERS_CHECK}:\n${await runCaptured(NPM_PEERS_CHECK)}`;
             }
             return result;
           }

@@ -15,7 +15,7 @@ import { BackendAIGateway, initDbSchema, startBuildWorker, loadSigningEncKey, db
 import { fetchProductionSecrets } from './secrets';
 import { downloadTokenSecret } from './download-token';
 import { execSync } from 'node:child_process';
-import { buildRouter } from './build-router';
+import { buildRouter, shortLinkDownloadRouter } from './build-router';
 import { threadsRouter } from './threads-router';
 import { billingRouter } from './billing-router';
 import { requestLogLine, authLogLine } from './log-redact';
@@ -195,6 +195,8 @@ async function bootstrap() {
 
   // Attach Android Cloud Build Router
   app.use('/api/build', buildRouter);
+  // Attach public short-link APK download router
+  app.use('/d', shortLinkDownloadRouter);
 
   // Attach Chat Threads Router
   app.use('/v1/threads', threadsRouter);
