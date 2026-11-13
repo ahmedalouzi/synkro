@@ -1344,6 +1344,10 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
   };
   ipcMain.handle(IPC_CHANNELS.CLOUD_BUILD_CHECK_DEPS, async (_event, projectPath: string) => checkBuildDeps(openProject(projectPath)));
   ipcMain.handle(IPC_CHANNELS.CLOUD_BUILD_FIX_DEPS, async (_event, projectPath: string) => fixBuildDeps(openProject(projectPath)));
+  ipcMain.handle(IPC_CHANNELS.CLOUD_BUILD_SHORT_LINK, async (_event, id: string) => {
+    if (!cloudBuildService) throw new Error('Cloud build service not initialized');
+    return cloudBuildService.createShortLink(id);
+  });
 
   return { db, workspace, flutter, processManager, previewManager, agentService, gitService, terminalService, telemetryService, autoUpdateService: autoUpdateService! };
 }

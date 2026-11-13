@@ -24,8 +24,16 @@ const logger = pino({ name: 'build-download' });
 
 // Signed download links (download-token.ts); re-exported for the tests that import them from here.
 import { createDownloadToken, verifyDownloadToken } from './download-token';
+import {
+  createShortLink,
+  PgShortLinkStore,
+  resolveShortLink,
+  ShortLinkStore,
+} from './short-link';
 export { createDownloadToken, verifyDownloadToken };
 export type { DownloadTokenPayload } from './download-token';
+
+const defaultShortLinkStore = new PgShortLinkStore(client);
 
 // Middleware for true authentication. The session token comes in a header only, never in the URL (?token=):
 // URLs end up in proxy and access logs, browser history and Referer headers.
@@ -176,18 +184,34 @@ buildRouter.get('/history', requireAuth, async (req, res) => {
       `, [userId]);
       
       await dbClient.query('COMMIT');
-      const rows = result.rows.map((row: any) => {
-        if (row.status === 'success' && row.artifactUrl) {
-          const { token, expiresAt } = createDownloadToken(row.id, userId);
-          return {
-            ...row,
-            downloadToken: token,
-            downloadExpiresAt: expiresAt,
-            artifactUrl: `/api/build/${row.id}/download?token=${token}`,
-          };
-        }
-        return row;
-      });
+      const rows = await Promise.all(
+        result.rows.map(async (row: any) => {
+          if (row.status === 'success' && row.artifactUrl) {
+            const { token, expiresAt } = createDownloadToken(row.id, userId);
+            let shortUrl: string | undefined;
+            let shortExpiresAt: number | undefined;
+            try {
+              const short = await createShortLink({
+                jobId: row.id,
+                userId: userId.toString(),
+                store: defaultShortLinkStore,
+              });
+              shortUrl = short.url;
+              shortExpiresAt = short.expiresAt;
+            } catch (err) {
+              logger.warn({ event: 'short_link_mint_skipped', jobId: row.id, error: String(err) }, 'Skipped short link minting in history');
+            }
+            return {
+              ...row,
+              downloadToken: token,
+              downloadExpiresAt: expiresAt,
+              artifactUrl: `/api/build/${row.id}/download?token=${token}`,
+              ...(shortUrl ? { shortUrl, shortExpiresAt } : {}),
+            };
+          }
+          return row;
+        })
+      );
       res.json(rows);
     } catch (e) {
       await dbClient.query('ROLLBACK');
@@ -235,6 +259,17 @@ buildRouter.get('/:jobId', requireAuth, async (req, res) => {
         job.downloadToken = token;
         job.downloadExpiresAt = expiresAt;
         job.artifactUrl = `/api/build/${job.id}/download?token=${token}`;
+        try {
+          const short = await createShortLink({
+            jobId: job.id,
+            userId: userId.toString(),
+            store: defaultShortLinkStore,
+          });
+          job.shortUrl = short.url;
+          job.shortExpiresAt = short.expiresAt;
+        } catch (err) {
+          logger.warn({ event: 'short_link_mint_skipped', jobId: job.id, error: String(err) }, 'Skipped short link minting in job status');
+        }
       }
       res.json(job);
     } catch (e) {
@@ -299,6 +334,60 @@ buildRouter.get('/:jobId/download-token', requireAuth, async (req, res) => {
     });
   } catch (err) {
     console.error('[GET /build/:jobId/download-token]', err);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+async function fetchOwnedJobStatus(jobId: string, userId: string): Promise<{ id: string; status: string } | null> {
+  const dbClient = await client.connect();
+  try {
+    await dbClient.query('BEGIN');
+    await dbClient.query('SET LOCAL ROLE api_user');
+    await dbClient.query('SELECT set_config($1, $2, true)', ['app.current_user_id', userId]);
+    const result = await dbClient.query(
+      `SELECT id, status FROM build_jobs WHERE id = $1`,
+      [jobId]
+    );
+    await dbClient.query('COMMIT');
+    return result.rows[0] ?? null;
+  } catch (e) {
+    await dbClient.query('ROLLBACK').catch(() => {});
+    throw e;
+  } finally {
+    dbClient.release();
+  }
+}
+
+buildRouter.post('/:jobId/short-link', requireAuth, async (req, res) => {
+  try {
+    const userId = (req as any).user.userId;
+    const jobId = req.params.jobId;
+
+    if (!isValidJobId(jobId)) {
+      res.status(400).json({ error: 'Invalid jobId: must be a valid UUID' });
+      return;
+    }
+
+    const job = await fetchOwnedJobStatus(jobId, userId);
+    if (!job) {
+      res.status(404).json({ error: 'Build job not found' });
+      return;
+    }
+
+    if (job.status !== 'success') {
+      res.status(400).json({ error: 'Artifact not ready or build failed' });
+      return;
+    }
+
+    const { url, expiresAt } = await createShortLink({
+      jobId: job.id,
+      userId: userId.toString(),
+      store: defaultShortLinkStore,
+    });
+
+    res.json({ url, expiresAt });
+  } catch (err) {
+    logger.error({ event: 'short_link_create_error', error: String(err) }, 'Error creating short link');
     res.status(500).json({ error: 'Internal Server Error' });
   }
 });
@@ -394,26 +483,163 @@ buildRouter.get('/:jobId/download', async (req, res) => {
       artifactPath,
     }, `Serving APK download for job ${jobId}`);
 
-    res.setHeader('Content-Type', 'application/vnd.android.package-archive');
-    res.setHeader('Content-Disposition', 'attachment; filename="app-release.apk"');
-    const stream = fs.createReadStream(artifactPath);
-    stream.on('error', (err) => {
-      logger.error({ event: 'apk_download_stream_error', jobId, error: err.message }, 'Download stream error');
-      if (!res.headersSent) {
-        res.status(500).json({ error: 'Failed to stream artifact' });
-      } else {
-        res.destroy();
-      }
-    });
-    res.on('close', () => {
-      stream.destroy();
-    });
-    stream.pipe(res);
+    streamApkFile(res, artifactPath, jobId, logger);
   } catch (err) {
     logger.error({ event: 'apk_download_error', jobId, error: String(err) }, 'Error in download route');
     res.status(500).json({ error: 'Internal Server Error' });
   }
 });
+
+async function streamApkFile(
+  res: express.Response,
+  artifactPath: string,
+  jobId: string,
+  log: pino.Logger
+): Promise<void> {
+  const fs = await import('node:fs');
+  const stat = fs.statSync(artifactPath);
+  res.setHeader('Content-Type', 'application/vnd.android.package-archive');
+  res.setHeader('Content-Disposition', 'attachment; filename="app-release.apk"');
+  res.setHeader('Content-Length', String(stat.size));
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+
+  const stream = fs.createReadStream(artifactPath);
+  stream.on('error', (err) => {
+    log.error({ event: 'apk_download_stream_error', jobId, error: err.message }, 'Download stream error');
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Failed to stream artifact' });
+    } else {
+      res.destroy();
+    }
+  });
+  res.on('close', () => {
+    stream.destroy();
+  });
+  stream.pipe(res);
+}
+
+export interface ShortLinkRouterOptions {
+  store?: ShortLinkStore;
+  rateLimitMax?: number;
+  rateLimitWindowMs?: number;
+  log?: pino.Logger;
+  queryJob?: (jobId: string, userId: string) => Promise<{ id: string; status: string } | null>;
+}
+
+/**
+ * Public short-link download router mounted at /d.
+ * Streams the APK directly on GET /d/:code with no HTML or redirect.
+ */
+export function createShortLinkRouter(options: ShortLinkRouterOptions = {}): Router {
+  const router = express.Router();
+  const store = options.store ?? defaultShortLinkStore;
+  const log = options.log ?? logger;
+  const queryJob = options.queryJob ?? fetchOwnedJobStatus;
+  const rateLimitMax = options.rateLimitMax ?? 30;
+  const rateLimitWindowMs = options.rateLimitWindowMs ?? 60_000;
+  const ipHits = new Map<string, { count: number; resetAt: number }>();
+
+  router.get('/:code', async (req, res) => {
+    const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
+    const userAgent = req.headers['user-agent'] || 'unknown';
+    const now = Date.now();
+
+    // Per-IP rate limit
+    const entry = ipHits.get(clientIp);
+    if (!entry || entry.resetAt <= now) {
+      ipHits.set(clientIp, { count: 1, resetAt: now + rateLimitWindowMs });
+    } else {
+      entry.count += 1;
+      if (entry.count > rateLimitMax) {
+        log.warn({ event: 'short_link_rate_limited', ip: clientIp, userAgent, result: 'rate_limited' }, 'Short-link rate limit exceeded');
+        res.status(429).json({ error: 'Too many requests' });
+        return;
+      }
+    }
+
+    try {
+      const code = req.params.code;
+      const resolved = await resolveShortLink({ code, store, nowMs: now });
+      if (!resolved.ok) {
+        const status = resolved.reason === 'expired' ? 410 : 404;
+        log.warn({
+          event: 'short_link_download_attempt',
+          jobId: resolved.jobId,
+          codeId: resolved.codeId,
+          ip: clientIp,
+          userAgent,
+          result: resolved.reason,
+        }, 'Short-link download rejected');
+        res.status(status).json({ error: status === 410 ? 'Link expired' : 'Not found' });
+        return;
+      }
+
+      const { record } = resolved;
+      const job = await queryJob(record.jobId, record.userId);
+      if (!job || job.status !== 'success') {
+        log.warn({
+          event: 'short_link_download_attempt',
+          jobId: record.jobId,
+          codeId: record.id,
+          ip: clientIp,
+          userAgent,
+          result: 'job_unavailable',
+        }, 'Short-link job not found or not succeeded');
+        res.status(404).json({ error: 'Not found' });
+        return;
+      }
+
+      const fs = await import('node:fs');
+      const path = await import('node:path');
+      const destDir = process.env.ARTIFACT_DIR || '/var/lib/synkro/artifacts';
+      const resolvedDest = path.resolve(destDir);
+      const artifactPath = path.resolve(destDir, record.userId.toString(), `${record.jobId}.apk`);
+
+      if (!artifactPath.startsWith(resolvedDest + path.sep) || !fs.existsSync(artifactPath)) {
+        log.warn({
+          event: 'short_link_download_attempt',
+          jobId: record.jobId,
+          codeId: record.id,
+          ip: clientIp,
+          userAgent,
+          result: 'artifact_missing',
+        }, 'Short-link artifact missing');
+        res.status(404).json({ error: 'Not found' });
+        return;
+      }
+
+      await store.incrementUsedCount(record.id);
+
+      log.info({
+        event: 'short_link_download_attempt',
+        jobId: record.jobId,
+        codeId: record.id,
+        ip: clientIp,
+        userAgent,
+        result: 'ok',
+      }, `Serving short-link APK download for job ${record.jobId}`);
+
+      await streamApkFile(res, artifactPath, record.jobId, log);
+    } catch (err) {
+      log.error({
+        event: 'short_link_download_attempt',
+        ip: clientIp,
+        userAgent,
+        result: 'error',
+        error: String(err),
+      }, 'Error in short-link download route');
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Internal Server Error' });
+      }
+    }
+  });
+
+  return router;
+}
+
+export const shortLinkDownloadRouter: Router = createShortLinkRouter();
 
 buildRouter.post('/:jobId/cancel', requireAuth, async (req, res) => {
   try {

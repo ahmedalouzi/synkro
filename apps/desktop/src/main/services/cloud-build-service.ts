@@ -153,6 +153,19 @@ export class CloudBuildService {
     return data;
   }
 
+  async createShortLink(id: string): Promise<{ url: string; expiresAt: number }> {
+    const headers = await this.getAuthHeaders();
+    const res = await fetch(`${this.getGatewayUrl()}/api/build/${id}/short-link`, {
+      method: 'POST',
+      headers,
+    });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(`Cloud Build Short Link Failed: ${errData.error || res.statusText}`);
+    }
+    return res.json();
+  }
+
   async cancelBuild(id: string) {
     const headers = await this.getAuthHeaders();
     const res = await fetch(`${this.getGatewayUrl()}/api/build/${id}/cancel`, {

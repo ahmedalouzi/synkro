@@ -246,6 +246,24 @@ export async function initDbSchema() {
       );
     `);
 
+    // Short-lived opaque APK download short links (hashes only; raw codes are never persisted)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS download_short_links (
+        id          UUID        PRIMARY KEY,
+        code_hash   TEXT        NOT NULL UNIQUE,
+        job_id      UUID        NOT NULL REFERENCES build_jobs(id) ON DELETE CASCADE,
+        user_id     UUID        NOT NULL,
+        purpose     TEXT        NOT NULL,
+        expires_at  TIMESTAMPTZ NOT NULL,
+        created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+        used_count  INT         NOT NULL DEFAULT 0
+      );
+      CREATE INDEX IF NOT EXISTS idx_download_short_links_job_purpose
+        ON download_short_links(job_id, purpose);
+      CREATE INDEX IF NOT EXISTS idx_download_short_links_expires_at
+        ON download_short_links(expires_at);
+    `);
+
     // Enable Row-Level Security
     await client.query(`
       ALTER TABLE signing_keys ENABLE ROW LEVEL SECURITY;

@@ -8,6 +8,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { BuildPanel } from '../features/build/BuildPanel';
 // Imported here rather than in BuildPanel.tsx, which the Node test harness also loads.
 import '../features/build/BuildPanel.css';
+import '../features/build/SpaceQrPopup.css';
 import '@xterm/xterm/css/xterm.css';
 import { useBuildStore } from '../stores/build-store';
 import { askAgent } from '../features/chat/ask-agent';
