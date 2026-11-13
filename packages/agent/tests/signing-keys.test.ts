@@ -112,6 +112,9 @@ export default async function run() {
     assert.ok(!unsigned.includes(Buffer.from('gradle.properties')));
     assert.ok(ABI_INIT_SCRIPT.includes("def abis = ['arm64-v8a', 'armeabi-v7a']"));
     assert.ok(ABI_INIT_SCRIPT.includes('finalizeDsl'));
+    // No lint on release builds: lintVital pulls the libraries' test dependencies (Robolectric) and costs minutes.
+    assert.ok(ABI_INIT_SCRIPT.includes('android.lint.checkReleaseBuilds = false'));
+    assert.ok(ABI_INIT_SCRIPT.includes('lintOptions.checkReleaseBuilds = false'));
 
     // --- apksigner / aapt2 output ---
     const sample = (prefix: string, dn: string, sha: string) => [

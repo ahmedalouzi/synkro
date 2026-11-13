@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { setupBuildNetwork, verifyBuildNetwork, BUILD_NETWORK, RESOLVER_IP } from './network-setup.js';
+import { BuildLogLines } from './build-log.js';
 
 export type BuildFramework = 'flutter' | 'react-native';
 
@@ -38,9 +39,12 @@ export const PACKAGED_ABIS = ['arm64-v8a', 'armeabi-v7a'];
  * from AARs (Hermes, fbjni, ...) still ship for every ABI unless the app's ndk.abiFilters says otherwise.
  * finalizeDsl runs after the app's build.gradle, so this overrides its own abiFilters without editing the
  * user's files. Not -Pandroid.injected.build.abi: with it Gradle did not write the APK where we look for it.
- * Exported for tests.
+ *
+ * It also turns off lint on release builds (checkReleaseBuilds): assembleRelease otherwise runs lintVital, which
+ * resolves the test classpath of the libraries (Robolectric for expo-modules-core) and costs minutes. A blocked
+ * download there failed an RN build (Nov 13) that needed none of it. Exported for tests.
  */
-export const ABI_INIT_SCRIPT = `// Atomvs Cloud Build: package only ${PACKAGED_ABIS.join(' and ')}.
+export const ABI_INIT_SCRIPT = `// Atomvs Cloud Build: package only ${PACKAGED_ABIS.join(' and ')}, and no lint on release builds.
 def abis = [${PACKAGED_ABIS.map((a) => `'${a}'`).join(', ')}]
 gradle.allprojects { project ->
   project.plugins.withId('com.android.application') {
@@ -49,11 +53,13 @@ gradle.allprojects { project ->
       components.finalizeDsl { android ->
         android.defaultConfig.ndk.abiFilters.clear()
         android.defaultConfig.ndk.abiFilters.addAll(abis)
+        android.lint.checkReleaseBuilds = false
       }
     } else {
       project.afterEvaluate {
         project.android.defaultConfig.ndk.abiFilters.clear()
         project.android.defaultConfig.ndk.abiFilters.addAll(abis)
+        project.android.lintOptions.checkReleaseBuilds = false
       }
     }
   }
@@ -212,7 +218,9 @@ export function getBuildCommand(framework: BuildFramework, projectId?: string): 
 
   // Not -Pandroid.injected.build.abi: that is Android Studio's deploy-to-one-device flag, and with it Gradle did not
   // write app/build/outputs/apk/release/app-release.apk, so the worker found no APK (Oct 30, Expo on rn-sandbox:1).
-  const gradlewCmd = 'cd android && ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a,armeabi-v7a';
+  // NODE_ENV=production for the JS bundle step Gradle runs (Expo's babel preset asks for it), set on Gradle only:
+  // on npm ci it would skip devDependencies the bundle needs.
+  const gradlewCmd = 'cd android && NODE_ENV=production ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a,armeabi-v7a';
 
   // NOTE: We do NOT use `npx react-native build-android` here — the RN CLI wrapper calls
   // getTaskNames(..., 'bundle') internally, which runs bundleRelease and produces an .aab
@@ -391,15 +399,13 @@ export class DockerSandbox {
         }
       }, timeoutMs);
 
-      this.childProcess.stdout?.on('data', (data) => {
-        onLog(data.toString());
-      });
-
-      this.childProcess.stderr?.on('data', (data) => {
-        onLog(`[ERROR] ${data.toString()}`);
-      });
+      // npm and Gradle write warnings and progress to stderr, so only lines that read as errors get [ERROR].
+      const logLines = new BuildLogLines(onLog);
+      this.childProcess.stdout?.on('data', (data) => logLines.push('stdout', data.toString()));
+      this.childProcess.stderr?.on('data', (data) => logLines.push('stderr', data.toString()));
 
       this.childProcess.on('close', async (code) => {
+        logLines.flush();
         if (!isResolved) {
           isResolved = true;
           clearTimeout(timeoutTimer);

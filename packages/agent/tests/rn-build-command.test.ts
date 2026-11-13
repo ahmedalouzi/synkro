@@ -28,6 +28,9 @@ export default async function run() {
   // Phone architectures only, and a plain .apk, not an .aab (see the NOTE in docker-sandbox.ts).
   assert.ok(cmd.includes('./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a,armeabi-v7a'));
   assert.ok(!cmd.includes('bundleRelease'));
+  // The JS bundle step needs NODE_ENV; set on Gradle only (npm ci with it would skip devDependencies).
+  assert.ok(cmd.includes('NODE_ENV=production ./gradlew assembleRelease'));
+  assert.equal(cmd.split('NODE_ENV').length - 1, 1, 'NODE_ENV appears only on the Gradle step');
 
   // The config script: run it on an app.json from the old Synkro template (images that do not exist).
   const script = Buffer.from(/echo (\S+) \| base64 -d/.exec(cmd)![1], 'base64').toString('utf8');

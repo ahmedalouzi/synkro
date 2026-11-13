@@ -37,6 +37,9 @@ export default async function runNetworkSetupTests() {
       false,
       'oss.sonatype.org stays blocked until a firewalled Linux build shows it is needed',
     );
+    // Maven Central redirects some downloads to its GCP mirror; without it Gradle fails with "Name or service not known".
+    assert.equal(ALLOWLISTED_FQDNS.includes('gcp.mirrors.maven.org'), true, 'gcp.mirrors.maven.org must be allowed');
+    assert.equal(ALLOWLISTED_FQDNS.includes('maven.org'), false, 'only the mirror host, not every maven.org name');
     console.log('  ✓ Allowlist matches the tested builds.');
   }
 
