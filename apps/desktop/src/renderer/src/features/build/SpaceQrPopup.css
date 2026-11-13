@@ -179,7 +179,10 @@
 
 .space-qr-close-btn {
   position: fixed;
-  top: 18px;
+  /* Below the title bar: on Windows/Linux the native window controls (titleBarOverlay, 35px) cover the top-right
+     corner, on macOS the traffic lights the top-left (the corner this button takes in RTL). 35px when the
+     Window Controls Overlay variables are not set (macOS). */
+  top: calc(env(titlebar-area-height, 35px) + 12px);
   inset-inline-end: 20px;
   z-index: 5;
   display: inline-flex;
