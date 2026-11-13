@@ -5,6 +5,7 @@ import { useBuildStore } from '../../stores/build-store';
 import { buildApi } from '../../services/build-api';
 import { CloudBuildJob } from '@peep/shared';
 import { useI18n, t as i18nT } from '../../i18n';
+import { DepsCheckCard } from './DepsCheckCard';
 // Styles (BuildPanel.css, xterm.css) are imported by BottomPanel.tsx: this module is also
 // loaded by the Node test harness, which can't import CSS. (An unused `?inline` import here
 // was silently dropped by the TypeScript transform, so the panel rendered unstyled.)
@@ -221,6 +222,7 @@ export function BuildPanel() {
   if (!currentBuild) {
     return (
       <div id="build-panel-empty" className="build-panel empty">
+        <DepsCheckCard />
         <div className="build-empty-icon"><Icon d={ICON.build} /></div>
         <div className="build-empty-title">{t('build.noActiveBuild')}</div>
         <div className="build-empty-hint">{t('build.emptyHintPre')} <strong>{t('build.buildApk')}</strong> {t('build.emptyHintMid')} <kbd>Ctrl+Shift+B</kbd> {t('build.emptyHintPost')}</div>
@@ -231,6 +233,7 @@ export function BuildPanel() {
 
   return (
     <div id="build-panel" className="build-panel">
+      <DepsCheckCard />
       <div className="build-header">
         <div className="build-info">
           <span id="build-status-badge" className={`status-badge ${currentBuild.status || 'unknown'}`} data-status={currentBuild.status || 'unknown'}>

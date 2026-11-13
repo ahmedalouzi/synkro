@@ -2,7 +2,7 @@ import { basename, join } from 'node:path';
 import { FrameworkProvider, ProviderPreviewSession } from './base-provider';
 import type { MobileEnvironment, ValidationResult, BuildResult, TestResult, AppStartResult, AppStatusResult, AppLogsResult, RuntimeError } from '@peep/shared';
 import type { ProcessManager } from '../process-manager';
-import { fastRefreshHint, isExpoProject } from '../expo-deps';
+import { NPM_PEERS_CHECK, fastRefreshHint, isExpoProject } from '../expo-deps';
 import { existsSync } from 'node:fs';
 import { access, readFile, mkdir, writeFile } from 'node:fs/promises';
 import { getTemplate } from '@peep/flutter-adapter'; // Assuming templates are accessible here or from shared
@@ -279,17 +279,24 @@ export class ReactNativeManagedProvider extends FrameworkProvider {
     // The packages against the project's Expo SDK: a version made for a newer SDK installs and bundles fine,
     // then crashes in the browser (expo-font 58 on SDK 51: "registerWebModule is not a function").
     if (await isExpoProject(projectPath)) {
-      const depsArgs = pm === 'npm' ? ['expo', 'install', '--check'] : ['exec', 'expo', 'install', '--check'];
-      const deps = await new Promise<{ code: number; output: string }>((resolve) => {
+      const runCheck = (cmd: string, args: string[]) => new Promise<{ code: number; output: string }>((resolve) => {
         let output = '';
         // CI: report only, never prompt to fix.
-        const info = this.processManager.spawn(execCmd, depsArgs, projectPath, { CI: '1' }, { shell: false });
+        const info = this.processManager.spawn(cmd, args, projectPath, { CI: '1' }, { shell: false });
         info.process.stdout?.on('data', (d) => { output += d.toString(); });
         info.process.stderr?.on('data', (d) => { output += d.toString(); });
         info.process.on('error', () => resolve({ code: 1, output }));
         info.process.on('exit', (code) => resolve({ code: code ?? 1, output }));
       });
+      const deps = await runCheck(execCmd, pm === 'npm' ? ['expo', 'install', '--check'] : ['exec', 'expo', 'install', '--check']);
       checks.push({ type: 'expo-deps', success: deps.code === 0, exitCode: deps.code, stdout: deps.output, stderr: '' });
+      // expo install --check only knows Expo's own native modules. A JS library whose peers need a newer SDK
+      // (@react-navigation/bottom-tabs 7 wants react-native-screens 4, SDK 51 has 3.31) passes it, then npm ci
+      // fails on it in Cloud Build (ERESOLVE). npm ls reports those as "invalid".
+      if (pm === 'npm') {
+        const peers = await runCheck(process.platform === 'win32' ? 'npm.cmd' : 'npm', NPM_PEERS_CHECK.split(' ').slice(1));
+        checks.push({ type: 'npm-peers', success: peers.code === 0, exitCode: peers.code, stdout: peers.output, stderr: '' });
+      }
     }
 
     const blockingErrors = checks.filter(c => !c.success).length;

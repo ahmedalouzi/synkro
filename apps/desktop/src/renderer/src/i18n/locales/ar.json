@@ -74,7 +74,19 @@
     "qrExpiresIn": "تنتهي صلاحية الرابط خلال {time}",
     "qrExpired": "انتهت صلاحية الرابط",
     "refreshQr": "تحديث رمز QR",
-    "refreshing": "جارٍ التحديث..."
+    "refreshing": "جارٍ التحديث...",
+    "depsChecking": "جارٍ فحص الحزم قبل الرفع…",
+    "depsFixing": "جارٍ إصلاح الحزم (npx expo install --fix)…",
+    "depsTitle": "سيفشل Cloud Build بسبب هذه الحزم",
+    "depsHint": "خادم البناء يثبّت الحزم بـ npm ci، وهو يرفض الحزم التي لا تتوافق إصداراتها مع بعضها أو مع Expo SDK (ERESOLVE). قد تعمل المعاينة رغم ذلك.",
+    "depsStillTitle": "ما زالت بعض الحزم متعارضة",
+    "depsStillHint": "الأمر npx expo install --fix يصلح فقط الحزم التي يعرفها Expo. هذه المكتبات تحتاج إصدارًا يتوافق مع Expo SDK.",
+    "depsMore": "+{count} أخرى",
+    "depsFix": "إصلاح الحزم",
+    "depsAskAgent": "اطلب من Atomvs الإصلاح",
+    "depsBuildAnyway": "ابنِ على أي حال",
+    "depsDismiss": "إغلاق",
+    "depsAskMessage": "سيفشل Cloud Build: يُظهر npm مشاكل الحزم التالية (npm ls --depth=0 / npx expo install --check):\n{problems}\nثبّت الإصدارات التي تتوافق مع Expo SDK في هذا المشروع (مثلًا React Navigation 6 على SDK 51) بدون --legacy-peer-deps، ثم افحص مجددًا بـ npm ls --depth=0."
   },
   "titlebar": {
     "search": "بحث",

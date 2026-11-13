@@ -74,7 +74,19 @@
     "qrExpiresIn": "Link expires in {time}",
     "qrExpired": "Link expired",
     "refreshQr": "Refresh QR link",
-    "refreshing": "Refreshing..."
+    "refreshing": "Refreshing...",
+    "depsChecking": "Checking dependencies before the upload…",
+    "depsFixing": "Fixing dependencies (npx expo install --fix)…",
+    "depsTitle": "Cloud Build would fail on these packages",
+    "depsHint": "The build server installs with npm ci, which rejects packages whose versions don't match each other or your Expo SDK (ERESOLVE). Your preview can still work.",
+    "depsStillTitle": "Some packages still conflict",
+    "depsStillHint": "npx expo install --fix only fixes packages Expo knows. These libraries need a version that matches your Expo SDK.",
+    "depsMore": "+{count} more",
+    "depsFix": "Fix dependencies",
+    "depsAskAgent": "Ask Atomvs to fix",
+    "depsBuildAnyway": "Build anyway",
+    "depsDismiss": "Dismiss",
+    "depsAskMessage": "Cloud Build would fail: npm reports these dependency problems (npm ls --depth=0 / npx expo install --check):\n{problems}\nInstall the versions that match this project's Expo SDK (for example React Navigation 6 on SDK 51), without --legacy-peer-deps, and check again with npm ls --depth=0."
   },
   "titlebar": {
     "search": "Search",

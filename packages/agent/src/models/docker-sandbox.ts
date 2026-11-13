@@ -155,17 +155,39 @@ if (fs.existsSync('app.json')) {
 // Base64 keeps the script clear of shell quoting.
 const PREPARE_EXPO_CONFIG = `echo ${Buffer.from(PREPARE_EXPO_CONFIG_JS).toString('base64')} | base64 -d > /tmp/prepare-expo-config.js && node /tmp/prepare-expo-config.js`;
 
+/**
+ * `npm_install ci|install`: installs the packages the way Expo's build service does. `npm ci` uses the lockfile
+ * when there is one (a lockfile out of step with package.json falls back to `npm install`). A peer dependency
+ * conflict (ERESOLVE) is retried once with --legacy-peer-deps, with a warning in the build log: the same project
+ * installs locally, where npm is often run with that flag, so it must not fail only on the server.
+ * POSIX sh (the image's /bin/sh may be dash): no PIPESTATUS, so npm's exit code goes through a file. Exported for tests.
+ */
+export const NPM_INSTALL_FN = [
+  'npm_install() {',
+  'if [ "$1" = ci ] && [ -f package-lock.json ]; then set -- ci; else set -- install; fi;',
+  '( npm "$1" --no-audit --no-fund 2>&1; echo $? > /tmp/npm-status ) | tee /tmp/npm-install.log;',
+  '[ "$(cat /tmp/npm-status)" = 0 ] && return 0;',
+  'if [ "$1" = ci ] && grep -q EUSAGE /tmp/npm-install.log; then',
+  'echo "[SYSTEM] WARNING: package-lock.json does not match package.json, installing with npm install instead.";',
+  'npm_install install; return $?; fi;',
+  'if grep -q ERESOLVE /tmp/npm-install.log; then',
+  'echo "[SYSTEM] WARNING: conflicting peer dependencies (ERESOLVE). Retrying once with --legacy-peer-deps. Run npx expo install --fix in the project to fix the versions.";',
+  'npm "$1" --no-audit --no-fund --legacy-peer-deps; return $?; fi;',
+  'return 1; };',
+].join(' ');
+
 // Expo projects usually have no android/ folder, so generate it the same way the Flutter command runs
 // `flutter create`. Checks for android/gradlew, not the folder, so a half-made android/ still counts as missing.
 // CI=1 keeps prebuild non-interactive and EXPO_NO_TELEMETRY stops it calling Expo's servers. With the default
 // template it only fetches expo-template-bare-minimum from the npm registry, which the network allowlist covers.
-// --no-install skips prebuild's own install; npm install runs again after it in case package.json changed.
+// --no-install skips prebuild's own install; the install runs again after it in case package.json changed (then
+// the lockfile may no longer match, so `npm install`, not `npm ci`).
 const ENSURE_RN_ANDROID_PROJECT = [
   '( [ -f android/gradlew ] || (',
   '( [ -d node_modules/expo ] || { echo "[SYSTEM] There is no android/ project and this is not an Expo project, so one cannot be generated." >&2; exit 1; } )',
   `&& ${PREPARE_EXPO_CONFIG}`,
   '&& CI=1 EXPO_NO_TELEMETRY=1 npx expo prebuild --platform android --no-install',
-  '&& npm install --no-audit --no-fund',
+  '&& npm_install install',
   ') )',
 ].join(' ');
 
@@ -218,8 +240,8 @@ export function getBuildCommand(framework: BuildFramework, projectId?: string): 
   // getTaskNames(..., 'bundle') internally, which runs bundleRelease and produces an .aab
   // (Android App Bundle). .aab requires Google Play's bundletool to install; it cannot be
   // sideloaded directly. We invoke ./gradlew assembleRelease explicitly to get a plain .apk.
-  return [
-    'npm install --no-audit --no-fund',
+  return `${NPM_INSTALL_FN} ` + [
+    'npm_install ci',
     ENSURE_RN_ANDROID_PROJECT,
     '([ -f android/gradlew ] && chmod +x android/gradlew || true)',
     gradleConstraints,

@@ -190,6 +190,9 @@ export default async function runTests() {
     ['npm install @expo/vector-icons', 'npx expo install @expo/vector-icons'],
     ['npm i expo-font react-native-svg', 'npx expo install expo-font react-native-svg'],
     ['yarn add expo-image@^1.0.0', 'npx expo install expo-image'],
+    ['npm i react-native-screens@4', 'npx expo install react-native-screens'], // the SDK decides
+    // A library expo install does not know keeps the version asked for (React Navigation 6 on SDK 51).
+    ['npm install @react-navigation/native@^6 @react-navigation/bottom-tabs@^6', 'npx expo install @react-navigation/native@^6 @react-navigation/bottom-tabs@^6'],
     ['pnpm add -D @types/react', 'npx expo install @types/react -- --save-dev'],
     ['npm install', null], // reinstall: nothing to rewrite
     ['npm install -g eas-cli', null], // global
@@ -231,6 +234,22 @@ export default async function runTests() {
     });
     if (r.text.includes('Not verified') || r.calls !== 4) throw new Error(`Clean dependency change not accepted: ${r.text}`);
   }
+  // A JS library whose peers need a newer SDK passes expo's check; npm ls catches it (Cloud Build's npm ci: ERESOLVE).
+  {
+    const r = await run('Add tabs', [
+      { tool: 'run_command', args: { command: 'npx expo install @react-navigation/bottom-tabs' } },
+      { tool: 'validate_project' },
+      { tool: 'restart_preview' },
+      { text: 'Tabs added.' },
+      { text: 'Tabs added, really.' },
+    ], {
+      run_command: ['Command exited with code 0.\n\nnpx expo install --check:\nCommand exited with code 0.\nOutput:\nDependencies are up to date'
+        + '\n\nnpm ls --depth=0:\nCommand exited with code 1.\nOutput:\n+-- react-native-screens@3.31.1 invalid: ">= 4.0.0" from node_modules/@react-navigation/bottom-tabs'],
+      validate_project: [TYPES_OK.replace('"checks": [', '"checks": [{ "type": "tsc", "success": true },')], restart_preview: [CLEAN],
+    });
+    if (!r.text.includes('peer dependencies')) throw new Error(`Unmet peer dependency not reported: ${r.text}`);
+  }
+  if (verificationRole('run_command', { command: 'npm ls --depth=0' }) !== 'depscheck') throw new Error('npm ls is a dependency check');
 
   console.log('  [expo] New projects get Fast Refresh on the web; older entries get a hint...');
   if (!PREVIEW_ENTRY.startsWith("import '@expo/metro-runtime';")) throw new Error('Entry does not import metro-runtime first');

@@ -204,6 +204,8 @@ const api: IpcApi = {
   cancelCloudBuild: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.CLOUD_BUILD_CANCEL, id),
   getCloudBuildHistory: () => ipcRenderer.invoke(IPC_CHANNELS.CLOUD_BUILD_HISTORY),
   getCloudBuildDownloadToken: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.CLOUD_BUILD_DOWNLOAD_TOKEN, id),
+  checkBuildDependencies: (projectPath: string) => ipcRenderer.invoke(IPC_CHANNELS.CLOUD_BUILD_CHECK_DEPS, projectPath),
+  fixBuildDependencies: (projectPath: string) => ipcRenderer.invoke(IPC_CHANNELS.CLOUD_BUILD_FIX_DEPS, projectPath),
   onBuildLogChunk: (callback: (payload: { id: string; chunk: string }) => void) => subscribe<{ id: string; chunk: string }>(IPC_EVENTS.BUILD_LOG_CHUNK, callback),
   openSettingsWindow: (section?: string) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_OPEN_WINDOW, section),
   onSettingsUpdated: (callback: (settings: Partial<Settings>) => void) => subscribe<Partial<Settings>>(IPC_EVENTS.SETTINGS_UPDATED, callback),

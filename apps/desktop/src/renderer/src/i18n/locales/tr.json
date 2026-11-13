@@ -74,7 +74,19 @@
     "qrExpiresIn": "Bağlantı süresi: {time}",
     "qrExpired": "Bağlantının süresi doldu",
     "refreshQr": "QR bağlantısını yenile",
-    "refreshing": "Yenileniyor..."
+    "refreshing": "Yenileniyor...",
+    "depsChecking": "Yüklemeden önce bağımlılıklar kontrol ediliyor…",
+    "depsFixing": "Bağımlılıklar düzeltiliyor (npx expo install --fix)…",
+    "depsTitle": "Cloud Build bu paketler yüzünden başarısız olur",
+    "depsHint": "Derleme sunucusu npm ci ile kurar; sürümleri birbirine veya Expo SDK sürümüne uymayan paketleri reddeder (ERESOLVE). Önizleme yine de çalışabilir.",
+    "depsStillTitle": "Bazı paketler hâlâ çakışıyor",
+    "depsStillHint": "npx expo install --fix yalnızca Expo’nun bildiği paketleri düzeltir. Bu kütüphanelerin Expo SDK sürümüne uyan bir sürümü gerekiyor.",
+    "depsMore": "+{count} tane daha",
+    "depsFix": "Bağımlılıkları düzelt",
+    "depsAskAgent": "Atomvs düzeltsin",
+    "depsBuildAnyway": "Yine de derle",
+    "depsDismiss": "Kapat",
+    "depsAskMessage": "Cloud Build başarısız olur: npm şu bağımlılık sorunlarını bildiriyor (npm ls --depth=0 / npx expo install --check):\n{problems}\nBu projenin Expo SDK sürümüne uyan sürümleri kur (örneğin SDK 51 için React Navigation 6), --legacy-peer-deps kullanmadan, sonra npm ls --depth=0 ile tekrar kontrol et."
   },
   "titlebar": {
     "search": "Ara",

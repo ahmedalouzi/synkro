@@ -474,7 +474,7 @@ buildRouter.get('/:jobId/stream', requireAuth, async (req, res) => {
     const dbClient = await client.connect();
     
     // Send an initial chunk to establish connection
-    res.write(`data: ${JSON.stringify({ status: 'connected', chunk: 'Connected to log stream\\r\\n' })}\n\n`);
+    res.write(`data: ${JSON.stringify({ status: 'connected', chunk: 'Connected to log stream\r\n' })}\n\n`);
 
     // For MVP, we'll just poll the error_log column every 2 seconds
     // In production, this should use LISTEN/NOTIFY or Redis PubSub
@@ -508,7 +508,7 @@ buildRouter.get('/:jobId/stream', requireAuth, async (req, res) => {
           }
           
           if (row.status === 'success' || row.status === 'failed' || row.status === 'cancelled') {
-            res.write(`data: ${JSON.stringify({ chunk: '\\r\\n[Stream Terminated: Job ' + row.status + ']' })}\n\n`);
+            res.write(`data: ${JSON.stringify({ chunk: '\r\n[Stream Terminated: Job ' + row.status + ']' })}\n\n`);
             clearInterval(interval);
             dbClient.release();
             res.end();

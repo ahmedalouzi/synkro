@@ -753,6 +753,8 @@ export const IPC_CHANNELS = {
   CLOUD_BUILD_HISTORY: 'cloudBuild:history',
   CLOUD_BUILD_CANCEL: 'cloudBuild:cancel',
   CLOUD_BUILD_DOWNLOAD_TOKEN: 'cloudBuild:downloadToken',
+  CLOUD_BUILD_CHECK_DEPS: 'cloudBuild:checkDeps',
+  CLOUD_BUILD_FIX_DEPS: 'cloudBuild:fixDeps',
 } as const;
 
 export interface ConnectedDevice {
@@ -766,6 +768,15 @@ export interface ConnectedDevice {
 export type CloudBuildFramework = 'flutter' | 'react-native';
 export type CloudBuildStatus = 'queued' | 'running' | 'success' | 'failed' | 'cancelled';
 export type CloudBuildTarget = 'apk' | 'aab' | 'both';
+
+/** The dependency check before a Cloud Build upload (Expo + npm projects). */
+export interface BuildDepsCheck {
+  ok: boolean;
+  /** One line per package the server's `npm ci` would reject or that does not match the Expo SDK. */
+  problems: string[];
+  /** The end of `npx expo install --fix`'s output when it failed. */
+  fixError?: string;
+}
 
 export interface CloudBuildJob {
   id: string;
@@ -1074,6 +1085,8 @@ export interface IpcApi {
   cancelCloudBuild?: (id: string) => Promise<any>;
   getCloudBuildHistory?: () => Promise<any[]>;
   getCloudBuildDownloadToken?: (id: string) => Promise<{ token: string; downloadUrl: string; expiresAt: number }>;
+  checkBuildDependencies?: (projectPath: string) => Promise<BuildDepsCheck>;
+  fixBuildDependencies?: (projectPath: string) => Promise<BuildDepsCheck>;
   onBuildLogChunk?: (callback: (payload: { id: string; chunk: string }) => void) => () => void;
   openSettingsWindow?: (section?: string) => Promise<void>;
   onSettingsUpdated?: (callback: (settings: Partial<Settings>) => void) => () => void;

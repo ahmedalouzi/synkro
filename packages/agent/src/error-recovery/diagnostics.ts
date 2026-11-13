@@ -138,9 +138,12 @@ export function selectRecoveryStrategy(
           isRecoverable: true
         };
       }
+      // Not --legacy-peer-deps: it hides the conflict on this machine, and the Cloud Build install fails on it later.
       return {
-        strategy: 'Install Legacy Peer Dependencies',
-        actionHint: 'Run install with --legacy-peer-deps flag to resolve dependency conflicts.',
+        strategy: 'Fix Conflicting Package Versions',
+        actionHint: 'Resolve the conflict instead of forcing it: in an Expo project run "npx expo install --fix", and install '
+          + 'the version of the conflicting package whose peer dependencies match the installed ones (check with "npm ls --depth=0"). '
+          + 'Do not use --legacy-peer-deps or --force.',
         isRecoverable: true
       };
     }

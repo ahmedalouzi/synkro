@@ -77,6 +77,7 @@ export function setMainWindow(window: BrowserWindow | null): void {
 import { globalIpcBatcher } from '../utils/ipc-batcher';
 import { resolveGatewayUrl } from '../build-config';
 import { hideScrollbarsInPreviewFrames, sampleStrips, validStrips } from '../preview-frames';
+import { checkBuildDeps, fixBuildDeps } from '../services/build-deps-check';
 
 function notifyGitChanged(): void {
   globalIpcBatcher.throttle(IPC_EVENTS.GIT_CHANGED, 500, () => {
@@ -1333,6 +1334,16 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
     if (!cloudBuildService) throw new Error('Cloud build service not initialized');
     return cloudBuildService.cancelBuild(id);
   });
+
+  // The dependency check before an upload runs npm/npx in the project: only in the project that is open.
+  const openProject = (projectPath: string): string => {
+    const open = workspace.getProject()?.path;
+    const key = (p: string) => (process.platform === 'win32' ? path.resolve(p).toLowerCase() : path.resolve(p));
+    if (!open || key(open) !== key(projectPath)) throw new Error('Not the open project');
+    return open;
+  };
+  ipcMain.handle(IPC_CHANNELS.CLOUD_BUILD_CHECK_DEPS, async (_event, projectPath: string) => checkBuildDeps(openProject(projectPath)));
+  ipcMain.handle(IPC_CHANNELS.CLOUD_BUILD_FIX_DEPS, async (_event, projectPath: string) => fixBuildDeps(openProject(projectPath)));
 
   return { db, workspace, flutter, processManager, previewManager, agentService, gitService, terminalService, telemetryService, autoUpdateService: autoUpdateService! };
 }
