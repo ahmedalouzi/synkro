@@ -29,7 +29,7 @@ export function ComposerOverlay() {
     reset,
   } = useComposerStore();
 
-  const { project, openFiles, openFile, activeSelection } = useWorkspaceStore();
+  const { project, openFiles, activeSelection } = useWorkspaceStore();
   const [showAddMenu, setShowAddMenu] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -96,7 +96,7 @@ export function ComposerOverlay() {
         const existing = openFiles.find((f) => f.path === edit.path);
         if (existing) {
           const content = await window.peep.readFile(edit.path);
-          openFile({ ...existing, content, dirty: false });
+          useWorkspaceStore.getState().syncFileContent(existing.path, content);
         }
       }
       const nextEdits = proposedEdits.filter((e) => !editIds.includes(e.id));
@@ -116,7 +116,7 @@ export function ComposerOverlay() {
         const existing = openFiles.find((f) => f.path === edit.path);
         if (existing) {
           const content = await window.peep.readFile(edit.path);
-          openFile({ ...existing, content, dirty: false });
+          useWorkspaceStore.getState().syncFileContent(existing.path, content);
         }
       }
       const nextEdits = proposedEdits.filter((e) => !editIds.includes(e.id));

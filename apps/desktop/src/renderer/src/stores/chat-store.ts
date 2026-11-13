@@ -1,6 +1,7 @@
 import * as Sentry from '@sentry/electron/renderer';
 import { create } from 'zustand';
 import type { AgentMessage, ProposedEdit, AgentTimelineActivity, AgentPhase } from '@peep/shared';
+import { Typewriter } from './stream-typewriter';
 
 interface ThreadInfo {
   id: string;
@@ -33,6 +34,8 @@ interface ChatState {
   startStreaming: (messageId: string) => void;
   setStreamStatus: (status: string) => void;
   finishStreaming: () => void;
+  /** The reply still typing out after its stream ended (its caret stays until then). */
+  typingMessageId: string | null;
   setStreaming: (streaming: boolean) => void;
   setProposedEdits: (edits: ProposedEdit[]) => void;
   setAgentTask: (task: any | null) => void;
@@ -136,7 +139,9 @@ function uniqueById<T extends { id: string }>(items: T[]): T[] {
   return items.filter((item) => (seen.has(item.id) ? false : (seen.add(item.id), true)));
 }
 
-let streamingRaw = { id: '', text: '' };
+/** Types the streaming reply out at a natural pace (see stream-typewriter.ts); one reply at a time. */
+let typewriter: { id: string; tw: Typewriter } | null = null;
+const reduceMotion = () => typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 function stripCodeBlocks(text: string): string {
   // Strip introductory lines pointing to code files
@@ -170,6 +175,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   isStreaming: false,
   streamStatus: '',
   streamingMessageId: null,
+  typingMessageId: null,
   proposedEdits: [],
   agentTask: null,
   timelineActivities: [],
@@ -214,20 +220,37 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }),
 
   appendToStreamingMessage: (delta) => {
-    const { streamingMessageId, messages } = get();
+    const { streamingMessageId } = get();
     if (!streamingMessageId) return;
-    // Strip from the full raw text each time: stripping already-stripped text trimmed the
-    // spaces between chunks and let code from a half-received block leak into the reply.
-    if (streamingRaw.id !== streamingMessageId) streamingRaw = { id: streamingMessageId, text: '' };
-    streamingRaw.text += delta;
-    const content = stripCodeBlocks(streamingRaw.text);
-    set({
-      messages: messages.map((m) => (m.id === streamingMessageId ? { ...m, content } : m)),
-    });
+    if (typewriter?.id !== streamingMessageId) {
+      // A new reply: the previous one (if still typing) shows in full.
+      typewriter?.tw.flush();
+      const id = streamingMessageId;
+      typewriter = {
+        id,
+        tw: new Typewriter({
+          // Strip from the full raw text each time: stripping already-stripped text trimmed the
+          // spaces between chunks and let code from a half-received block leak into the reply.
+          render: (text) => set({ messages: get().messages.map((m) => (m.id === id ? { ...m, content: stripCodeBlocks(text) } : m)) }),
+          reduceMotion,
+        }),
+      };
+      set({ typingMessageId: id });
+    }
+    typewriter.tw.push(delta);
   },
 
   setStreamStatus: (streamStatus) => set({ streamStatus }),
-  finishStreaming: () => set({ isStreaming: false, streamStatus: '', streamingMessageId: null }),
+  finishStreaming: () => {
+    set({ isStreaming: false, streamStatus: '', streamingMessageId: null });
+    // The text already received keeps typing out; the caret goes when it is all shown.
+    const current = typewriter;
+    if (!current) { set({ typingMessageId: null }); return; }
+    current.tw.finish(() => {
+      if (typewriter === current) typewriter = null;
+      if (get().typingMessageId === current.id) set({ typingMessageId: null });
+    });
+  },
   setStreaming: (isStreaming) => set({ isStreaming }),
   setProposedEdits: (proposedEdits) => set({ proposedEdits }),
   clearMessages: () => set({ messages: [] }),

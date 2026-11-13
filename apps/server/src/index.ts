@@ -257,6 +257,14 @@ async function bootstrap() {
       
       // For streams, handleRequest returns an AsyncIterable in the body if status is 200
       if (response.status === 200 && response.body && typeof response.body[Symbol.asyncIterator] === 'function') {
+        // A real event stream: with the gateway's JSON content type, a proxy may hold the whole reply until it
+        // ends (it then appears all at once). no-transform keeps proxies from compressing (= buffering) it.
+        res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+        res.setHeader('Cache-Control', 'no-cache, no-transform');
+        res.setHeader('X-Accel-Buffering', 'no');
+        res.setHeader('Connection', 'keep-alive');
+        res.flushHeaders();
+        res.socket?.setNoDelay(true);
         const stream = response.body as AsyncIterable<any>;
         let chunkIndex = 0;
         for await (const chunk of stream) {

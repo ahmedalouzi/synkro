@@ -19,6 +19,7 @@ import { AgentIcon, AgentLaunchers } from '../features/agents/AgentLaunchers';
 import { AGENT_TAB_PREFIX, agentIdFromTab, useAgentsStore } from '../features/agents/agents-store';
 import { CLAUDE_DIFF_PREFIX } from '../features/claude-code/claude-diff-store';
 import { getFileIcon } from '../features/explorer/FileIcons';
+import { FollowChip } from '../features/editor/FollowChip';
 
 function isVirtualPath(path: string): boolean {
   return path.startsWith('git-diff://') ||
@@ -250,6 +251,7 @@ export function EditorPane() {
       )}
 
       <div className="editor-body" style={{ flex: 1, position: 'relative' }}>
+        <FollowChip />
         {/* Behind code: dimmed, static stars only. */}
         <SkyBackdrop subtle={!!activeFile} interactive={!activeFile} />
         {!project ? (

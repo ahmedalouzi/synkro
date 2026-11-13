@@ -63,3 +63,4 @@ Status: ⬜ todo · 🔄 in progress · ✅ done · ⏸ waiting on a decision/ac
 - Semantic codebase indexing
 - Full remote workspace over SSH (today: SSH opens a terminal session)
 - Voice input
+- Web projects (Next.js / Vite): web-aware agent prompt, live web preview with device sizes, web templates, one-click deploy

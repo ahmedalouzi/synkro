@@ -131,7 +131,8 @@ async function onProjectOpened(
       if (ev.type === 'add' || ev.type === 'change' || ev.type === 'unlink') {
         agentSvc.onFileChanged(projectPath, ev.type, ev.path);
       }
-      if (ev.type === 'change') {
+      // 'add' too: a file the agent creates (or deletes and writes again) may already be open in a tab.
+      if (ev.type === 'change' || ev.type === 'add') {
         mainWindow?.webContents.send(IPC_EVENTS.FILE_CHANGED, ev.path);
       }
     }

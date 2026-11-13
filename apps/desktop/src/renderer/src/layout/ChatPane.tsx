@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { createTwoFilesPatch } from 'diff';
-import type { AgentMessage, AgentTimelineActivity, ProposedEdit } from '@peep/shared';
+import type { AgentMessage, ProposedEdit } from '@peep/shared';
 import { useChatStore } from '../stores/chat-store';
 import { useWorkspaceStore } from '../stores/workspace-store';
 import { useDiagnosticsStore, usePreviewStore } from '../stores/preview-store';
@@ -15,6 +15,9 @@ import { MODELS, useCanPickModel } from '../features/chat/models';
 import { openWebPage } from '../config/web';
 import './ChatPane.css';
 import { SkyBackdrop } from '../features/shared/SkyBackdrop';
+import { AgentRun, type CardResolution } from '../features/agent-run/AgentRun';
+import { useRunEventsStore } from '../stores/run-events-store';
+import { useFollowStore } from '../stores/follow-store';
 import { getLocale, useI18n } from '../i18n';
 
 interface ChatPaneProps {
@@ -27,17 +30,11 @@ const WELCOME_ID = 'welcome';
 
 const fileName = (path: string) => path.split(/[\\/]/).pop() ?? path;
 
-/** The file's folder relative to the project ("src/screens"), for the changed-files list. */
-function relativeDir(path: string, projectPath?: string): string {
-  const norm = (p: string) => p.replace(/\\/g, '/');
-  const file = norm(path);
-  const root = projectPath ? `${norm(projectPath).replace(/\/+$/, '')}/` : '';
-  const rel = root && file.toLowerCase().startsWith(root.toLowerCase()) ? file.slice(root.length) : file;
-  const cut = rel.lastIndexOf('/');
-  return cut > 0 ? rel.slice(0, cut) : '';
-}
+// Older agent versions wrote their activity log into the message text as HTML. Messages are rendered as
+// markdown, so that block showed up as raw markup; drop it from messages saved before the fix.
+const LEGACY_ACTIVITY_HTML = /<details class="agent-activity-dropdown"[\s\S]*?<\/details>\s*/g;
 
-/** Added and removed line counts, for the changed-files list. */
+/** Added and removed line counts, for the file cards and the changes bar. */
 function diffSummary(original: string, proposed: string) {
   let added = 0;
   let removed = 0;
@@ -53,43 +50,6 @@ function diffSummary(original: string, proposed: string) {
   return { added, removed };
 }
 
-/** One line per agent step; the resolved event replaces its in-progress twin. */
-function stepsForRun(activities: AgentTimelineActivity[], runId: string | undefined) {
-  if (!runId) return [];
-  const byKey = new Map<string, AgentTimelineActivity>();
-  for (const a of activities) {
-    if (a.runId !== runId || a.type === 'understanding' || a.type === 'completed') continue;
-    byKey.set(a.id.replace(/:(in_progress|resolved)$/, ''), a);
-  }
-  return [...byKey.values()];
-}
-
-/** Seconds from the run's first timeline event to its last, for the "Worked for" line. */
-function runSeconds(activities: AgentTimelineActivity[], runId: string | undefined): number | null {
-  const times = activities.filter((a) => a.runId === runId).map((a) => Date.parse(a.timestamp)).filter(Number.isFinite);
-  if (times.length < 2) return null;
-  return (Math.max(...times) - Math.min(...times)) / 1000;
-}
-
-// Older agent versions wrote their activity log into the message text as HTML. Messages are rendered as
-// markdown, so that block showed up as raw markup; drop it from messages saved before the fix.
-const LEGACY_ACTIVITY_HTML = /<details class="agent-activity-dropdown"[\s\S]*?<\/details>\s*/g;
-
-function stepLabel(a: AgentTimelineActivity): { verb: string; target: string } {
-  const done = a.status !== 'in_progress';
-  const target = a.file ? fileName(a.file) : a.command ?? '';
-  switch (a.type) {
-    case 'reading': return { verb: done ? 'Read' : 'Reading', target };
-    case 'editing': return { verb: done ? 'Edited' : 'Editing', target };
-    case 'creating': return { verb: done ? 'Created' : 'Creating', target };
-    case 'deleting': return { verb: done ? 'Deleted' : 'Deleting', target };
-    case 'running': return { verb: done ? 'Ran' : 'Running', target };
-    case 'exploring': return { verb: done ? 'Explored' : 'Exploring', target: target || '.' };
-    case 'searching': return { verb: done ? 'Searched' : 'Searching', target: a.message.replace(/^Searching (files|codebase): /, '') };
-    default: return { verb: a.message, target: '' };
-  }
-}
-
 function Icon({ d, size = 14 }: { d: string; size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -99,6 +59,7 @@ function Icon({ d, size = 14 }: { d: string; size?: number }) {
 }
 
 const ICON = {
+  follow: 'M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
   plus: 'M12 5v14M5 12h14',
   history: 'M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2',
   close: 'M18 6 6 18M6 6l12 12',
@@ -147,6 +108,9 @@ export function ChatPane({ onOpenSettings: _onOpenSettings }: ChatPaneProps) {
   /* ── Chat tabs (like Cursor's open agents) + history ── */
   const [openTabIds, setOpenTabIds] = useState<string[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const followEnabled = useFollowStore((s) => s.enabled);
+  const typingMessageId = useChatStore((s) => s.typingMessageId);
+  const setFollowEnabled = useFollowStore((s) => s.setEnabled);
   const historyRef = useRef<HTMLDivElement>(null);
 
   // The check is on `prev`, not this render's openTabIds: an effect that runs twice before the state updates
@@ -459,14 +423,36 @@ export function ChatPane({ onOpenSettings: _onOpenSettings }: ChatPaneProps) {
     [proposedEdits],
   );
 
+  // +/- counts per file, kept after Keep / Undo so a run's cards still show them; and each card's outcome.
+  const countsRef = useRef<Record<string, { added: number; removed: number }>>({});
+  for (const { edit, added, removed } of editSummaries) countsRef.current[edit.path] = { added, removed };
+  const editCounts = countsRef.current;
+  const [cardResolutions, setCardResolutions] = useState<Record<string, CardResolution>>({});
+  const resolve = (editIds: string[], outcome: CardResolution) => {
+    const paths = proposedEdits.filter((e) => editIds.includes(e.id)).map((e) => e.path);
+    setCardResolutions((prev) => ({ ...prev, ...Object.fromEntries(paths.map((p) => [p, outcome])) }));
+  };
+  const refreshes = useRunEventsStore((s) => s.refreshes);
+
+  /** Opens a file as it is on disk (the agent has already written its changes). */
+  const openFromDisk = async (path: string) => {
+    try {
+      const content = await window.peep.readFile(path);
+      openFile({ path, name: fileName(path), content, dirty: false });
+    } catch {
+      // Deleted since, or outside the project.
+    }
+  };
+
   const handleKeep = (editIds: string[]) => {
+    resolve(editIds, 'kept');
     const applied = proposedEdits.filter((e) => editIds.includes(e.id));
     void window.peep.applyAgentEdits(editIds).then(async () => {
       for (const edit of applied) {
         const existing = useWorkspaceStore.getState().openFiles.find((f) => f.path === edit.path);
         if (existing) {
           const content = await window.peep.readFile(edit.path);
-          openFile({ ...existing, content, dirty: false });
+          useWorkspaceStore.getState().syncFileContent(existing.path, content);
         }
       }
       void window.peep.getPendingEdits().then(setProposedEdits);
@@ -475,6 +461,7 @@ export function ChatPane({ onOpenSettings: _onOpenSettings }: ChatPaneProps) {
   };
 
   const handleUndo = (editIds: string[]) => {
+    resolve(editIds, 'undone');
     const rejected = proposedEdits.filter((e) => editIds.includes(e.id)).map((e) => e.path);
     void window.peep.rejectAgentEdits(editIds).then(async () => {
       // Editors were showing the proposed text; put them back to what is on disk.
@@ -493,7 +480,6 @@ export function ChatPane({ onOpenSettings: _onOpenSettings }: ChatPaneProps) {
 
   /* ── Rendering ── */
   const visibleMessages = messages.filter((m) => m.id !== WELCOME_ID);
-  const lastAssistantId = [...visibleMessages].reverse().find((m) => m.role === 'assistant')?.id;
 
   const renderMessage = (message: AgentMessage) => {
     if (message.role === 'user') {
@@ -516,64 +502,36 @@ export function ChatPane({ onOpenSettings: _onOpenSettings }: ChatPaneProps) {
       );
     }
 
-    const steps = stepsForRun(timelineActivities, message.runId);
+    const runActivities = message.runId ? timelineActivities.filter((a) => a.runId === message.runId) : [];
     const isLive = message.id === streamingMessageId;
-    const showEdits = message.id === lastAssistantId && editSummaries.length > 0;
     const content = message.content.replace(LEGACY_ACTIVITY_HTML, '');
-    const stepList = (
-      <div className="cx-steps">
-        {steps.map((a) => {
-          const { verb, target } = stepLabel(a);
-          return (
-            <div key={a.id} className={`cx-step cx-step--${a.status}`} title={a.message}>
-              <span className="cx-step__verb">{verb}</span>
-              {target && <span className="cx-step__target">{target}</span>}
-              {a.status === 'failed' && <span className="cx-step__failed">failed</span>}
-            </div>
-          );
-        })}
-      </div>
-    );
-    const seconds = runSeconds(timelineActivities, message.runId);
 
     return (
       <div className="cx-turn cx-turn--assistant">
-        {/* Live: the steps stream in open. Finished: one collapsed "Worked for …" line. */}
-        {steps.length > 0 && (isLive ? stepList : (
-          <details className="cx-worked">
-            <summary className="cx-worked__summary">
-              {seconds !== null ? `Worked for ${seconds.toFixed(1)}s` : 'Worked'} · {steps.length} {steps.length === 1 ? 'step' : 'steps'}
-            </summary>
-            {stepList}
-          </details>
-        ))}
+        {(runActivities.length > 0 || isLive) && (
+          <AgentRun
+            activities={runActivities}
+            isLive={isLive}
+            projectPath={project?.path}
+            pendingEdits={proposedEdits}
+            counts={editCounts}
+            resolutions={cardResolutions}
+            refresh={message.runId ? refreshes[message.runId] : undefined}
+            onOpenFile={(path) => void openFromDisk(path)}
+            onUndo={(edit) => handleUndo([edit.id])}
+            onKeep={(edit) => handleKeep([edit.id])}
+            onReview={openReview}
+          />
+        )}
 
         {content ? (
           // Rendered as markdown, never raw HTML: model output can contain injected markup.
-          <div className="cx-markdown">
+          <div className={`cx-markdown${isLive || message.id === typingMessageId ? ' is-typing' : ''}`}>
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
           </div>
-        ) : isLive ? (
+        ) : isLive && runActivities.length === 0 ? (
           <div className="cx-thinking">{streamStatus || 'Thinking…'}</div>
         ) : null}
-
-        {/* One compact line per changed file (like Cursor / Claude Code): name, folder, +/- counts. The code
-            is in the diff that a click opens, not dumped into the reply. */}
-        {showEdits && (
-          <div className="cx-edits" data-testid="chat-changed-files">
-            {editSummaries.map(({ edit, added, removed }) => (
-              <button key={edit.id} type="button" className="cx-edit-row" onClick={() => openEditPreview(edit)} title={`Open the diff of ${edit.path}`}>
-                <Icon d={ICON.file} size={13} />
-                <span className="cx-edit-row__name">{fileName(edit.path)}</span>
-                <span className="cx-edit-row__dir">{relativeDir(edit.path, project?.path)}</span>
-                <span className="cx-edit-row__counts">
-                  {added > 0 && <span className="cx-add">+{added}</span>}
-                  {removed > 0 && <span className="cx-del">-{removed}</span>}
-                </span>
-              </button>
-            ))}
-          </div>
-        )}
       </div>
     );
   };
@@ -605,6 +563,17 @@ export function ChatPane({ onOpenSettings: _onOpenSettings }: ChatPaneProps) {
           ))}
         </div>
         <div className="cx-tabs__actions">
+          {/* Follow mode: show the agent's edits in the editor as it writes them. */}
+          <button
+            type="button"
+            className={`cx-icon-btn ${followEnabled ? 'cx-icon-btn--on' : ''}`}
+            title={followEnabled ? 'Follow mode on: the editor shows each file as the agent writes it. Click to turn off.' : 'Follow mode off. Click to show agent edits in the editor as they happen.'}
+            aria-pressed={followEnabled}
+            data-testid="follow-toggle"
+            onClick={() => setFollowEnabled(!followEnabled)}
+          >
+            <Icon d={ICON.follow} />
+          </button>
           <button type="button" className="cx-icon-btn" title="New Chat" disabled={isStreaming} onClick={() => void newThread()}>
             <Icon d={ICON.plus} />
           </button>

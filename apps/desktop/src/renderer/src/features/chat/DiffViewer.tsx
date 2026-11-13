@@ -32,7 +32,7 @@ export function DiffViewer() {
         const existing = openFiles.find((f) => f.path === edit.path);
         if (existing) {
           const content = await window.peep.readFile(edit.path);
-          openFile({ ...existing, content, dirty: false });
+          useWorkspaceStore.getState().syncFileContent(existing.path, content);
         }
       }
       const nextEdits = await window.peep.getPendingEdits();

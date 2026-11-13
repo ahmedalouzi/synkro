@@ -83,7 +83,8 @@ function toolNameToActivityType(name: string): AgentTimelineActivityType {
     case 'update_design_manifest': return 'editing';
     case 'manage_plan':       return 'validating';
     case 'get_preview_logs':  return 'validating';
-    case 'restart_preview':   return 'running';
+    case 'restart_preview':   return 'validating';
+    case 'validate_project':  return 'validating';
     default:                  return 'running';
   }
 }
@@ -486,6 +487,9 @@ export async function runAgentLoop(
         else if (name === 'run_command')   { inProgressMsg = `Running: ${args.command || ''}`; cmdHint = String(args.command || ''); }
         else if (name === 'delete_file')   { inProgressMsg = `Deleting: ${args.path || ''}`; fileHint = String(args.path || ''); }
         else if (name === 'rename_file')   { inProgressMsg = `Renaming: ${args.oldPath || ''} → ${args.newPath || ''}`; }
+        else if (name === 'get_preview_logs') { inProgressMsg = 'Checking preview'; }
+        else if (name === 'restart_preview') { inProgressMsg = 'Restarting preview'; }
+        else if (name === 'validate_project') { inProgressMsg = 'Checking types'; }
 
         // Dispatch 'in_progress' before execution.
         dispatchTimeline({
