@@ -1334,6 +1334,11 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
     return cloudBuildService.cancelBuild(id);
   });
 
+  ipcMain.handle(IPC_CHANNELS.CLOUD_BUILD_SHORT_LINK, async (_event, id: string) => {
+    if (!cloudBuildService) throw new Error('Cloud build service not initialized');
+    return cloudBuildService.createShortLink(id);
+  });
+
   return { db, workspace, flutter, processManager, previewManager, agentService, gitService, terminalService, telemetryService, autoUpdateService: autoUpdateService! };
 }
 

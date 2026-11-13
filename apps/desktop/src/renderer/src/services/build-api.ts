@@ -6,6 +6,7 @@ export interface IBuildApi {
   cancelBuild(id: string): Promise<CloudBuildJob>;
   streamLogs(id: string, onChunk: (chunk: string) => void): () => void;
   getDownloadToken?(id: string): Promise<{ token: string; downloadUrl: string; expiresAt: number }>;
+  createShortLink?(id: string): Promise<{ url: string; expiresAt: number }>;
 }
 
 export class MockBuildApi implements IBuildApi {
@@ -103,6 +104,13 @@ export class MockBuildApi implements IBuildApi {
     };
   }
 
+  async createShortLink(id: string): Promise<{ url: string; expiresAt: number }> {
+    return {
+      url: `http://localhost:8080/d/mockShortCode12345678_${id.slice(-4)}`,
+      expiresAt: Date.now() + 15 * 60 * 1000,
+    };
+  }
+
   getCurrentJob(): CloudBuildJob | null {
     return this.currentJob ? { ...this.currentJob } : null;
   }
@@ -173,6 +181,10 @@ class RealBuildApi implements IBuildApi {
 
   async cancelBuild(id: string): Promise<CloudBuildJob> {
     return (window as any).peep.cancelCloudBuild(id);
+  }
+
+  async createShortLink(id: string): Promise<{ url: string; expiresAt: number }> {
+    return (window as any).peep.createCloudBuildShortLink(id);
   }
 
   streamLogs(id: string, onChunk: (chunk: string) => void): () => void {

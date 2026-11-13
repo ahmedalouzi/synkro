@@ -753,6 +753,7 @@ export const IPC_CHANNELS = {
   CLOUD_BUILD_HISTORY: 'cloudBuild:history',
   CLOUD_BUILD_CANCEL: 'cloudBuild:cancel',
   CLOUD_BUILD_DOWNLOAD_TOKEN: 'cloudBuild:downloadToken',
+  CLOUD_BUILD_SHORT_LINK: 'cloudBuild:shortLink',
 } as const;
 
 export interface ConnectedDevice {
@@ -783,6 +784,8 @@ export interface CloudBuildJob {
   artifactSizeBytes?: number;
   downloadToken?: string;
   downloadExpiresAt?: number;
+  shortUrl?: string;
+  shortExpiresAt?: number;
 }
 
 // ── Publish / Build types ─────────────────────────────────────────────────────
@@ -1074,6 +1077,7 @@ export interface IpcApi {
   cancelCloudBuild?: (id: string) => Promise<any>;
   getCloudBuildHistory?: () => Promise<any[]>;
   getCloudBuildDownloadToken?: (id: string) => Promise<{ token: string; downloadUrl: string; expiresAt: number }>;
+  createCloudBuildShortLink?: (id: string) => Promise<{ url: string; expiresAt: number }>;
   onBuildLogChunk?: (callback: (payload: { id: string; chunk: string }) => void) => () => void;
   openSettingsWindow?: (section?: string) => Promise<void>;
   onSettingsUpdated?: (callback: (settings: Partial<Settings>) => void) => () => void;

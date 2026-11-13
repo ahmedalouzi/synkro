@@ -1,0 +1,557 @@
+/* ── Space-Themed Full-Screen APK QR Popup ────────────────────────────────── */
+.space-qr-overlay {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 100000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: linear-gradient(160deg, #05060f 0%, #07091b 50%, #0b1030 100%);
+  color: #f4f4f5;
+  overflow: hidden;
+  animation: spaceOverlayIn 320ms ease-out both;
+}
+
+.space-qr-overlay.is-exiting {
+  animation: spaceOverlayOut 300ms ease-in forwards;
+}
+
+@keyframes spaceOverlayIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes spaceOverlayOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+.space-qr-starfield {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Soft drifting nebula blobs (transform/opacity only) */
+.space-qr-nebula {
+  position: fixed;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 0;
+  filter: blur(72px);
+  will-change: transform, opacity;
+}
+
+.space-qr-nebula--purple {
+  width: 52vmax;
+  height: 52vmax;
+  top: -15vmax;
+  left: -12vmax;
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.24), transparent 70%);
+  animation: spaceNebulaDriftA 22s ease-in-out infinite alternate;
+}
+
+.space-qr-nebula--blue {
+  width: 48vmax;
+  height: 48vmax;
+  bottom: -18vmax;
+  right: -10vmax;
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.22), transparent 70%);
+  animation: spaceNebulaDriftB 26s ease-in-out infinite alternate;
+}
+
+.space-qr-nebula--teal {
+  width: 38vmax;
+  height: 38vmax;
+  top: 40%;
+  left: 55%;
+  background: radial-gradient(circle, rgba(20, 184, 166, 0.16), transparent 70%);
+  animation: spaceNebulaDriftC 20s ease-in-out infinite alternate;
+}
+
+@keyframes spaceNebulaDriftA {
+  from { transform: translate3d(0, 0, 0) scale(1); opacity: 0.7; }
+  to { transform: translate3d(6vw, 4vh, 0) scale(1.08); opacity: 0.95; }
+}
+
+@keyframes spaceNebulaDriftB {
+  from { transform: translate3d(0, 0, 0) scale(1); opacity: 0.65; }
+  to { transform: translate3d(-5vw, -5vh, 0) scale(1.1); opacity: 0.9; }
+}
+
+@keyframes spaceNebulaDriftC {
+  from { transform: translate3d(-4vw, 2vh, 0) scale(0.95); opacity: 0.55; }
+  to { transform: translate3d(3vw, -4vh, 0) scale(1.05); opacity: 0.85; }
+}
+
+/* Faint corner planet */
+.space-qr-planet {
+  position: fixed;
+  bottom: -60px;
+  inset-inline-start: -40px;
+  width: 180px;
+  height: 180px;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 0;
+  background: radial-gradient(circle at 35% 30%, rgba(125, 211, 252, 0.22), rgba(30, 41, 82, 0.28) 55%, rgba(5, 6, 15, 0.05) 85%);
+  box-shadow: inset -18px -18px 36px rgba(5, 6, 15, 0.75);
+  opacity: 0.65;
+}
+
+/* Shooting stars */
+.space-qr-shooting-star {
+  position: fixed;
+  top: 12%;
+  left: 72%;
+  width: 120px;
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0), rgba(165, 243, 252, 0.95));
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0;
+  animation: spaceShootingStar 7s ease-in 2.2s infinite;
+}
+
+.space-qr-shooting-star--delayed {
+  top: 28%;
+  left: 22%;
+  width: 90px;
+  animation-delay: 5.8s;
+  animation-duration: 9s;
+}
+
+@keyframes spaceShootingStar {
+  0%, 84% {
+    opacity: 0;
+    transform: translate3d(0, 0, 0) rotate(-32deg);
+  }
+  86% {
+    opacity: 1;
+  }
+  94% {
+    opacity: 0;
+    transform: translate3d(-320px, 200px, 0) rotate(-32deg);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(-320px, 200px, 0) rotate(-32deg);
+  }
+}
+
+/* Shockwave flash as warp ends */
+.space-qr-shockwave {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  width: 240px;
+  height: 240px;
+  margin-top: -120px;
+  margin-left: -120px;
+  border-radius: 50%;
+  border: 2px solid rgba(103, 232, 249, 0.75);
+  box-shadow: 0 0 40px rgba(139, 92, 246, 0.55);
+  pointer-events: none;
+  z-index: 1;
+  animation: spaceShockwave 680ms cubic-bezier(0.16, 1, 0.3, 1) 820ms both;
+}
+
+@keyframes spaceShockwave {
+  0% {
+    opacity: 0;
+    transform: scale(0.15);
+  }
+  20% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(2.8);
+  }
+}
+
+.space-qr-close-btn {
+  position: fixed;
+  top: 18px;
+  inset-inline-end: 20px;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(165, 243, 252, 0.24);
+  background: rgba(11, 16, 48, 0.72);
+  color: #e4e4e7;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.space-qr-close-btn:hover {
+  background: rgba(30, 41, 82, 0.9);
+  border-color: rgba(103, 232, 249, 0.55);
+}
+
+.space-qr-close-btn:focus-visible,
+.space-qr-action-btn:focus-visible {
+  outline: 2px solid #67e8f9;
+  outline-offset: 2px;
+}
+
+/* Main centered card */
+.space-qr-card-wrap {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 16px;
+  max-width: 520px;
+  width: 100%;
+  animation: spaceCardMaterialize 620ms cubic-bezier(0.22, 1.18, 0.36, 1) 880ms both;
+}
+
+.space-qr-card-wrap.is-replay {
+  animation: spaceCardReplay 420ms cubic-bezier(0.22, 1.15, 0.36, 1) both;
+}
+
+.space-qr-overlay.is-exiting .space-qr-card-wrap {
+  animation: spaceCardExit 280ms ease-in forwards;
+}
+
+@keyframes spaceCardMaterialize {
+  0% {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes spaceCardReplay {
+  0% {
+    opacity: 0.4;
+    transform: scale(0.92);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes spaceCardExit {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.84);
+  }
+}
+
+.space-qr-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: #f8fafc;
+  animation: spaceTextUp 400ms ease-out 1350ms both;
+}
+
+.space-qr-subtitle {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #cbd5e1;
+  max-width: 380px;
+  animation: spaceTextUp 400ms ease-out 1470ms both;
+}
+
+.space-qr-card-wrap.is-replay .space-qr-title,
+.space-qr-card-wrap.is-replay .space-qr-subtitle {
+  animation: none;
+  opacity: 1;
+}
+
+@keyframes spaceTextUp {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+/* Glowing QR stage with circular countdown ring & slow orbit ring */
+.space-qr-stage {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 22px;
+}
+
+.space-qr-glow {
+  position: absolute;
+  inset: -10px;
+  border-radius: 28px;
+  background: radial-gradient(circle, rgba(34, 211, 238, 0.22), rgba(139, 92, 246, 0.18) 55%, transparent 75%);
+  pointer-events: none;
+  animation: spaceIdleGlow 4s ease-in-out 1.8s infinite;
+}
+
+@keyframes spaceIdleGlow {
+  0%, 100% {
+    opacity: 0.55;
+    transform: scale(0.98);
+  }
+  50% {
+    opacity: 0.95;
+    transform: scale(1.03);
+  }
+}
+
+.space-qr-orbit-ring {
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  border: 1px dashed rgba(103, 232, 249, 0.2);
+  pointer-events: none;
+  animation: spaceOrbitSpin 28s linear infinite;
+}
+
+@keyframes spaceOrbitSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.space-qr-countdown-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+  pointer-events: none;
+}
+
+.space-qr-ring-track {
+  fill: none;
+  stroke: rgba(148, 163, 184, 0.2);
+  stroke-width: 3;
+}
+
+.space-qr-ring-progress {
+  fill: none;
+  stroke: #22d3ee;
+  stroke-width: 3.5;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.9s linear, stroke 0.3s ease;
+}
+
+.space-qr-ring-progress.is-warning {
+  stroke: #f59e0b;
+}
+
+.space-qr-ring-progress.is-expired {
+  stroke: #ef4444;
+}
+
+/* Solid pure white wrapper for maximum scannability */
+.space-qr-frame {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+
+.space-qr-img {
+  display: block;
+  width: clamp(240px, 55vmin, 420px);
+  height: auto;
+  aspect-ratio: 1 / 1;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  animation: spaceQrReveal 280ms ease-out 1200ms both;
+}
+
+.space-qr-card-wrap.is-replay .space-qr-img {
+  animation: spaceQrReveal 220ms ease-out 100ms both;
+}
+
+@keyframes spaceQrReveal {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Thin scanner line sweeps down once and stops */
+.space-qr-scan-line {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  top: 0;
+  height: 2.5px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, #22d3ee, transparent);
+  box-shadow: 0 0 10px rgba(34, 211, 238, 0.85);
+  pointer-events: none;
+  animation: spaceScannerSweep 520ms ease-in-out 1360ms 1 both;
+}
+
+.space-qr-card-wrap.is-replay .space-qr-scan-line {
+  animation: spaceScannerSweep 450ms ease-in-out 180ms 1 both;
+}
+
+@keyframes spaceScannerSweep {
+  0% {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  15% {
+    opacity: 0.95;
+  }
+  85% {
+    opacity: 0.95;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(340px);
+  }
+}
+
+.space-qr-img.is-expired {
+  opacity: 0.25;
+  transition: opacity 0.25s ease;
+}
+
+.space-qr-expired-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: rgba(5, 6, 15, 0.8);
+  color: #ffffff;
+  border-radius: 16px;
+}
+
+.space-qr-expired-text {
+  font-size: 16px;
+  font-weight: 700;
+  color: #f87171;
+}
+
+.space-qr-expiry-label {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: #cbd5e1;
+}
+
+.space-qr-expiry-label.is-warning {
+  color: #f59e0b;
+  font-weight: 600;
+}
+
+.space-qr-expiry-label.is-expired {
+  color: #f87171;
+  font-weight: 600;
+}
+
+.space-qr-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 16px;
+  border-radius: 10px;
+  border: 1px solid rgba(103, 232, 249, 0.35);
+  background: rgba(34, 211, 238, 0.16);
+  color: #f8fafc;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.space-qr-action-btn:hover:not(:disabled) {
+  background: rgba(34, 211, 238, 0.28);
+  border-color: rgba(103, 232, 249, 0.65);
+}
+
+.space-qr-action-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.space-qr-state-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  width: clamp(240px, 55vmin, 320px);
+  height: clamp(240px, 55vmin, 320px);
+  padding: 20px;
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.72);
+  border: 1px solid rgba(103, 232, 249, 0.2);
+  color: #cbd5e1;
+  font-size: 13px;
+}
+
+.space-qr-error-text {
+  margin: 0;
+  color: #f87171;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+/* Respect prefers-reduced-motion: static starfield & simple fade-in only */
+@media (prefers-reduced-motion: reduce) {
+  .space-qr-overlay,
+  .space-qr-card-wrap,
+  .space-qr-title,
+  .space-qr-subtitle,
+  .space-qr-img {
+    animation: spaceOverlayIn 160ms ease-out both !important;
+    transform: none !important;
+  }
+
+  .space-qr-nebula,
+  .space-qr-glow,
+  .space-qr-orbit-ring {
+    animation: none !important;
+  }
+
+  .space-qr-shooting-star,
+  .space-qr-shockwave,
+  .space-qr-scan-line {
+    display: none !important;
+    animation: none !important;
+  }
+}
+
