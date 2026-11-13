@@ -12,6 +12,5 @@
       "@renderer/*": ["src/renderer/src/*"]
     }
   },
-  "include": ["src/renderer/src/**/*", "src/renderer/*.html"],
-  "references": [{ "path": "../../packages/shared" }]
+  "include": ["src/renderer/src/**/*", "src/renderer/*.html"]
 }
