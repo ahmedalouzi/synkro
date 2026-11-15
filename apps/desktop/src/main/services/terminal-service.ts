@@ -1,36 +1,72 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { platform, homedir } from 'node:os';
-import { join } from 'node:path';
+import { posix, win32 } from 'node:path';
 import { existsSync } from 'node:fs';
 import type { BrowserWindow } from 'electron';
 import { IPC_EVENTS } from '@peep/shared';
 import type { RunCommandResult } from '@peep/shared';
+import { evaluateCommandPolicy, formatWindowsCommandLine } from '@peep/agent';
 import { globalIpcBatcher } from '../utils/ipc-batcher';
 import { cleanUserProjectEnv } from './process-manager';
 
-const ALLOWED_PREFIXES = [
-  'flutter ',
-  'dart ',
-  'git status',
-  'git diff',
-  'git log',
-  'git add',
-  'git commit',
-  'git branch',
-  'pwd',
-  'cd ',
-  'dir',
-  'ls',
-  'echo ',
-];
+/**
+ * Builds the execution environment for spawned processes.
+ * Ensures flutter SDK bin is on PATH, and on macOS (darwin) appends standard
+ * CLI directories (/opt/homebrew/bin, /usr/local/bin, /usr/bin, /bin) that GUI apps miss.
+ */
+export function buildExecutionEnv(flutterSdkPath?: string, osPlatform: NodeJS.Platform = platform()): NodeJS.ProcessEnv {
+  const customEnv = { ...cleanUserProjectEnv() };
+  const isWin = osPlatform === 'win32';
+  const pathLib = isWin ? win32 : posix;
+  const pathKeyActual = Object.keys(customEnv).find((k) => k.toLowerCase() === 'path') || 'PATH';
+  const existingPath = customEnv[pathKeyActual] || '';
+
+  const pathSeparator = isWin ? ';' : ':';
+  const segments = existingPath ? existingPath.split(pathSeparator).filter(Boolean) : [];
+
+  if (osPlatform === 'darwin') {
+    const commonMacPaths = ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin'];
+    for (const macPath of commonMacPaths) {
+      if (!segments.includes(macPath)) {
+        segments.push(macPath);
+      }
+    }
+  }
+
+  if (flutterSdkPath) {
+    const binPath = pathLib.join(flutterSdkPath, 'bin');
+    if (!segments.includes(binPath)) {
+      segments.unshift(binPath);
+    }
+  }
+
+  customEnv[pathKeyActual] = segments.join(pathSeparator);
+  return customEnv;
+}
 
 /** Kills a shell and everything it started (e.g. `npm start`), not just the shell itself. */
-function killTree(child: ChildProcess): void {
-  if (child.pid === undefined || child.exitCode !== null) return;
+export function killTree(child: ChildProcess): void {
+  const pid = child.pid;
+  if (pid === undefined || child.exitCode !== null) return;
   if (platform() === 'win32') {
-    spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
+    spawn('taskkill', ['/pid', String(pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
   } else {
-    child.kill();
+    try {
+      process.kill(-pid, 'SIGTERM');
+      setTimeout(() => {
+        try {
+          process.kill(-pid, 'SIGKILL');
+        } catch {
+          // Process already exited
+        }
+      }, 200).unref();
+    } catch {
+      try {
+        child.kill('SIGTERM');
+      } catch {
+        // Child already exited
+      }
+    }
   }
 }
 
@@ -118,15 +154,7 @@ export class TerminalService {
     console.log(`[TerminalService] Creating terminal session for id: ${id}, cwd: ${cwd}`);
     this.destroy(id);
 
-    const customEnv = { ...cleanUserProjectEnv() };
-    if (this.flutterSdkPath) {
-      const binPath = join(this.flutterSdkPath, 'bin');
-      const pathKeyActual = Object.keys(customEnv).find(k => k.toLowerCase() === 'path') || 'PATH';
-      const existingPath = customEnv[pathKeyActual] || '';
-      customEnv[pathKeyActual] = platform() === 'win32'
-        ? `${binPath};${existingPath}`
-        : `${binPath}:${existingPath}`;
-    }
+    const customEnv = buildExecutionEnv(this.flutterSdkPath);
     const extra = this.envProvider?.();
     if (extra) {
       Object.assign(customEnv, extra.env);
@@ -317,30 +345,28 @@ export class TerminalService {
   }
 
   isCommandAllowed(command: string): boolean {
-    const trimmed = command.trim().toLowerCase();
-    if (!trimmed) return false;
-
-    return ALLOWED_PREFIXES.some((prefix) => trimmed.startsWith(prefix));
+    return evaluateCommandPolicy(command).allowed;
   }
 
   async runCommand(command: string, cwd: string): Promise<RunCommandResult> {
-    if (!this.isCommandAllowed(command)) {
+    const policy = evaluateCommandPolicy(command);
+    if (!policy.allowed) {
       throw new Error(`Command not allowed: ${command}`);
     }
 
-    return new Promise((resolve, reject) => {
-      const shell = platform() === 'win32';
-      const customEnv = { ...cleanUserProjectEnv() };
-      if (this.flutterSdkPath) {
-        const binPath = join(this.flutterSdkPath, 'bin');
-        const pathKeyActual = Object.keys(customEnv).find(k => k.toLowerCase() === 'path') || 'PATH';
-        const existingPath = customEnv[pathKeyActual] || '';
-        customEnv[pathKeyActual] = platform() === 'win32'
-          ? `${binPath};${existingPath}`
-          : `${binPath}:${existingPath}`;
-      }
+    const { argv } = policy;
 
-      const child = spawn(command, [], { cwd, shell, env: customEnv });
+    return new Promise((resolve, reject) => {
+      const isWin = platform() === 'win32';
+      const customEnv = buildExecutionEnv(this.flutterSdkPath);
+
+      let child: ChildProcess;
+      if (isWin) {
+        const cmdLine = formatWindowsCommandLine(argv);
+        child = spawn(cmdLine, [], { cwd, shell: true, env: customEnv });
+      } else {
+        child = spawn(argv[0], argv.slice(1), { cwd, shell: false, env: customEnv, detached: true });
+      }
 
       let stdout = '';
       let stderr = '';
@@ -353,7 +379,12 @@ export class TerminalService {
         stderr += chunk.toString();
       });
 
-      child.on('error', reject);
+      child.on('error', (err: any) => {
+        const error = err.code === 'ENOENT'
+          ? new Error(`command not found: ${argv[0]}`)
+          : err;
+        reject(error);
+      });
 
       child.on('close', (code) => {
         resolve({ stdout, stderr, exitCode: code ?? 1 });
@@ -362,9 +393,12 @@ export class TerminalService {
   }
 
   async streamCommand(id: string, command: string, cwd: string): Promise<number> {
-    if (!this.isCommandAllowed(command)) {
+    const policy = evaluateCommandPolicy(command);
+    if (!policy.allowed) {
       throw new Error(`Command not allowed: ${command}`);
     }
+
+    const { argv } = policy;
 
     if (!cwd || !existsSync(cwd)) {
       console.warn(`[TerminalService] Provided cwd '${cwd}' does not exist. Falling back to homedir.`);
@@ -372,18 +406,17 @@ export class TerminalService {
     }
 
     return new Promise((resolve, reject) => {
-      const shell = platform() === 'win32';
-      const customEnv = { ...cleanUserProjectEnv() };
-      if (this.flutterSdkPath) {
-        const binPath = join(this.flutterSdkPath, 'bin');
-        const pathKeyActual = Object.keys(customEnv).find(k => k.toLowerCase() === 'path') || 'PATH';
-        const existingPath = customEnv[pathKeyActual] || '';
-        customEnv[pathKeyActual] = platform() === 'win32'
-          ? `${binPath};${existingPath}`
-          : `${binPath}:${existingPath}`;
+      const isWin = platform() === 'win32';
+      const customEnv = buildExecutionEnv(this.flutterSdkPath);
+
+      let child: ChildProcess;
+      if (isWin) {
+        const cmdLine = formatWindowsCommandLine(argv);
+        child = spawn(cmdLine, [], { cwd, shell: true, env: customEnv });
+      } else {
+        child = spawn(argv[0], argv.slice(1), { cwd, shell: false, env: customEnv, detached: true });
       }
 
-      const child = spawn(command, [], { cwd, shell, env: customEnv });
       const session: TerminalSession = { process: child, cwd, buffer: '', reject };
       this.commandSessions.set(id, session);
 
@@ -400,9 +433,16 @@ export class TerminalService {
         emit(chunk.toString().replace(/\r?\n/g, '\r\n'));
       });
 
-      child.on('error', (err) => {
-        this.commandSessions.delete(id);
-        reject(err);
+      child.on('error', (err: any) => {
+        if (err.code === 'ENOENT') {
+          emit(`command not found: ${argv[0]}\r\n`);
+          this.commandSessions.delete(id);
+          reject(new Error(`command not found: ${argv[0]}`));
+        } else {
+          emit(`${err.message || String(err)}\r\n`);
+          this.commandSessions.delete(id);
+          reject(err);
+        }
       });
 
       child.on('close', (code) => {

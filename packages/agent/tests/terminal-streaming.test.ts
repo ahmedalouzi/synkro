@@ -143,13 +143,120 @@ export default async function run() {
     }
     console.log('    ✓ runCommand compatibility verified');
 
-    // 5. process error handling
-    console.log('  [Test 5] Process error handling...');
-    const errCode = await service.streamCommand('test-5', 'nonexistent_command_12345', process.cwd());
-    if (errCode === 0) {
-      throw new Error('Expected streamCommand to fail on bad command with non-zero exit code');
+    // 5. process error handling (ENOENT vs non-ENOENT)
+    console.log('  [Test 5] Process error handling (ENOENT vs non-ENOENT)...');
+
+    // 5a. ENOENT error handling
+    streamedChunks.length = 0;
+    const streamPromiseEnoent = service.streamCommand('test-5-enoent', 'node -e "setInterval(() => {}, 1000)"', process.cwd());
+    const sessionEnoent = (service as any).commandSessions.get('test-5-enoent');
+    if (sessionEnoent) {
+      const enoentErr: any = new Error('spawn ENOENT');
+      enoentErr.code = 'ENOENT';
+      sessionEnoent.process.emit('error', enoentErr);
     }
-    console.log('    ✓ streamCommand correctly handled bad command with code ' + errCode);
+    let enoentCaught = false;
+    try {
+      await streamPromiseEnoent;
+    } catch (err: any) {
+      enoentCaught = true;
+      if (!err.message.includes('command not found: node')) {
+        throw new Error(`Expected "command not found: node", got: ${err.message}`);
+      }
+    }
+    if (!enoentCaught) throw new Error('Expected ENOENT error to reject streamCommand');
+    const enoentOutput = streamedChunks.map(c => c.data).join('');
+    if (!enoentOutput.includes('command not found: node')) {
+      throw new Error(`Expected emit "command not found: node", got: ${enoentOutput}`);
+    }
+
+    // 5b. Non-ENOENT (EACCES) error handling: must NOT emit "command not found"
+    streamedChunks.length = 0;
+    const streamPromiseEacces = service.streamCommand('test-5-eacces', 'node -e "setInterval(() => {}, 1000)"', process.cwd());
+    const sessionEacces = (service as any).commandSessions.get('test-5-eacces');
+    if (sessionEacces) {
+      const eaccesErr: any = new Error('Permission denied (EACCES)');
+      eaccesErr.code = 'EACCES';
+      sessionEacces.process.emit('error', eaccesErr);
+    }
+    let eaccesCaught = false;
+    try {
+      await streamPromiseEacces;
+    } catch (err: any) {
+      eaccesCaught = true;
+      if (err.message.includes('command not found')) {
+        throw new Error(`Non-ENOENT error should not say command not found: ${err.message}`);
+      }
+      if (!err.message.includes('Permission denied (EACCES)')) {
+        throw new Error(`Expected original error message, got: ${err.message}`);
+      }
+    }
+    if (!eaccesCaught) throw new Error('Expected EACCES error to reject streamCommand');
+    const eaccesOutput = streamedChunks.map(c => c.data).join('');
+    if (eaccesOutput.includes('command not found')) {
+      throw new Error(`Non-ENOENT error output must not say "command not found", got: ${eaccesOutput}`);
+    }
+    if (!eaccesOutput.includes('Permission denied (EACCES)')) {
+      throw new Error(`Expected emitted output to contain real error message, got: ${eaccesOutput}`);
+    }
+    console.log('    ✓ streamCommand correctly distinguishes ENOENT from other errors');
+
+    // 6. Process tree cancellation on POSIX / Windows
+    console.log('  [Test 6] Process tree cancellation...');
+    if (process.platform !== 'win32') {
+      streamedChunks.length = 0;
+      const treeScript = `
+        const { spawn } = require('child_process');
+        const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)']);
+        console.log('CHILD_PID:' + child.pid);
+        setInterval(() => {}, 1000);
+      `;
+      const treePromise = service.streamCommand(
+        'test-tree',
+        `node -e "${treeScript.replace(/\\n/g, ' ')}"`,
+        process.cwd()
+      );
+      treePromise.catch(() => {});
+
+      let childPid: number | null = null;
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('Timeout waiting for child PID')), 5000);
+        const check = setInterval(() => {
+          const combined = streamedChunks.map((c) => c.data).join('');
+          const m = combined.match(/CHILD_PID:(\d+)/);
+          if (m) {
+            childPid = parseInt(m[1], 10);
+            clearInterval(check);
+            clearTimeout(timeout);
+            resolve();
+          }
+        }, 10);
+      });
+
+      if (!childPid) throw new Error('Failed to capture child PID');
+      let isAlive = true;
+      try {
+        process.kill(childPid, 0);
+      } catch {
+        isAlive = false;
+      }
+      if (!isAlive) throw new Error('Child process should be running before cancel');
+
+      service.cancelCommand('test-tree');
+      await new Promise((r) => setTimeout(r, 400));
+
+      let isAliveAfter = false;
+      try {
+        process.kill(childPid, 0);
+        isAliveAfter = true;
+      } catch {
+        isAliveAfter = false;
+      }
+      if (isAliveAfter) throw new Error('Child process in process group should be terminated after cancel');
+      console.log('    ✓ POSIX process tree cancelled via process group');
+    } else {
+      console.log('    ✓ Windows process tree cancellation verified in Test 3');
+    }
 
     console.log('  🟢 All Terminal Streaming tests passed.');
 
@@ -159,3 +266,11 @@ export default async function run() {
     (ipcBatcherModule.globalIpcBatcher as any).bufferString = originalBufferString;
   }
 }
+
+if (process.argv[1]?.replace(/\\/g, '/').endsWith('terminal-streaming.test.ts')) {
+  run().catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });
+}
+

@@ -6,6 +6,15 @@ export { truncateConversationHistory, estimateTokens } from './context/truncate'
 export { runAgentLoop, type AgentCallbacks, type AgentConfig, type AgentToolExecutor, type AgentLogger } from './orchestrator';
 export { AgentStateMachine } from './state-machine';
 export type { ChatMessage, ToolCall } from './types';
+export {
+  evaluateCommandPolicy,
+  isCommandAllowed,
+  tokenizeCommandLine,
+  formatWindowsCommandLine,
+  ALLOWED_BINARIES,
+  type CommandPolicyResult,
+  type TokenizeResult,
+} from './tools/command-policy';
 export { classifyCommand, type SafetyLevel, type CommandSafetyResult } from './tools/safety';
 export {
   loadDesignManifest,
