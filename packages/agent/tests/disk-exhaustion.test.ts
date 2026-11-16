@@ -114,6 +114,9 @@ async function run() {
     console.log(`  [FINDING] Storage quota appeared to enforce limits (consumed ${maxConsumptionMB} MB).`);
   }
 
+  // The fake gradlew exits 0, so runBuild treats it as a successful build and keeps the stopped container for the
+  // APK copy, as designed. The worker removes it after extractArtifact(); do the same before checking for leftovers.
+  await sandbox.forceKill();
   console.log(`  [ASSERT] Checking for lingering container: ${containerName}`);
   const { stdout } = await execFileAsync('docker', ['ps', '-a', '--filter', `name=${containerName}`, '--format', '{{.Names}}']);
   const lingering = stdout.trim();

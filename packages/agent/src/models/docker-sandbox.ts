@@ -131,7 +131,11 @@ export const FRAMEWORK_IMAGES: Record<BuildFramework, string> = {
 //   one without it gets com.atomvs.<slug>.
 // - Prebuild fails on an image path that does not exist (older Synkro templates pointed at an empty assets/):
 //   only that key is removed, so Expo falls back to its default image.
-const PREPARE_EXPO_CONFIG_JS = `
+// - Expo SDK 51 and older: without a splash backgroundColor, prebuild removes the splashscreen_background color but
+//   keeps drawable/splashscreen.xml, which uses it, so Gradle fails much later in processReleaseResources ("resource
+//   color/splashscreen_background not found"). Such projects get Expo's default, #ffffff. SDK 52+ is not affected
+//   (checked on 52.0.49 and 58.0.25) and is left as it is. Exported for tests.
+export const PREPARE_EXPO_CONFIG_JS = `
 const fs = require('fs');
 const path = require('path');
 if (fs.existsSync('app.json')) {
@@ -155,6 +159,15 @@ if (fs.existsSync('app.json')) {
     }
   };
   dropMissingImages(expo, 'expo.');
+  let expoMajor = NaN;
+  try {
+    expoMajor = parseInt(JSON.parse(fs.readFileSync('node_modules/expo/package.json', 'utf8')).version, 10);
+  } catch (e) {}
+  const splashColor = (expo.splash && expo.splash.backgroundColor) || (expo.android.splash && expo.android.splash.backgroundColor);
+  if (expoMajor <= 51 && !splashColor) {
+    expo.splash = Object.assign({}, expo.splash, { backgroundColor: '#ffffff' });
+    console.log('[SYSTEM] expo.splash.backgroundColor is not set, using #ffffff (Expo SDK ' + expoMajor + ' needs it to build)');
+  }
   fs.writeFileSync('app.json', JSON.stringify(json, null, 2));
 }
 `;

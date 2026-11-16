@@ -145,6 +145,9 @@ async function run() {
   assert.ok(!fullLogA.includes('[FS_ISOLATION_FAILED]'), 'Job A accessed Job B files! Filesystem isolation broken.');
   console.log('PASS: Filesystem overlay isolation strictly enforced.');
 
+  // Both fake builds exit 0, so runBuild keeps each stopped container for the APK copy, as designed. The worker
+  // removes it after extractArtifact(); do the same before checking for leftovers.
+  await Promise.all([sandboxA.forceKill(), sandboxB.forceKill()]);
   console.log(`  [ASSERT] Checking for lingering containers...`);
   const { stdout: psA } = await execFileAsync('docker', ['ps', '-a', '--filter', `name=${containerNameA}`, '--format', '{{.Names}}']);
   assert.strictEqual(psA.trim(), '', `Container A (${containerNameA}) still exists on host!`);
