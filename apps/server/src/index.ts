@@ -2,6 +2,7 @@ import * as path from 'node:path';
 import { config } from 'dotenv';
 import pino from 'pino';
 import { ipRateLimiter } from './rate-limiter';
+import { applyTrustProxy } from './trust-proxy';
 
 // Load env from root workspace
 config({ path: path.resolve(process.cwd(), '.env') });
@@ -144,6 +145,8 @@ async function bootstrap() {
   }
 
   const app = express();
+  // Before any middleware reads req.ip: the rate limiters key on it (trust-proxy.ts).
+  applyTrustProxy(app);
   app.use((req, _res, next) => {
     console.log(requestLogLine(req));
     _res.setHeader('X-Synkro-Server-Version', commitHash);
