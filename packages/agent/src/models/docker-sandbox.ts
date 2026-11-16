@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { setupBuildNetwork, verifyBuildNetwork, BUILD_NETWORK, RESOLVER_IP } from './network-setup.js';
 import { BuildLogLines } from './build-log.js';
+import { cachedDiskQuota, diskQuotaRequired } from './disk-quota.js';
 
 export type BuildFramework = 'flutter' | 'react-native';
 
@@ -124,6 +125,9 @@ export const FRAMEWORK_IMAGES: Record<BuildFramework, string> = {
   'flutter': 'synkro/flutter-sandbox:2',
   'react-native': 'synkro/rn-sandbox:1',
 };
+
+/** The disk quota probe (disk-quota.ts) runs in the smaller sandbox image; one probe covers both frameworks. */
+export const DISK_QUOTA_PROBE_IMAGE = FRAMEWORK_IMAGES['react-native'];
 
 // Runs inside the container on the copy of the project in /build, just before `expo prebuild`; the user's own
 // files are never touched. Only a static app.json is handled (an app.config.js is left as it is).
@@ -350,6 +354,17 @@ export class DockerSandbox {
 
     const netName = await this.setupNetwork(onLog);
     if (!netName) return false;
+
+    // The per-build disk limit (--storage-opt below) is silently ignored by some Docker setups (disk-quota.ts).
+    // Without it one build can fill the disk the database lives on, so production refuses to build.
+    if (diskQuotaRequired()) {
+      const quota = await cachedDiskQuota(DISK_QUOTA_PROBE_IMAGE);
+      if (!quota.ok) {
+        console.error(`[SANDBOX] Refusing Cloud Build ${this.config.jobId}: disk quota not enforced: ${quota.problem}`);
+        onLog('[SYSTEM] Cloud Build is unavailable on this server right now (the sandbox disk limit is not in place). Please try again later.\n');
+        return false;
+      }
+    }
 
     let createArgs: string[];
     try {

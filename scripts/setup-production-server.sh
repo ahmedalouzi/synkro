@@ -77,6 +77,32 @@ if ! command -v docker >/dev/null 2>&1; then
   systemctl start docker
 fi
 
+# 4b. Docker storage: classic overlay2 graph driver, containerd snapshotter OFF (DEC-06).
+# The per-build disk limit (--storage-opt size=, docker-sandbox.ts) only works with overlay2 on XFS mounted with
+# pquota (/var/lib/docker, docs/LINUX_TEST_SESSION.md section 1). Docker 29+ defaults to the containerd image store,
+# which accepts --storage-opt and silently ignores it, and keeps container layers under /var/lib/containerd on the
+# root disk (where Postgres lives). Existing keys in daemon.json are kept; Docker restarts only if this changes it.
+# Images do not carry over between the two stores: section 11 rebuilds the sandbox images when they are missing.
+DAEMON_JSON="/etc/docker/daemon.json"
+DOCKER_STORAGE_WANT='{"storage-driver":"overlay2","features":{"containerd-snapshotter":false}}'
+mkdir -p /etc/docker
+DOCKER_CONFIG_NOW="$(if [[ -s "${DAEMON_JSON}" ]]; then cat "${DAEMON_JSON}"; else echo '{}'; fi)"
+if ! jq -e . >/dev/null 2>&1 <<<"${DOCKER_CONFIG_NOW}"; then
+  echo "[-] ERROR: ${DAEMON_JSON} is not valid JSON; fix it by hand, then run this script again." >&2
+  exit 1
+fi
+DOCKER_CONFIG_NEW="$(jq -S --argjson want "${DOCKER_STORAGE_WANT}" '. * $want' <<<"${DOCKER_CONFIG_NOW}")"
+if [[ "$(jq -S . <<<"${DOCKER_CONFIG_NOW}")" != "${DOCKER_CONFIG_NEW}" ]]; then
+  echo "[+] Setting Docker storage to overlay2 (containerd snapshotter off) in ${DAEMON_JSON}..."
+  if [[ -s "${DAEMON_JSON}" ]]; then cp "${DAEMON_JSON}" "${DAEMON_JSON}.bak.$(date +%Y%m%d%H%M%S)"; fi
+  printf '%s\n' "${DOCKER_CONFIG_NEW}" > "${DAEMON_JSON}"
+  # Stops every running container, including a Cloud Build in progress: run this script when no build runs.
+  echo "[!] Restarting Docker (running containers stop)..."
+  systemctl restart docker
+else
+  echo "[+] Docker storage already set to overlay2 (containerd snapshotter off)."
+fi
+
 # 5. Non-root service user 'synkro'
 echo "[+] Provisioning non-root user '${SYNKRO_USER}'..."
 if ! id -u "${SYNKRO_USER}" >/dev/null 2>&1; then
@@ -261,7 +287,36 @@ else
   echo "[!] Skipping synkro-build-network.service until the repo is in ${SYNKRO_HOME}."
 fi
 
-# 13. Signing key warning
+# 13. Disk quota verification (hard check). Same check as the build worker (packages/agent/src/models/disk-quota.ts):
+# overlay2 on xfs, and a container limited to 1G that writes 2G must fail with "No space left on device".
+echo "[+] Verifying the per-build disk quota..."
+DOCKER_DRIVER="$(docker info --format '{{.Driver}}')"
+DOCKER_BACKING_FS="$(docker info --format '{{range .DriverStatus}}{{if eq (index . 0) "Backing Filesystem"}}{{index . 1}}{{end}}{{end}}')"
+if [[ "${DOCKER_DRIVER}" != "overlay2" || "${DOCKER_BACKING_FS}" != "xfs" ]]; then
+  echo "[!] FAILED: Docker storage is '${DOCKER_DRIVER}' on '${DOCKER_BACKING_FS:-unknown}'; the disk quota needs overlay2 on xfs." >&2
+  echo "[!] /var/lib/docker must be the XFS volume mounted with pquota (docs/LINUX_TEST_SESSION.md section 1), and" >&2
+  echo "[!] ${DAEMON_JSON} must keep storage-driver overlay2 with the containerd snapshotter off (section 4b)." >&2
+  echo "[!] Cloud Builds are refused until this passes." >&2
+  exit 1
+fi
+QUOTA_IMAGE="$(grep -oE "synkro/rn-sandbox:[0-9]+" "${SYNKRO_HOME}/packages/agent/src/models/docker-sandbox.ts" 2>/dev/null | head -n 1 || true)"
+if [[ "${REPO_READY}" != "true" || -z "${QUOTA_IMAGE}" ]] || ! docker image inspect "${QUOTA_IMAGE}" >/dev/null 2>&1; then
+  echo "[!] WARNING: no sandbox image yet: disk quota enforcement NOT confirmed. Run this script again after cloning the repo."
+else
+  QUOTA_PROBE="synkro-quota-probe-$$"
+  QUOTA_OUT="$(docker run --rm --name "${QUOTA_PROBE}" --network none --cap-drop=ALL --user=1000:1000 --storage-opt size=1G \
+    "${QUOTA_IMAGE}" sh -c 'dd if=/dev/zero of=/tmp/quota-probe bs=1M count=2048 2>&1' 2>&1)" && QUOTA_RC=0 || QUOTA_RC=$?
+  docker rm -f "${QUOTA_PROBE}" >/dev/null 2>&1 || true
+  if [[ "${QUOTA_RC}" -eq 0 ]] || ! grep -qiE "No space left on device|Disk quota exceeded" <<<"${QUOTA_OUT}"; then
+    echo "${QUOTA_OUT}" | tail -n 3
+    echo "[!] FAILED: a container limited to 1G could write 2G (or the probe failed for another reason, output above)." >&2
+    echo "[!] --storage-opt is NOT enforced; one build could fill the disk. Cloud Builds are refused until this passes." >&2
+    exit 1
+  fi
+  echo "[+] Disk quota enforced: a 1G sandbox could not write 2G (overlay2 on xfs)."
+fi
+
+# 14. Signing key warning
 cat <<'WARNING'
 ==============================================================================
 [!] SYNKRO_SIGNING_ENC_KEY (in the server .env) encrypts every app signing key.

@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { BUILD_NETWORK, verifyBuildNetwork } from '../src/models/network-setup.js';
 import { FRAMEWORK_IMAGES } from '../src/models/docker-sandbox.js';
+import { checkDiskQuota } from '../src/models/disk-quota.js';
 import { SkipTest } from './skip-test.js';
 
 const execFileAsync = promisify(execFile);
@@ -18,7 +19,7 @@ export const RUN_SANDBOX_TESTS = process.env.SYNKRO_RUN_SANDBOX_TESTS === '1';
 export interface SandboxNeeds {
   /** Root on the host (dmesg, tcpdump). */
   root?: boolean;
-  /** Docker --storage-opt size= (XFS with pquota), for the disk quota test. */
+  /** An enforced Docker --storage-opt size= (overlay2 on XFS with pquota), for the disk quota test. */
   storageQuota?: boolean;
 }
 
@@ -46,14 +47,10 @@ export async function missingSandboxRequirements(needs: SandboxNeeds = {}): Prom
   }
   if (needs.root && process.getuid?.() !== 0) missing.push('root (run with sudo)');
   if (needs.storageQuota && hasImage) {
-    const name = `synkro-quota-probe-${process.pid}`;
-    try {
-      await execFileAsync('docker', ['create', '--name', name, '--storage-opt', 'size=1G', image, 'true'], { timeout: 30_000 });
-    } catch {
-      missing.push('Docker --storage-opt size= support (XFS with pquota, see docs/LINUX_TEST_SESSION.md)');
-    } finally {
-      await execFileAsync('docker', ['rm', '-f', name]).catch(() => {});
-    }
+    // Real enforcement, not only that Docker accepts --storage-opt: Docker 29+ with the containerd snapshotter
+    // accepts it and ignores it. Same check as the build worker (src/models/disk-quota.ts).
+    const quota = await checkDiskQuota(image);
+    if (!quota.ok) missing.push(`an enforced Docker disk quota: ${quota.problem} (see docs/LINUX_TEST_SESSION.md)`);
   }
   return missing;
 }

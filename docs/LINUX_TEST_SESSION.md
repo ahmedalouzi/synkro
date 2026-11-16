@@ -13,6 +13,11 @@ Delete the server and its volume when done.
 - [ ] **A separate 100 GB Volume for Docker, formatted XFS.** `--storage-opt size=` (5G RN / 15G Flutter) only works on
       overlay2 over XFS mounted with `pquota`; on the default ext4 every build fails at `docker create`. Images alone are
       ~20 GB (flutter-sandbox 12 GB, rn-sandbox 7.4 GB).
+- [ ] **Trap: Docker 29+ ignores `--storage-opt` with its default containerd image store** (`docker info` says
+      `Storage Driver: overlayfs`, `driver-type: io.containerd.snapshotter.v1`). It accepts the option without an error,
+      writes container layers under `/var/lib/containerd` on the root disk, and a "5G" build can fill the disk Postgres
+      is on. The setup script switches Docker to the classic `overlay2` driver with the containerd snapshotter off
+      (`/etc/docker/daemon.json`, DEC-06) and then checks for real that a 1G container cannot write 2G.
 - [ ] An SSH key on the droplet; a test domain for Caddy is optional (the tests below call the API on `127.0.0.1:8080`).
 - [ ] A real Android phone (arm64) for the install test; an older armv7 phone if you have one.
 - [ ] Generate `SYNKRO_SIGNING_ENC_KEY` on your own machine (`openssl rand -base64 32`) and put it in the team password
@@ -31,7 +36,13 @@ sudo mount -a && mount | grep /var/lib/docker        # must show xfs and prjquot
 
 - [ ] `sudo SYNKRO_DOMAIN=<domain or test.invalid> bash scripts/setup-production-server.sh` (first run: system, Docker,
       user `synkro`, Caddy; sections 11-12 are skipped because the repo is not there yet).
-- [ ] `docker info | grep -E "Storage Driver|Backing Filesystem"` shows `overlay2` and `xfs`.
+- [ ] `docker info | grep -E "Storage Driver|Backing Filesystem"` shows `overlay2` and `xfs` (not `overlayfs`: that is
+      the containerd snapshotter, see the trap in section 0). `/etc/docker/daemon.json` has `"storage-driver": "overlay2"`
+      and `"features": {"containerd-snapshotter": false}` (the script writes them).
+- [ ] The second run ends with `[+] Disk quota enforced: a 1G sandbox could not write 2G`. If it says `FAILED`, Cloud
+      Builds are refused (the worker logs `Disk quota NOT enforced`) until it passes. By hand:
+      `docker run --rm --network none --storage-opt size=1G synkro/rn-sandbox:1 dd if=/dev/zero of=/tmp/x bs=1M count=2048`
+      must stop with `No space left on device`.
 - [ ] Clone the repo into `/opt/synkro` as `synkro`, then `pnpm install`.
 - [ ] Run the script again: it builds `synkro/flutter-sandbox:2` and `synkro/rn-sandbox:1` (time it) and installs
       `synkro-build-network.service`.
@@ -127,7 +138,8 @@ Nine suites run real Docker sandboxes: `concurrent-isolation`, `disk-exhaustion`
 part), `expo-android-build`, `fork-bomb`, `fs-escape`, `memory-exhaustion`, `network-fqdn-distinction`,
 `timeout-zombie`. They need a Linux host with Docker, the `synkro/rn-sandbox:1` image and the `build-restricted`
 network with the DNS allowlist (sections 2 and 4). `memory-exhaustion` and `network-fqdn-distinction` also need root
-(dmesg, tcpdump), and `disk-exhaustion` needs `--storage-opt` (the XFS volume from section 1).
+(dmesg, tcpdump), and `disk-exhaustion` needs an **enforced** `--storage-opt` (overlay2 on the XFS volume from
+section 1; the requirement check writes 2G into a 1G container, so "Docker accepts the option" is not enough).
 
 - Without them (CI, Windows, macOS) the suites are reported as **skipped** with what is missing, like the Postgres
   suites without a database (`tests/sandbox-requirements.ts`).
