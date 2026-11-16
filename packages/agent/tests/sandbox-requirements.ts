@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { BUILD_NETWORK, verifyBuildNetwork } from '../src/models/network-setup.js';
 import { FRAMEWORK_IMAGES } from '../src/models/docker-sandbox.js';
+import { SkipTest } from './skip-test.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -13,13 +14,6 @@ const execFileAsync = promisify(execFile);
  */
 export const RUN_SANDBOX_TESTS = process.env.SYNKRO_RUN_SANDBOX_TESTS === '1';
 
-/** Thrown to report a suite as skipped; test-runner.ts counts it under "skipped" with the reason. */
-export class SkipTest extends Error {
-  constructor(reason: string) {
-    super(reason);
-    this.name = 'SkipTest';
-  }
-}
 
 export interface SandboxNeeds {
   /** Root on the host (dmesg, tcpdump). */

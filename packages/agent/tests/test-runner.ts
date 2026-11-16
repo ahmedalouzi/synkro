@@ -123,7 +123,7 @@ async function main() {
         console.log(`  ⚠️ Warning: No default export function\n`);
       }
     } catch (error: any) {
-      // SkipTest (sandbox-requirements.ts): the suite needs something this host does not have.
+      // SkipTest (skip-test.ts): the suite needs something this host does not have.
       if (error?.name === 'SkipTest') {
         console.warn(`  🟡 Skipped (${error.message})\n`);
         skipped++;
