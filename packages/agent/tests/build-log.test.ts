@@ -55,5 +55,39 @@ export default async function run() {
   ]);
   assert.ok(out.every((text) => !text.endsWith('\n')), 'the worker adds the newline after each call');
 
+  console.log('  [build-log] Out of disk: the Java stack frames are hidden, the Gradle summary stays...');
+  const disk: string[] = [];
+  const diskLines = new BuildLogLines((text) => disk.push(text));
+  diskLines.push('stdout', '> Task :expo-modules-core:configureCMakeRelWithDebInfo[arm64-v8a] FAILED\n');
+  assert.equal(diskLines.outOfDisk, false);
+  diskLines.push('stderr', [
+    'java.io.IOException: No space left on device',
+    '\tat java.base/java.io.FileOutputStream.writeBytes(Native Method)',
+    '\tat org.gradle.internal.Foo.bar(Foo.java:12)',
+    'Caused by: java.io.IOException: No space left on device',
+    '\tat org.gradle.Baz.run(Baz.java:3)',
+    '\t... 42 more',
+    'FAILURE: Build failed with an exception.',
+    '',
+  ].join('\n'));
+  diskLines.flush();
+  assert.equal(diskLines.outOfDisk, true);
+  assert.deepEqual(disk.join('\n').split('\n'), [
+    '> Task :expo-modules-core:configureCMakeRelWithDebInfo[arm64-v8a] FAILED',
+    'java.io.IOException: No space left on device',
+    '[SYSTEM] (Java stack trace hidden: the build ran out of disk space)',
+    'Caused by: java.io.IOException: No space left on device',
+    '[SYSTEM] (Java stack trace hidden: the build ran out of disk space)',
+    '[ERROR] FAILURE: Build failed with an exception.',
+  ]);
+
+  console.log('  [build-log] Other failures keep their stack traces...');
+  const other: string[] = [];
+  const otherLines = new BuildLogLines((text) => other.push(text));
+  otherLines.push('stderr', 'java.lang.NullPointerException\n\tat com.x.Y.z(Y.java:1)\n');
+  otherLines.flush();
+  assert.equal(otherLines.outOfDisk, false);
+  assert.ok(other.join('\n').includes('\tat com.x.Y.z(Y.java:1)'));
+
   console.log('  v Build log tests passed.');
 }
