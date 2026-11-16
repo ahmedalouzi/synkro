@@ -206,6 +206,10 @@ async function runTests() {
     assert.ok(css.includes('.space-qr-shooting-star') && css.includes('.space-qr-glow') && css.includes('.space-qr-orbit-ring'));
     assert.ok(css.includes('animation: none !important'), 'Reduced motion must disable shooting stars, pulse, and orbit');
     console.log('  ✓ [Test 5] prefers-reduced-motion disables warp, shooting stars, and pulse');
+    // The close button sits below the title bar, clear of the native window controls / macOS traffic lights.
+    const closeRule = /\.space-qr-close-btn \{[^}]*\}/.exec(css)?.[0] ?? '';
+    assert.ok(closeRule.includes('top: calc(env(titlebar-area-height, 35px) + 12px)'), 'Close button must sit below the title bar');
+    assert.ok(closeRule.includes('inset-inline-end: 20px'), 'Close button keeps its logical (RTL-aware) side');
   }
 
   // Test 6: i18n keys exist in en, ar, tr
