@@ -13,6 +13,12 @@ const PROGRESS_LINE = /^[.\s]*(\d{1,3}%[.\s]*)*$/;
 /** A partial line longer than this is emitted as it is, so one never grows without bound. */
 const MAX_PARTIAL = 64 * 1024;
 
+/** The build filled its disk limit (--storage-opt), on any stream. */
+const OUT_OF_DISK = /No space left on device|ENOSPC/i;
+
+/** A Java stack frame ("\tat org.gradle.Foo.bar(Foo.java:12)") or the "... 42 more" that ends a cause. */
+const JAVA_FRAME = /^\s+(at [\w$.<>/\-]+\(.*\)|\.\.\. \d+ more)\s*$/;
+
 /** One log line as it goes into the build log. Exported for tests. */
 export function formatBuildLogLine(line: string): string {
   const text = line.replace(/\r$/, '');
@@ -27,9 +33,17 @@ export function formatBuildLogLine(line: string): string {
 /**
  * Splits each stream into whole lines (a chunk can end mid-line) and passes them on formatted, joined with
  * "\n" and without a trailing newline (the build worker adds one per call).
+ *
+ * Out of disk: once a line says "No space left on device", `outOfDisk` is set and the Java stack frames that follow
+ * are left out. That failure is our server's limit, not the user's code, so they get Gradle's own summary and a plain
+ * message (DockerSandbox.runBuild) instead of a long stack trace. Other failures keep their stack traces.
  */
 export class BuildLogLines {
   private partial: Record<'stdout' | 'stderr', string> = { stdout: '', stderr: '' };
+  private droppedFrames = 0;
+
+  /** Some line said the disk limit was reached. */
+  outOfDisk = false;
 
   constructor(private onLines: (text: string) => void) {}
 
@@ -53,6 +67,17 @@ export class BuildLogLines {
   }
 
   private emit(lines: string[]): void {
-    if (lines.length > 0) this.onLines(lines.map(formatBuildLogLine).join('\n'));
+    const kept: string[] = [];
+    for (const line of lines) {
+      if (OUT_OF_DISK.test(line)) this.outOfDisk = true;
+      if (this.outOfDisk && JAVA_FRAME.test(line)) {
+        // One note per run of hidden frames, not one per frame.
+        if (this.droppedFrames++ === 0) kept.push('[SYSTEM] (Java stack trace hidden: the build ran out of disk space)');
+        continue;
+      }
+      this.droppedFrames = 0;
+      kept.push(formatBuildLogLine(line));
+    }
+    if (kept.length > 0) this.onLines(kept.join('\n'));
   }
 }

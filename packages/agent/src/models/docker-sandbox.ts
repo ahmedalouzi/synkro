@@ -126,6 +126,28 @@ export const FRAMEWORK_IMAGES: Record<BuildFramework, string> = {
   'react-native': 'synkro/rn-sandbox:1',
 };
 
+/**
+ * Per-build disk limit in GB (`--storage-opt size=`: the container's writable layer, i.e. everything the build writes:
+ * node_modules, Gradle caches under /tmp/.gradle, native build intermediates, the APK). Enforced since DEC-06.
+ * Builds run one at a time (the worker takes one job), on the 100 GB Docker volume that also holds ~20 GB of images,
+ * so one limit at a time has to fit next to the images, not all of them together.
+ * - Flutter 15G: the SDK is in the image, but NDK/CMake downloads and Gradle caches come on top.
+ * - React Native / Expo 12G (DEC-07): a real Expo build ran out of space at 5G (Gradle caches, expo-modules-core CMake
+ *   intermediates) as soon as the quota was really enforced. The old 5G was never applied before DEC-06.
+ */
+export const BUILD_DISK_LIMIT_GB: Record<BuildFramework, number> = {
+  'flutter': 15,
+  'react-native': 12,
+};
+
+/** One line for the build log, e.g. "[SYSTEM] Disk used: 7.4 GB of 12 GB". Docker's G is 1024³ bytes. Exported for tests. */
+export function formatDiskUsage(bytes: number, limitGb: number): string {
+  return `[SYSTEM] Disk used: ${(bytes / 1024 ** 3).toFixed(1)} GB of ${limitGb} GB`;
+}
+
+/** What the user sees when a build fails because it filled its disk limit. Exported for tests. */
+export const OUT_OF_DISK_MESSAGE = "[SYSTEM] The build ran out of disk space on our server; we've been notified.";
+
 /** The disk quota probe (disk-quota.ts) runs in the smaller sandbox image; one probe covers both frameworks. */
 export const DISK_QUOTA_PROBE_IMAGE = FRAMEWORK_IMAGES['react-native'];
 
@@ -333,10 +355,7 @@ export class DockerSandbox {
     const framework = this.config.framework || 'flutter';
     const image = FRAMEWORK_IMAGES[framework];
 
-    // Flutter needs a much larger storage limit (15G) because the SDK/Android SDK are in the image layer
-    // and NDK/CMake downloads at build time consume a significant amount of additional space.
-    // React Native remains at 5G.
-    const storageLimit = framework === 'flutter' ? 'size=15G' : 'size=5G';
+    const storageLimit = `size=${BUILD_DISK_LIMIT_GB[framework]}G`;
 
     const createArgs = [
       'create',
@@ -444,6 +463,7 @@ export class DockerSandbox {
         if (!isResolved) {
           isResolved = true;
           onLog(`[SYSTEM] Build timed out after ${Math.round(timeoutMs / 1000)}s. Terminating container...`);
+          await this.logDiskUsage(onLog, framework);
           await this.forceKill();
           resolve(false);
         }
@@ -459,6 +479,8 @@ export class DockerSandbox {
         if (!isResolved) {
           isResolved = true;
           clearTimeout(timeoutTimer);
+          // Measured before the container is removed, on success and on failure.
+          const usedBytes = await this.logDiskUsage(onLog, framework);
           if (code === 0) {
             // Do NOT forceKill here. The container must remain (in stopped state)
             // so we can extract the artifact from it.
@@ -466,6 +488,13 @@ export class DockerSandbox {
           } else {
             await this.forceKill();
             onLog(`[SYSTEM] Build exited with code ${code}`);
+            if (logLines.outOfDisk) {
+              // A server-side limit, not the user's code: a plain message for them (BuildLogLines already dropped the
+              // Java stack frames), the details in the server error log.
+              const used = usedBytes === null ? 'unknown' : `${(usedBytes / 1024 ** 3).toFixed(1)} GB`;
+              console.error(`[SANDBOX] Build ${this.config.jobId} (${framework}) ran out of disk space: used ${used} of the ${BUILD_DISK_LIMIT_GB[framework]} GB limit`);
+              onLog(OUT_OF_DISK_MESSAGE);
+            }
             resolve(false);
           }
         }
@@ -529,6 +558,24 @@ export class DockerSandbox {
       return false;
     } finally {
       await rm(tempDir, { recursive: true, force: true });
+    }
+  }
+
+  /**
+   * Logs how much of its disk limit the build used: the size of the container's writable layer, which is what
+   * --storage-opt counts. Works on a stopped container; call it before forceKill(). Null when Docker cannot tell.
+   */
+  private async logDiskUsage(onLog: (chunk: string) => void, framework: BuildFramework): Promise<number | null> {
+    const { execFile } = await import('node:child_process');
+    const execFileAsync = promisify(execFile);
+    try {
+      const { stdout } = await execFileAsync('docker', ['inspect', '--size', '--format', '{{.SizeRw}}', this.containerName], { timeout: 60_000 });
+      const bytes = Number(stdout.trim());
+      if (!Number.isFinite(bytes) || bytes < 0) return null;
+      onLog(formatDiskUsage(bytes, BUILD_DISK_LIMIT_GB[framework]));
+      return bytes;
+    } catch {
+      return null;
     }
   }
 

@@ -10,7 +10,7 @@ Delete the server and its volume when done.
 
 - [ ] Droplet: Ubuntu 24.04, **at least 4 vCPU / 8 GB RAM** (one build uses 5 GB + the server), 25 GB disk is enough
       for the system.
-- [ ] **A separate 100 GB Volume for Docker, formatted XFS.** `--storage-opt size=` (5G RN / 15G Flutter) only works on
+- [ ] **A separate 100 GB Volume for Docker, formatted XFS.** `--storage-opt size=` (12G RN/Expo / 15G Flutter, `BUILD_DISK_LIMIT_GB`) only works on
       overlay2 over XFS mounted with `pquota`; on the default ext4 every build fails at `docker create`. Images alone are
       ~20 GB (flutter-sandbox 12 GB, rn-sandbox 7.4 GB).
 - [ ] **Trap: Docker 29+ ignores `--storage-opt` with its default containerd image store** (`docker info` says
