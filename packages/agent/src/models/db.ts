@@ -78,6 +78,45 @@ export async function initDbSchema() {
         window_start TIMESTAMP NOT NULL
       );
     `);
+
+    // OAuth Identities & Flow state (additive)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS oauth_identities (
+        id UUID PRIMARY KEY,
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        provider VARCHAR(50) NOT NULL,
+        provider_user_id VARCHAR(255) NOT NULL,
+        email VARCHAR(255) NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        CONSTRAINT uq_oauth_provider_user UNIQUE(provider, provider_user_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_oauth_identities_user ON oauth_identities(user_id);
+      CREATE INDEX IF NOT EXISTS idx_oauth_identities_email ON oauth_identities(email);
+    `);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS oauth_states (
+        state VARCHAR(255) PRIMARY KEY,
+        provider VARCHAR(50) NOT NULL,
+        code_verifier VARCHAR(255) NOT NULL,
+        client_return_url TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        expires_at TIMESTAMPTZ NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_oauth_states_expires ON oauth_states(expires_at);
+    `);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS oauth_exchange_codes (
+        code VARCHAR(255) PRIMARY KEY,
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        session_token VARCHAR(255) NOT NULL,
+        refresh_token VARCHAR(255) NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        expires_at TIMESTAMPTZ NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_oauth_exchange_codes_expires ON oauth_exchange_codes(expires_at);
+    `);
     
     // Usage accounting
     await client.query(`

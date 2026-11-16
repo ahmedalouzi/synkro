@@ -189,6 +189,8 @@ const api: IpcApi = {
   authSignUp: (email, password) => ipcRenderer.invoke(IPC_CHANNELS.AUTH_SIGN_UP, email, password),
   authLogout: () => ipcRenderer.invoke(IPC_CHANNELS.AUTH_LOGOUT),
   authGetAccount: () => ipcRenderer.invoke(IPC_CHANNELS.AUTH_GET_ACCOUNT),
+  authStartOAuth: (provider: 'google' | 'github') => ipcRenderer.invoke(IPC_CHANNELS.AUTH_START_OAUTH, provider),
+  authCancelOAuth: () => ipcRenderer.invoke(IPC_CHANNELS.AUTH_CANCEL_OAUTH),
   onPublishStatus: (callback: (status: import('@peep/shared').PublishStatus) => void) => subscribe<import('@peep/shared').PublishStatus>(IPC_EVENTS.PUBLISH_STATUS, callback),
   onPublishLog: (callback: (line: string) => void) => subscribe<string>(IPC_EVENTS.PUBLISH_LOG, callback),
   onOpenFile: (callback: (payload: { path: string; name: string; content: string; dirty: boolean }) => void) => subscribe<{ path: string; name: string; content: string; dirty: boolean }>('open:file', callback),

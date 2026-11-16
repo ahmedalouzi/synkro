@@ -723,6 +723,8 @@ export const IPC_CHANNELS = {
   AUTH_SIGN_UP: 'auth:signUp',
   AUTH_LOGOUT: 'auth:logout',
   AUTH_GET_ACCOUNT: 'auth:getAccount',
+  AUTH_START_OAUTH: 'auth:startOAuth',
+  AUTH_CANCEL_OAUTH: 'auth:cancelOAuth',
   EXTENSIONS_INSTALLED: 'extensions:installed',
   EXTENSIONS_INSTALL: 'extensions:install',
   EXTENSIONS_UNINSTALL: 'extensions:uninstall',
@@ -1042,6 +1044,8 @@ export interface IpcApi {
   authSignIn: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   authSignUp: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   authLogout: () => Promise<void>;
+  authStartOAuth: (provider: 'google' | 'github') => Promise<{ success: boolean; error?: string }>;
+  authCancelOAuth: () => Promise<{ success: boolean }>;
   authGetAccount: () => Promise<{
     email: string;
     tier?: string;

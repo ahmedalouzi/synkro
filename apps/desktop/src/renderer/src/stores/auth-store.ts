@@ -24,6 +24,8 @@ interface AuthStore {
   setUser: (user: UserAccount | null) => void;
   checkSession: () => Promise<void>;
   login: (email: string, password: string, mode: 'signin' | 'signup') => Promise<{ success: boolean; error?: string }>;
+  loginWithOAuth: (provider: 'google' | 'github') => Promise<{ success: boolean; error?: string }>;
+  cancelOAuth: () => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -86,6 +88,30 @@ export const useAuthStore = create<AuthStore>((set) => ({
       return { success: false, error: res.error || 'Authentication failed' };
     } catch (err: any) {
       return { success: false, error: err.message || 'Authentication failed' };
+    }
+  },
+
+  loginWithOAuth: async (provider: 'google' | 'github') => {
+    try {
+      const res = await window.peep.authStartOAuth(provider);
+      if (res.success) {
+        const account = await window.peep.authGetAccount();
+        const settings = await window.peep.getSettings();
+        set({ user: account, settings });
+        set({ authState: 'AUTHENTICATED_HOME' });
+        return { success: true };
+      }
+      return { success: false, error: res.error || 'Authentication failed' };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Authentication failed' };
+    }
+  },
+
+  cancelOAuth: async () => {
+    try {
+      await window.peep.authCancelOAuth();
+    } catch {
+      // ignore
     }
   },
 

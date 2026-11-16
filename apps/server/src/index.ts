@@ -18,6 +18,7 @@ import { execSync } from 'node:child_process';
 import { buildRouter, shortLinkDownloadRouter } from './build-router';
 import { threadsRouter } from './threads-router';
 import { billingRouter } from './billing-router';
+import { oauthRouter } from './oauth-router';
 import { requestLogLine, authLogLine } from './log-redact';
 
 async function bootstrap() {
@@ -202,6 +203,9 @@ async function bootstrap() {
   app.use('/v1/threads', threadsRouter);
   app.use('/v1/billing', billingRouter);
   app.use('/api/billing', billingRouter);
+
+  // Attach OAuth Router
+  app.use('/v1/auth/oauth', oauthRouter);
 
   // Signup Endpoint
   app.post('/v1/auth/signup', async (req, res) => {
