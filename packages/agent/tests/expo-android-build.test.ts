@@ -11,6 +11,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { DockerSandbox } from '../src/models/docker-sandbox.js';
+import { requireSandbox } from './sandbox-requirements.js';
 
 /** Same files as ReactNativeManagedProvider.bootstrapProject (no android/, no android.package, no assets). */
 async function writeExpoProject(dir: string) {
@@ -45,10 +46,8 @@ async function writeExpoProject(dir: string) {
 async function run() {
   console.log('\n--- E2E: Expo project without android/ builds to an APK behind the allowlist ---');
 
-  if (process.platform !== 'linux') {
-    console.log('  SKIPPED: This test must be run on a Linux host with Docker.');
-    return;
-  }
+  // Skipped (or, with SYNKRO_RUN_SANDBOX_TESTS=1, failed) without the Linux build server: see sandbox-requirements.ts.
+  await requireSandbox();
 
   const jobId = `expo-e2e-${randomUUID().slice(0, 8)}`;
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'expo-e2e-'));

@@ -57,8 +57,9 @@ sudo mount -a && mount | grep /var/lib/docker        # must show xfs and prjquot
   `docker run --rm --network build-restricted --dns 172.30.0.1 synkro/rn-sandbox:1 sh -c 'getent hosts registry.npmjs.org; getent hosts example.com || echo "example.com UNRESOLVED"'`
   prints an address for registry.npmjs.org and then `example.com UNRESOLVED`.
 - [ ] `iptables -S DOCKER-USER | grep build0`: the last build0 rule is `-i build0 -j DROP`.
-- [ ] `cd /opt/synkro/packages/agent && sudo npx tsx tests/dns-allowlist.test.ts` passes (includes the in-sandbox check).
-- [ ] `sudo npx tsx tests/network-fqdn-distinction.test.ts` passes (DNS BAD must say NXDOMAIN, not "RESOLVED").
+- [ ] `cd /opt/synkro/packages/agent && sudo SYNKRO_RUN_SANDBOX_TESTS=1 npx tsx tests/dns-allowlist.test.ts` passes (includes the in-sandbox check).
+- [ ] `sudo SYNKRO_RUN_SANDBOX_TESTS=1 npx tsx tests/network-fqdn-distinction.test.ts` passes (DNS BAD must say NXDOMAIN, not "RESOLVED").
+- [ ] All real-Docker sandbox tests (see "Sandbox integration tests" below) pass with `SYNKRO_RUN_SANDBOX_TESTS=1`.
 - [ ] Reboot the droplet; after it comes back, repeat the first three checks (the service must re-apply everything).
 
 ## 5. Server boot without the signing key
@@ -119,6 +120,28 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/
       follows automatically: longest timeout + 5).
 - [ ] **React Native / Expo**: timeout is 35 minutes now (Expo measured 23-25 min); keep it until the pre-warmed image.
 - [ ] oss.sonatype.org: stays out unless step 6 needed it.
+
+## Sandbox integration tests
+
+Nine suites run real Docker sandboxes: `concurrent-isolation`, `disk-exhaustion`, `dns-allowlist` (its in-sandbox
+part), `expo-android-build`, `fork-bomb`, `fs-escape`, `memory-exhaustion`, `network-fqdn-distinction`,
+`timeout-zombie`. They need a Linux host with Docker, the `synkro/rn-sandbox:1` image and the `build-restricted`
+network with the DNS allowlist (sections 2 and 4). `memory-exhaustion` and `network-fqdn-distinction` also need root
+(dmesg, tcpdump), and `disk-exhaustion` needs `--storage-opt` (the XFS volume from section 1).
+
+- Without them (CI, Windows, macOS) the suites are reported as **skipped** with what is missing, like the Postgres
+  suites without a database (`tests/sandbox-requirements.ts`).
+- With `SYNKRO_RUN_SANDBOX_TESTS=1` a missing piece is a **failure**, so they can't be skipped by accident on the server.
+
+Run them on the server, as root, when no user build is running: the fork bomb, OOM and disk tests load the host.
+
+```bash
+cd /opt/synkro/packages/agent
+sudo SYNKRO_RUN_SANDBOX_TESTS=1 npx tsx tests/test-runner.ts
+```
+
+Expected: the nine suites report `🟢 Passed`, none `🟡 Skipped`. The Postgres suites skip unless `DATABASE_URL` points
+at a test database. One suite on its own: `sudo SYNKRO_RUN_SANDBOX_TESTS=1 npx tsx tests/fork-bomb.test.ts`.
 
 ## 9. Teardown
 

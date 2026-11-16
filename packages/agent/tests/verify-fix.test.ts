@@ -173,16 +173,21 @@ export default async function runTests() {
   if (Date.now() - t0 > 1000) throw new Error('waitForBundle did not return on "Bundled"');
 
   console.log('  [verify] Processes for user projects do not inherit the Atomvs repo (pnpm dev)...');
-  const sep = process.platform === 'win32' ? ';' : ':';
+  // PATH as this platform writes it: "C:\..." entries joined with ":" would split at the drive letter.
+  const win = process.platform === 'win32';
+  const sep = win ? ';' : ':';
+  const repo = win ? 'C:\\peep' : '/home/me/peep';
+  const at = (...parts: string[]) => (win ? path.win32 : path.posix).join(repo, ...parts);
+  const systemPath = win ? ['C:\\Program Files\\nodejs', 'C:\\Windows'] : ['/usr/local/bin', '/usr/bin'];
   const { env, removed } = userProjectEnv({
-    NODE_PATH: 'C:\\peep\\node_modules\\.pnpm\\node_modules',
-    npm_config_user_agent: 'pnpm/9', npm_lifecycle_event: 'dev', PNPM_SCRIPT_SRC_DIR: 'C:\\peep', INIT_CWD: 'C:\\peep',
-    Path: ['C:\\peep\\apps\\desktop\\node_modules\\.bin', 'C:\\peep\\node_modules\\.bin', 'C:\\Program Files\\nodejs', 'C:\\Windows'].join(sep),
-    HOME: 'C:\\Users\\me',
+    NODE_PATH: at('node_modules', '.pnpm', 'node_modules'),
+    npm_config_user_agent: 'pnpm/9', npm_lifecycle_event: 'dev', PNPM_SCRIPT_SRC_DIR: repo, INIT_CWD: repo,
+    Path: [at('apps', 'desktop', 'node_modules', '.bin'), at('node_modules', '.bin'), ...systemPath].join(sep),
+    HOME: win ? 'C:\\Users\\me' : '/home/me',
   });
   const left = Object.keys(env).sort().join(',');
   if (left !== 'HOME,Path') throw new Error(`Env keys left: ${left}`);
-  if (env.Path !== ['C:\\Program Files\\nodejs', 'C:\\Windows'].join(sep)) throw new Error(`PATH: ${env.Path}`);
+  if (env.Path !== systemPath.join(sep)) throw new Error(`PATH: ${env.Path}`);
   if (!removed.includes('NODE_PATH') || !removed.some((r) => r.startsWith('Path (2'))) throw new Error(`removed: ${removed.join(', ')}`);
 
   console.log('  [expo] npm install <pkg> in an Expo project becomes npx expo install <pkg>...');

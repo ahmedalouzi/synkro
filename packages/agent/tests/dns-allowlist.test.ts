@@ -13,6 +13,7 @@ import os from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { ALLOWLISTED_FQDNS, IPSET_NAME, UPSTREAM_RESOLVERS, generateDnsmasqConfig } from '../src/models/network-setup.js';
 import { DockerSandbox } from '../src/models/docker-sandbox.js';
+import { requireSandbox } from './sandbox-requirements.js';
 
 function checkConfig() {
   const lines = generateDnsmasqConfig().split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('#'));
@@ -67,10 +68,8 @@ async function checkInsideSandbox() {
 async function run() {
   console.log('\n--- DNS allowlist: only allowlisted names resolve ---');
   checkConfig();
-  if (process.platform !== 'linux') {
-    console.log('  Config checks passed. In-sandbox check SKIPPED: must run on a Linux host with Docker (root).');
-    return;
-  }
+  // The config checks above need nothing; the in-sandbox check needs the Linux build server.
+  await requireSandbox();
   await checkInsideSandbox();
 }
 
