@@ -327,7 +327,10 @@ export async function initDbSchema() {
       EXCEPTION WHEN duplicate_object THEN null; END $$;
       
       GRANT SELECT, INSERT ON build_jobs TO api_user;
-      GRANT UPDATE (status) ON build_jobs TO api_user;
+      -- Cancel (POST /build/:jobId/cancel) sets status and updated_at. Postgres checks every column an UPDATE
+      -- assigns, so without updated_at the whole cancel failed with "permission denied for table build_jobs".
+      -- Only these two columns: the API never writes artifacts, logs or timings (the worker does).
+      GRANT UPDATE (status, updated_at) ON build_jobs TO api_user;
       -- Owners can only read their keys (keystore download); keys are created by the worker.
       GRANT SELECT ON signing_keys TO api_user;
       GRANT SELECT, INSERT, UPDATE, DELETE ON chat_threads, chat_messages, chat_runs TO api_user;

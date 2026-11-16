@@ -393,7 +393,9 @@ buildRouter.post('/:jobId/short-link', requireAuth, async (req, res) => {
 });
 
 buildRouter.get('/:jobId/download', async (req, res) => {
-  const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0].trim() || req.ip || req.socket.remoteAddress || 'unknown';
+  // req.ip, not the first X-Forwarded-For entry: the client writes that entry itself (Caddy appends the real
+  // address after it). With trust proxy 'loopback' (trust-proxy.ts) req.ip is the address Caddy saw.
+  const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
   const userAgent = req.headers['user-agent'] || 'unknown';
   const jobId = req.params.jobId;
 
