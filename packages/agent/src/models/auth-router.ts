@@ -30,4 +30,16 @@ export class AuthenticationRouter implements IAuthProvider {
   async logout(sessionToken: string, refreshToken?: string) {
     return this.productionProvider.logout(sessionToken, refreshToken);
   }
+
+  async sendVerificationCode(
+    userIdOrEmail: string,
+    emailOrOptions?: string | { enforceCooldown?: boolean },
+    options?: { enforceCooldown?: boolean }
+  ) {
+    return this.productionProvider.sendVerificationCode(userIdOrEmail, emailOrOptions, options);
+  }
+
+  async verifyEmailOtp(userIdOrEmail: string, code: string) {
+    return this.productionProvider.verifyEmailOtp(userIdOrEmail, code);
+  }
 }

@@ -789,3 +789,89 @@
   font-size: 13px;
   animation: lx-line-in 0.3s ease-out both;
 }
+
+/* ── OTP Verification Styles ───────────────────────────────────────── */
+
+.lx-otp-form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.lx-otp-inputs {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.lx-otp-digit {
+  width: 46px;
+  height: 52px;
+  text-align: center;
+  font-size: 24px;
+  font-weight: 700;
+  color: #fff;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(15, 23, 42, 0.6);
+  outline: none;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.lx-otp-digit:focus {
+  border-color: #8b5cf6;
+  background: rgba(139, 92, 246, 0.12);
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.3);
+  transform: translateY(-2px);
+}
+
+.lx-otp-digit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.lx-otp-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+  margin-top: 4px;
+}
+
+.lx-otp-resend-btn {
+  background: none;
+  border: none;
+  color: #a78bfa;
+  font-size: 13.5px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 6px 12px;
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.lx-otp-resend-btn:hover:not(:disabled) {
+  color: #c4b5fd;
+  text-decoration: underline;
+}
+
+.lx-otp-resend-btn:disabled {
+  color: #64748b;
+  cursor: not-allowed;
+  text-decoration: none;
+}
+
+.lx-otp-back-btn {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  font-size: 12.5px;
+  cursor: pointer;
+  padding: 4px 8px;
+  transition: color 0.2s;
+}
+
+.lx-otp-back-btn:hover:not(:disabled) {
+  color: #e2e8f0;
+}

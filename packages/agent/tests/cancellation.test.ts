@@ -1,5 +1,6 @@
 import { BackendAIGateway } from '../src/models/backend-gateway';
 import { ProductionAIGateway } from '../src/models/production-gateway';
+import { db } from '../src/models/db';
 
 export default async function runTests() {
   console.log('  Running End-to-End Cancellation unit tests...');
@@ -8,6 +9,7 @@ export default async function runTests() {
   const backend = new BackendAIGateway();
   const email = `cancel_test_${Math.random().toString(36).substring(7)}@example.com`;
   await backend.authService.signup(email, 'hash-password-123');
+  await db.query('UPDATE users SET email_verified = TRUE WHERE email = $1', [email]);
   const session = await backend.authService.login(email, 'hash-password-123');
 
   // Mock global fetch to route requests directly to our BackendAIGateway instance

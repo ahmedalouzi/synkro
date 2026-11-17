@@ -67,6 +67,8 @@ async function main() {
     } catch (e) {
       // Ignored if already registered
     }
+    const { db } = await import('../src/models/db');
+    await db.query(`UPDATE users SET email_verified = TRUE WHERE email = 'user@example.com'`);
   } catch (dbErr: any) {
     dbOffline = true;
     if (process.env.CI === 'true') {
@@ -89,6 +91,7 @@ async function main() {
     'build-queue-route.test.ts',
     'build-hardening.test.ts',
     'cancellation.test.ts',
+    'email-verification.test.ts',
     'failover.test.ts',
     'p312-settings-gateway.test.ts',
     'p313-security-audit.test.ts',

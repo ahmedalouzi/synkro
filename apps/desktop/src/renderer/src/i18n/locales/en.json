@@ -18,7 +18,16 @@
     "orContinueWithEmail": "or continue with email",
     "privateBeta": "Private beta",
     "authFailed": "Authentication failed",
-    "oauthComingSoon": "Sign in with {provider} is coming soon. Use your email for now."
+    "oauthComingSoon": "Sign in with {provider} is coming soon. Use your email for now.",
+    "verifyEmailTitle": "Verify your email",
+    "verifyEmailSubtitle": "We sent a 6-digit code to {email}",
+    "verifyEmailCodeLabel": "6-Digit Code",
+    "verifyEmailSubmit": "Verify & continue",
+    "resendCode": "Resend code",
+    "resendCodeIn": "Resend code in {seconds}s",
+    "useDifferentEmail": "Use a different email",
+    "codeSentNotice": "A new verification code has been sent.",
+    "invalidCodeLength": "Please enter all 6 digits."
   },
   "onboarding": {
     "welcomeTitle": "Welcome to Atomvs",

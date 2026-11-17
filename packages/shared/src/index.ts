@@ -860,6 +860,8 @@ export const IPC_CHANNELS = {
   AUTH_SIGN_UP: 'auth:signUp',
   AUTH_LOGOUT: 'auth:logout',
   AUTH_GET_ACCOUNT: 'auth:getAccount',
+  AUTH_VERIFY_EMAIL: 'auth:verifyEmail',
+  AUTH_RESEND_VERIFICATION: 'auth:resendVerification',
   EXTENSIONS_INSTALLED: 'extensions:installed',
   EXTENSIONS_INSTALL: 'extensions:install',
   EXTENSIONS_UNINSTALL: 'extensions:uninstall',
@@ -1218,13 +1220,16 @@ export interface IpcApi {
   uninstallExtension: (extensionId: string) => Promise<void>;
   getExtensionDetails: (extensionId: string) => Promise<any>;
   // Auth
-  authSignIn: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
-  authSignUp: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  authSignIn: (email: string, password: string) => Promise<{ success: boolean; error?: string; emailVerified?: boolean; verificationRequired?: boolean }>;
+  authSignUp: (email: string, password: string) => Promise<{ success: boolean; error?: string; emailVerified?: boolean; verificationRequired?: boolean }>;
   authLogout: () => Promise<void>;
+  authVerifyEmail: (code: string) => Promise<{ success: boolean; error?: string; emailVerified?: boolean }>;
+  authResendVerification: () => Promise<{ success: boolean; error?: string }>;
   authGetAccount: () => Promise<{
     email: string;
     tier?: string;
     plan?: string;
+    emailVerified?: boolean;
     usedCost?: number;
     budgetCost?: number;
     usedTokens?: number;

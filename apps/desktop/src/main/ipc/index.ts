@@ -1153,7 +1153,11 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
         sessionToken: data.sessionToken,
         refreshToken: data.refreshToken
       });
-      return { success: true };
+      return {
+        success: true,
+        emailVerified: data.emailVerified,
+        verificationRequired: data.verificationRequired
+      };
     } catch (err: any) {
       console.error('[AUTH_SIGN_IN] Fetch failed:', {
         message: err.message,
@@ -1181,7 +1185,11 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
         sessionToken: data.sessionToken,
         refreshToken: data.refreshToken
       });
-      return { success: true };
+      return {
+        success: true,
+        emailVerified: data.emailVerified,
+        verificationRequired: data.verificationRequired
+      };
     } catch (err: any) {
       console.error('[AUTH_SIGN_UP] Fetch failed:', {
         message: err.message,
@@ -1189,6 +1197,48 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
         code: err.code,
         url: `${gatewayUrl}/v1/auth/signup`
       });
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.AUTH_VERIFY_EMAIL, async (_event, code: string) => {
+    const settings = db!.getSettingsRaw();
+    const gatewayUrl = resolveGatewayUrl(settings.gatewayUrl);
+    try {
+      const res = await fetch(`${gatewayUrl}/v1/auth/verify-email`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(settings.sessionToken ? { 'Authorization': `Bearer ${settings.sessionToken}` } : {})
+        },
+        body: JSON.stringify({ code })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Email verification failed');
+      return { success: true, emailVerified: true };
+    } catch (err: any) {
+      console.error('[AUTH_VERIFY_EMAIL] Failed:', err.message);
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.AUTH_RESEND_VERIFICATION, async () => {
+    const settings = db!.getSettingsRaw();
+    const gatewayUrl = resolveGatewayUrl(settings.gatewayUrl);
+    try {
+      const res = await fetch(`${gatewayUrl}/v1/auth/resend-verification`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(settings.sessionToken ? { 'Authorization': `Bearer ${settings.sessionToken}` } : {})
+        },
+        body: JSON.stringify({})
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Failed to resend verification code');
+      return { success: true };
+    } catch (err: any) {
+      console.error('[AUTH_RESEND_VERIFICATION] Failed:', err.message);
       return { success: false, error: err.message };
     }
   });

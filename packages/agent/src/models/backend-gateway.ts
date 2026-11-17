@@ -417,6 +417,52 @@ export class BackendAIGateway {
       }
     }
 
+    if (path === '/v1/auth/verify-email' || path === '/v1/auth/verify-otp') {
+      try {
+        let userIdOrEmail = body?.userId || body?.email;
+        const authHeader = headers['authorization'] || headers['Authorization'];
+        if (!userIdOrEmail && authHeader && authHeader.startsWith('Bearer ')) {
+          try {
+            const token = authHeader.substring(7);
+            const s = await this.authService.validateSession(token, requestId);
+            userIdOrEmail = s.userId;
+          } catch {}
+        }
+        if (!userIdOrEmail) {
+          return { status: 400, headers: responseHeaders, body: { code: 'VALIDATION_ERROR', message: 'User ID or email is required' } };
+        }
+        if (!body?.code) {
+          return { status: 400, headers: responseHeaders, body: { code: 'VALIDATION_ERROR', message: 'Verification code is required' } };
+        }
+        const result = await this.authService.verifyEmailOtp(userIdOrEmail, body.code);
+        return { status: 200, headers: responseHeaders, body: result };
+      } catch (err: any) {
+        return { status: 400, headers: responseHeaders, body: { code: 'VERIFICATION_FAILED', message: err.message } };
+      }
+    }
+
+    if (path === '/v1/auth/resend-verification' || path === '/v1/auth/send-verification-code') {
+      try {
+        let userIdOrEmail = body?.userId || body?.email;
+        const authHeader = headers['authorization'] || headers['Authorization'];
+        if (!userIdOrEmail && authHeader && authHeader.startsWith('Bearer ')) {
+          try {
+            const token = authHeader.substring(7);
+            const s = await this.authService.validateSession(token, requestId);
+            userIdOrEmail = s.userId;
+          } catch {}
+        }
+        if (!userIdOrEmail) {
+          return { status: 400, headers: responseHeaders, body: { code: 'VALIDATION_ERROR', message: 'User ID or email is required' } };
+        }
+        const result = await this.authService.sendVerificationCode(userIdOrEmail, body?.email);
+        return { status: 200, headers: responseHeaders, body: result };
+      } catch (err: any) {
+        const isCooldown = err.message && err.message.includes('60 seconds');
+        return { status: isCooldown ? 429 : 400, headers: responseHeaders, body: { code: isCooldown ? 'RATE_LIMITED' : 'ERROR', message: err.message } };
+      }
+    }
+
     // 1. Auth Boundary
     const authHeader = headers['authorization'] || headers['Authorization'];
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -459,6 +505,7 @@ export class BackendAIGateway {
         body: {
           email: session.email,
           tier: summary.plan,
+          emailVerified: session.emailVerified !== false,
           // `usage`/`limit` are this week's pool, kept for older clients.
           usage: summary.weeklyUsedUsd,
           limit: summary.weeklyPoolUsd,
@@ -469,6 +516,13 @@ export class BackendAIGateway {
 
     // 2. Path routing
     if (path === '/v1/ai/generate') {
+      if (session.emailVerified === false) {
+        return {
+          status: 403,
+          headers: responseHeaders,
+          body: { code: 'EMAIL_NOT_VERIFIED', message: 'Email verification required. Please verify your email address to use AI services.' }
+        };
+      }
       let requestData = body as AIRequest;
       const valErr = this.validateAIRequest(requestData);
       if (valErr) {
@@ -545,6 +599,13 @@ export class BackendAIGateway {
     }
 
     if (path === '/v1/ai/stream') {
+      if (session.emailVerified === false) {
+        return {
+          status: 403,
+          headers: responseHeaders,
+          body: { code: 'EMAIL_NOT_VERIFIED', message: 'Email verification required. Please verify your email address to use AI services.' }
+        };
+      }
       let requestData = body as AIRequest;
       const valErr = this.validateAIRequest(requestData);
       if (valErr) {
@@ -673,6 +734,13 @@ export class BackendAIGateway {
     }
 
     if (path === '/v1/ai/estimate-cost') {
+      if (session.emailVerified === false) {
+        return {
+          status: 403,
+          headers: responseHeaders,
+          body: { code: 'EMAIL_NOT_VERIFIED', message: 'Email verification required. Please verify your email address to use AI services.' }
+        };
+      }
       const requestData = body as AIRequest;
       try {
         this.router.route(requestData.tier);

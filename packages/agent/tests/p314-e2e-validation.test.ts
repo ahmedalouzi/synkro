@@ -76,7 +76,7 @@ export default async function runP314E2ETests() {
   console.log('  Running P3.14 Full E2E Validation tests...');
 
   // Ensure default test user is on pro plan and clean any old test records
-  await db.query(`UPDATE users SET plan = 'pro' WHERE email = 'user@example.com'`);
+  await db.query(`UPDATE users SET plan = 'pro', email_verified = TRUE WHERE email = 'user@example.com'`);
 
   // ── BLOCK 1: SCENARIOS ───────────────────────────────────────────
   await gate('[S1] Restaurant Reservation — full lifecycle', 'Restaurant Reservation', async () => {

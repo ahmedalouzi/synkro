@@ -18,7 +18,16 @@
     "orContinueWithEmail": "veya e-posta ile devam edin",
     "privateBeta": "Özel beta",
     "authFailed": "Kimlik doğrulama başarısız oldu",
-    "oauthComingSoon": "{provider} ile giriş çok yakında. Şimdilik e-postanızı kullanın."
+    "oauthComingSoon": "{provider} ile giriş çok yakında. Şimdilik e-postanızı kullanın.",
+    "verifyEmailTitle": "E-postanızı doğrulayın",
+    "verifyEmailSubtitle": "{email} adresine 6 haneli bir kod gönderdik",
+    "verifyEmailCodeLabel": "6 Haneli Kod",
+    "verifyEmailSubmit": "Doğrula ve devam et",
+    "resendCode": "Kodu tekrar gönder",
+    "resendCodeIn": "Kodu tekrar gönder ({seconds} sn)",
+    "useDifferentEmail": "Farklı bir e-posta kullan",
+    "codeSentNotice": "Yeni bir doğrulama kodu gönderildi.",
+    "invalidCodeLength": "Lütfen 6 hanenin tümünü girin."
   },
   "onboarding": {
     "welcomeTitle": "Atomvs'e Hoş Geldiniz",

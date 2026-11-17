@@ -18,7 +18,16 @@
     "orContinueWithEmail": "أو المتابعة عبر البريد الإلكتروني",
     "privateBeta": "نسخة تجريبية خاصة",
     "authFailed": "فشلت المصادقة",
-    "oauthComingSoon": "تسجيل الدخول عبر {provider} قادم قريبًا. يرجى استخدام بريدك الإلكتروني حاليًا."
+    "oauthComingSoon": "تسجيل الدخول عبر {provider} قادم قريبًا. يرجى استخدام بريدك الإلكتروني حاليًا.",
+    "verifyEmailTitle": "تأكيد بريدك الإلكتروني",
+    "verifyEmailSubtitle": "أرسلنا رمزًا مكونًا من 6 أرقام إلى {email}",
+    "verifyEmailCodeLabel": "الرمز المكون من 6 أرقام",
+    "verifyEmailSubmit": "تأكيد ومتابعة",
+    "resendCode": "إعادة إرسال الرمز",
+    "resendCodeIn": "إعادة إرسال الرمز خلال {seconds} ثانية",
+    "useDifferentEmail": "استخدام بريد إلكتروني آخر",
+    "codeSentNotice": "تم إرسال رمز تحقق جديد.",
+    "invalidCodeLength": "يرجى إدخال جميع الأرقام الستة."
   },
   "onboarding": {
     "welcomeTitle": "مرحبًا بك في Atomvs",

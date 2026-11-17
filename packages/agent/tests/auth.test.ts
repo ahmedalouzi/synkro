@@ -65,6 +65,7 @@ export default async function runTests() {
   
   const gatewayEmail = `gateway_test_${Math.random().toString(36).substring(7)}@example.com`;
   await gateway.authService.signup(gatewayEmail, password);
+  await db.query('UPDATE users SET email_verified = TRUE WHERE email = $1', [gatewayEmail]);
   const session3 = await gateway.authService.login(gatewayEmail, password);
   
   const headers = {

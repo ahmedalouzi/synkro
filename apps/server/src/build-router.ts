@@ -46,6 +46,10 @@ const requireAuth = async (req: express.Request, res: express.Response, next: ex
       return;
     }
     const session = await authService.validateSession(token);
+    if ((session as any).emailVerified === false) {
+      res.status(403).json({ code: 'EMAIL_NOT_VERIFIED', error: 'Email verification required. Please verify your email address to use Cloud Build services.' });
+      return;
+    }
     (req as any).user = session;
     next();
   } catch (err: any) {
@@ -812,7 +816,13 @@ buildRouter.post('/signing/:projectId/keystore', async (req, res) => {
       return;
     }
     try {
-      userId = (await authService.validateSession(header.slice('Bearer '.length))).userId;
+      const validated = await authService.validateSession(header.slice('Bearer '.length));
+      if ((validated as any).emailVerified === false) {
+        audit('email_not_verified');
+        res.status(403).json({ code: 'EMAIL_NOT_VERIFIED', error: 'Email verification required. Please verify your email address.' });
+        return;
+      }
+      userId = validated.userId;
     } catch {
       audit('bad_token');
       res.status(401).json({ error: 'Unauthorized: invalid session' });

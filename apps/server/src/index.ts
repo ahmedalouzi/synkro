@@ -230,6 +230,30 @@ async function bootstrap() {
     }
   });
 
+  // Verify Email Endpoint
+  app.post(['/v1/auth/verify-email', '/v1/auth/verify-otp'], async (req, res) => {
+    try {
+      const headers = req.headers as Record<string, string>;
+      const response = await gateway.handleRequest('POST', '/v1/auth/verify-email', headers, req.body);
+      res.status(response.status).json(response.body);
+    } catch (err: any) {
+      console.error('[Verify Email Route Error]', err);
+      res.status(500).json({ error: 'Internal Server Error' });
+    }
+  });
+
+  // Resend Verification Code Endpoint
+  app.post(['/v1/auth/resend-verification', '/v1/auth/send-verification-code'], async (req, res) => {
+    try {
+      const headers = req.headers as Record<string, string>;
+      const response = await gateway.handleRequest('POST', '/v1/auth/resend-verification', headers, req.body);
+      res.status(response.status).json(response.body);
+    } catch (err: any) {
+      console.error('[Resend Verification Route Error]', err);
+      res.status(500).json({ error: 'Internal Server Error' });
+    }
+  });
+
   // Refresh Token Endpoint
   app.post('/v1/auth/refresh', async (req, res) => {
     try {

@@ -39,7 +39,8 @@ export async function initDbSchema() {
         id UUID PRIMARY KEY,
         email VARCHAR(255) UNIQUE NOT NULL,
         password_hash VARCHAR(255) NOT NULL,
-        plan VARCHAR(50) DEFAULT 'free'
+        plan VARCHAR(50) DEFAULT 'free',
+        email_verified BOOLEAN DEFAULT FALSE
       );
     `);
     
@@ -49,7 +50,26 @@ export async function initDbSchema() {
     await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS billing_subscription_id VARCHAR(255);`);
     await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS billing_status VARCHAR(50) DEFAULT 'inactive';`);
     await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS plan_updated_at TIMESTAMPTZ DEFAULT NOW();`);
+    await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT FALSE;`);
     await client.query(`CREATE TABLE IF NOT EXISTS billing_webhook_events (event_id VARCHAR(255) PRIMARY KEY, provider VARCHAR(50) NOT NULL, event_type VARCHAR(100) NOT NULL, user_id UUID REFERENCES users(id) ON DELETE SET NULL, processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW());`);
+
+    // Email verification OTP codes
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS email_verification_codes (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        email VARCHAR(255) NOT NULL,
+        code_hash VARCHAR(255) NOT NULL,
+        attempts INT NOT NULL DEFAULT 0,
+        max_attempts INT NOT NULL DEFAULT 5,
+        expires_at TIMESTAMPTZ NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        used_at TIMESTAMPTZ
+      );
+      CREATE INDEX IF NOT EXISTS idx_email_verification_codes_user ON email_verification_codes(user_id);
+      CREATE INDEX IF NOT EXISTS idx_email_verification_codes_email ON email_verification_codes(email);
+      CREATE INDEX IF NOT EXISTS idx_email_verification_codes_expires ON email_verification_codes(expires_at);
+    `);
     
     await client.query(`
       CREATE TABLE IF NOT EXISTS sessions (
@@ -120,9 +140,9 @@ export async function initDbSchema() {
     // Insert mock user for dev bypass
     if (process.env.SYNKRO_SEED_DEV_USER === 'true') {
       await client.query(`
-        INSERT INTO users (id, email, password_hash, plan)
-        VALUES ('00000000-0000-0000-0000-000000000000', 'dev@synkro.com', 'mock_hash', 'pro')
-        ON CONFLICT (id) DO NOTHING;
+        INSERT INTO users (id, email, password_hash, plan, email_verified)
+        VALUES ('00000000-0000-0000-0000-000000000000', 'dev@synkro.com', 'mock_hash', 'pro', TRUE)
+        ON CONFLICT (id) DO UPDATE SET email_verified = TRUE;
       `);
     }
 
@@ -318,6 +338,15 @@ export async function initDbSchema() {
       EXCEPTION
         WHEN duplicate_object THEN null;
       END $$;
+
+      ALTER TABLE email_verification_codes ENABLE ROW LEVEL SECURITY;
+
+      DO $$ BEGIN
+        CREATE POLICY email_verification_codes_user_isolation ON email_verification_codes
+          USING (user_id = NULLIF(current_setting('app.current_user_id', true), '')::UUID);
+      EXCEPTION
+        WHEN duplicate_object THEN null;
+      END $$;
     `);
 
     // Create Roles and Grants
@@ -333,7 +362,7 @@ export async function initDbSchema() {
       GRANT UPDATE (status, updated_at) ON build_jobs TO api_user;
       -- Owners can only read their keys (keystore download); keys are created by the worker.
       GRANT SELECT ON signing_keys TO api_user;
-      GRANT SELECT, INSERT, UPDATE, DELETE ON chat_threads, chat_messages, chat_runs TO api_user;
+      GRANT SELECT, INSERT, UPDATE, DELETE ON chat_threads, chat_messages, chat_runs, email_verification_codes TO api_user;
 
       DO $$ BEGIN
         CREATE ROLE worker_user BYPASSRLS NOLOGIN;

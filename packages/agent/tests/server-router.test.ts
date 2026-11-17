@@ -1,5 +1,6 @@
 import { ServerModelRouter } from '../src/models/server-router';
 import { BackendAIGateway } from '../src/models/backend-gateway';
+import { db } from '../src/models/db';
 
 export default async function runTests() {
   console.log('  Running ServerModelRouter unit tests...');
@@ -37,6 +38,7 @@ export default async function runTests() {
   
   const email = `router_test_${Math.random().toString(36).substring(7)}@example.com`;
   await gateway.authService.signup(email, 'hash-password-123');
+  await db.query('UPDATE users SET email_verified = TRUE WHERE email = $1', [email]);
   const session = await gateway.authService.login(email, 'hash-password-123');
 
   const headers = {
