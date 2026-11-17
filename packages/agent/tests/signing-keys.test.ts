@@ -110,7 +110,7 @@ export default async function run() {
     const unsigned = createGradleHomeArchive();
     assert.ok(unsigned.includes(Buffer.from('init.d/atomvs-abi.gradle')));
     assert.ok(!unsigned.includes(Buffer.from('gradle.properties')));
-    assert.ok(ABI_INIT_SCRIPT.includes("def abis = ['arm64-v8a', 'armeabi-v7a']"));
+    assert.ok(ABI_INIT_SCRIPT.includes("def abis = ['arm64-v8a']"));
     assert.ok(ABI_INIT_SCRIPT.includes('finalizeDsl'));
     // No lint on release builds: lintVital pulls the libraries' test dependencies (Robolectric) and costs minutes.
     assert.ok(ABI_INIT_SCRIPT.includes('android.lint.checkReleaseBuilds = false'));

@@ -52,7 +52,8 @@ export default async function run() {
     console.log('    ✓ --cpus=3.5 --memory=5g; pids 384, cap-drop, no-new-privileges, uid 1000, disk 12G/15G; Gradle workers 3, -Xmx2g');
 
     console.log('  [speed] No read-only cache: the build runs exactly as before...');
-    assert.ok(!rn.some((a) => a.includes('GRADLE_RO_DEP_CACHE') || a.includes(GRADLE_RO_CACHE_MOUNT)), 'no cache dir: no mount');
+    // The -e argument and the mount, not the build script (cache_report mentions $GRADLE_RO_DEP_CACHE).
+    assert.ok(!rn.some((a) => a.startsWith('GRADLE_RO_DEP_CACHE=') || a === '--mount' || a.includes(`target=${GRADLE_RO_CACHE_MOUNT}`)), 'no cache dir: no mount');
     fs.mkdirSync(path.join(tmp, 'empty', 'react-native'), { recursive: true });
     assert.equal(gradleRoCacheSource('react-native', path.join(tmp, 'empty')), null, 'a framework dir without modules-2 is not used');
     console.log('    ✓ Missing or empty cache: no mount, no GRADLE_RO_DEP_CACHE');
@@ -104,7 +105,7 @@ export default async function run() {
     }, -1);
     const flutterCmd = getBuildCommand('flutter', PROJECT_ID);
     assert.ok(flutterCmd.indexOf('step_done "flutter create"') < flutterCmd.indexOf('flutter build apk'));
-    assert.ok(flutterCmd.trimEnd().endsWith('step_done "gradle (flutter build apk)"'));
+    assert.ok(flutterCmd.indexOf('step_done "gradle (flutter build apk)"') < flutterCmd.indexOf('(cache_report build || true)'));
     if (hasSh()) {
       const out = execFileSync('sh', ['-c', `${STEP_FN} step_done "npm install"`], { encoding: 'utf8' });
       assert.match(out, /^\[STEP\] npm install 0m0[0-2]s\n$/);
