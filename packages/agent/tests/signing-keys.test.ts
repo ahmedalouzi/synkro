@@ -103,6 +103,8 @@ export default async function run() {
       ['tmp/.gradle/init.d/atomvs-abi.gradle', '600', 1000],
       ['tmp/.gradle/gradle.properties', '600', 1000],
       ['tmp/.gradle/synkro-upload.p12', '600', 1000],
+      // Read-only use of the image's Gradle build cache (DEC-10, gradle-image-cache.test.ts).
+      ['tmp/.gradle/init.d/atomvs-cache.gradle', '600', 1000],
     ]);
     assert.equal(entries[2].size, Buffer.byteLength(ABI_INIT_SCRIPT));
     assert.equal(entries[4].size, generated.keystore.length);

@@ -80,6 +80,26 @@ gradle.allprojects { project ->
 }
 `;
 
+/**
+ * Gradle init script for the build cache baked into the sandbox image (Dockerfile.rn-sandbox, DEC-10): builds READ it
+ * (org.gradle.caching=true, see getBuildCommand) but never store new entries in it (push = false), and Gradle's cache
+ * cleanup is off: those caches are image files, and cleaning them would only copy or delete files in this build's own
+ * layer, against its disk limit. Each part is guarded, so an older Gradle without these settings builds as before.
+ * Exported for tests.
+ */
+export const CACHE_INIT_SCRIPT = `// Atomvs Cloud Build: read the image's Gradle build cache, never write it; no cache cleanup.
+gradle.settingsEvaluated { settings ->
+  try { settings.buildCache { local { push = false } } } catch (Throwable ignored) {}
+}
+beforeSettings { settings ->
+  try {
+    if (org.gradle.util.GradleVersion.current() >= org.gradle.util.GradleVersion.version('8.0')) {
+      settings.caches { cleanup = org.gradle.api.cache.Cleanup.DISABLED }
+    }
+  } catch (Throwable ignored) {}
+}
+`;
+
 /** Exported for tests. */
 export function signingGradleProperties(signing: SandboxSigning): string {
   return [
@@ -114,8 +134,9 @@ function tarEntry(name: string, mode: number, content: Buffer | null): Buffer {
 }
 
 /**
- * A tar archive for `docker cp -a - <container>:/` holding GRADLE_USER_HOME: the ABI init script and, when the
- * build is signed, the keystore and the signing properties. Owned by the sandbox user and readable only by it.
+ * A tar archive for `docker cp -a - <container>:/` holding GRADLE_USER_HOME: the ABI init script, the cache init script
+ * (CACHE_INIT_SCRIPT) and, when the build is signed, the keystore and the signing properties. Owned by the sandbox
+ * user and readable only by it. Extracted over the image's GRADLE_USER_HOME, whose caches it leaves in place.
  * Streamed over stdin, so nothing secret is written to the host's disk. Exported for tests.
  */
 export function createGradleHomeArchive(signing?: SandboxSigning): Buffer {
@@ -130,6 +151,8 @@ export function createGradleHomeArchive(signing?: SandboxSigning): Buffer {
           tarEntry(SIGNING_KEYSTORE_PATH.slice(1), 0o600, signing.keystore),
         ]
       : []),
+    // Last, so the entries above keep their positions (tests read them by index).
+    tarEntry(`${dir}/init.d/atomvs-cache.gradle`, 0o600, Buffer.from(CACHE_INIT_SCRIPT, 'utf8')),
     Buffer.alloc(1024),
   ]);
 }
@@ -318,6 +341,24 @@ export const CACHE_REPORT_FN = [
   'echo "[CACHE] Disk: Gradle caches $(_mbof "$_gh/caches") MB (transforms $(_mbof "$_gh"/caches/transforms-*) MB), node_modules $(_mbof node_modules) MB, $1/ $(_mbof "$1") MB"; };',
 ].join(' ');
 
+/**
+ * `gradle_build <command...>`: runs Gradle once; if it failed because an entry of the image's build cache (DEC-10)
+ * could not be read, runs it once more with --no-build-cache. Gradle 8.8 fails the build on such an entry (e.g. a
+ * cached transform) instead of rebuilding it. Real builds never write the cache (push = false) and the image build
+ * refuses empty entries, so this is a safety net. Any other failure is not retried. The output still streams live;
+ * a copy goes to $TMPDIR (/tmp) to look for the error, then is deleted. Exported for tests.
+ */
+export const BUILD_CACHE_ERROR = 'Could not load from local cache|Failed to load cache entry|Could not load entry .* from local build cache';
+export const GRADLE_BUILD_FN = [
+  'gradle_build() {',
+  '_gl="${TMPDIR:-/tmp}/gradle-build.log"; _gs="${TMPDIR:-/tmp}/gradle-status";',
+  '( "$@" 2>&1; echo $? > "$_gs" ) | tee "$_gl"; _gr=$(cat "$_gs");',
+  `if [ "$_gr" != 0 ] && grep -qE '${BUILD_CACHE_ERROR}' "$_gl"; then`,
+  'rm -f "$_gl"; echo "[SYSTEM] Build cache unreadable, retrying without it";',
+  '"$@" --no-build-cache; _gr=$?; fi;',
+  'rm -f "$_gl" "$_gs"; return $_gr; };',
+].join(' ');
+
 // Expo projects usually have no android/ folder, so generate it the same way the Flutter command runs
 // `flutter create`. Checks for android/gradlew, not the folder, so a half-made android/ still counts as missing.
 // CI=1 keeps prebuild non-interactive and EXPO_NO_TELEMETRY stops it calling Expo's servers. With the default
@@ -375,19 +416,22 @@ export function getBuildCommand(framework: BuildFramework, projectId?: string): 
     'printf "org.gradle.daemon=false\\n" >> android/gradle.properties',
     `printf "org.gradle.jvmargs=-Xmx${SANDBOX_RESOURCES.gradleHeap}\\n" >> android/gradle.properties`,
     `printf "reactNativeArchitectures=${RN_ARCHITECTURES}\\n" >> android/gradle.properties`,
+    // Use the Gradle build cache baked into the image (DEC-10; read-only through CACHE_INIT_SCRIPT). A missing or
+    // stale cache is a cache miss: the task simply runs. An unreadable entry: gradle_build retries without the cache.
+    'printf "org.gradle.caching=true\\n" >> android/gradle.properties',
   ].join(' && ');
 
   // Not -Pandroid.injected.build.abi: that is Android Studio's deploy-to-one-device flag, and with it Gradle did not
   // write app/build/outputs/apk/release/app-release.apk, so the worker found no APK (Oct 30, Expo on rn-sandbox:1).
   // NODE_ENV=production for the JS bundle step Gradle runs (Expo's babel preset asks for it), set on Gradle only:
-  // on npm ci it would skip devDependencies the bundle needs.
-  const gradlewCmd = `cd android && NODE_ENV=production ./gradlew assembleRelease -PreactNativeArchitectures=${RN_ARCHITECTURES}`;
+  // on npm ci it would skip devDependencies the bundle needs. gradle_build: one retry without an unreadable build cache.
+  const gradlewCmd = `cd android && gradle_build env NODE_ENV=production ./gradlew assembleRelease -PreactNativeArchitectures=${RN_ARCHITECTURES}`;
 
   // NOTE: We do NOT use `npx react-native build-android` here — the RN CLI wrapper calls
   // getTaskNames(..., 'bundle') internally, which runs bundleRelease and produces an .aab
   // (Android App Bundle). .aab requires Google Play's bundletool to install; it cannot be
   // sideloaded directly. We invoke ./gradlew assembleRelease explicitly to get a plain .apk.
-  return `${NPM_INSTALL_FN} ${STEP_FN} ${CACHE_REPORT_FN} ` + [
+  return `${NPM_INSTALL_FN} ${GRADLE_BUILD_FN} ${STEP_FN} ${CACHE_REPORT_FN} ` + [
     'npm_install ci',
     'step_done "npm install"',
     ENSURE_RN_ANDROID_PROJECT,

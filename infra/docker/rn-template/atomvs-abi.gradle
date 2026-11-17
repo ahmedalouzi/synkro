@@ -1,0 +1,20 @@
+// Atomvs Cloud Build: package only arm64-v8a, and no lint on release builds.
+def abis = ['arm64-v8a']
+gradle.allprojects { project ->
+  project.plugins.withId('com.android.application') {
+    def components = project.extensions.findByName('androidComponents')
+    if (components != null) {
+      components.finalizeDsl { android ->
+        android.defaultConfig.ndk.abiFilters.clear()
+        android.defaultConfig.ndk.abiFilters.addAll(abis)
+        android.lint.checkReleaseBuilds = false
+      }
+    } else {
+      project.afterEvaluate {
+        project.android.defaultConfig.ndk.abiFilters.clear()
+        project.android.defaultConfig.ndk.abiFilters.addAll(abis)
+        project.android.lintOptions.checkReleaseBuilds = false
+      }
+    }
+  }
+}

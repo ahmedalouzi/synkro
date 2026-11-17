@@ -174,6 +174,20 @@ bind-mounted there by the setup script, section 14). Without it, builds work as 
 - [ ] A build log starts with `[SYSTEM] Using the shared Gradle dependency cache (read-only).` and ends with the
       `[STEP]` times and `Disk used`.
 
+## Gradle build cache in the RN image (DEC-10)
+
+`synkro/rn-sandbox:1` contains Gradle's build cache and transforms from one release build of the Atomvs Expo template
+(Dockerfile step 4), made at image build time with the same settings as real builds. Builds read it
+(`org.gradle.caching=true`) and never write it (`push = false`, `init.d/atomvs-cache.gradle`). It is refreshed only by
+rebuilding the image (`SYNKRO_REBUILD_IMAGES=1`), e.g. after changing the template's Expo SDK.
+A missing or stale cache only means cache misses. Gradle 8.8 fails a build on an unreadable entry instead of
+rebuilding it, so the image build refuses empty entries and `gradle_build` retries Gradle once with `--no-build-cache`
+when the log shows a build-cache load error (`[SYSTEM] Build cache unreadable, retrying without it`).
+
+- [ ] A real Expo build's Gradle output ends with `N actionable tasks: X executed, Y from cache` with Y well above 0.
+- [ ] The image holds no signing material: `docker run --rm synkro/rn-sandbox:1 sh -c 'ls -a /tmp /tmp/.gradle; find / -xdev \( -name "*.jks" -o -name "*.keystore" -o -name "*.p12" \) 2>/dev/null'`
+      lists no `.android` folder, no `gradle.properties` in `/tmp/.gradle`, and only the JDK's own `cacerts`-type stores, if any.
+
 ## 9. Teardown
 
 - [ ] Destroy the droplet **and** the volume; revoke the SSH key; if a real `SYNKRO_SIGNING_ENC_KEY` was used, keep it

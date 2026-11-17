@@ -52,3 +52,40 @@ RUN mkdir -p /build \
 
 WORKDIR /build
 USER 1000:1000
+
+# 4. Pre-warm Gradle's build cache and transforms (DEC-10) with one release build of the Atomvs Expo template: our own
+#    files only (rn-template/), never user code. It runs as the sandbox user, in /build like a real build (task cache
+#    keys contain paths), with exactly the settings of a real build: the ABI init script (atomvs-abi.gradle, the same
+#    text as ABI_INIT_SCRIPT in docker-sandbox.ts) and the gradle.properties lines of getBuildCommand. A test keeps them
+#    in step (gradle-image-cache.test.ts).
+#    Kept in the image (read-only layers, not counted against the per-build disk limit): caches/build-cache-1 (task
+#    outputs: compiled Kotlin/Java, resources, dex of the libraries) and the transforms (unpacked/dexed AARs).
+#    Removed: the project, Gradle's downloaded dependencies (modules-2: the shared read-only cache on the host serves
+#    them, DEC-08), the ABI init script (each build brings its own), and everything else the build left in /tmp (only
+#    .gradle and .npm-cache are kept): the template expo prebuild extracts (with its debug.keystore), ~/.android, ~/.expo,
+#    Kotlin daemon logs. The step fails if any keystore is left in /tmp or /build, or if a cache entry is empty
+#    (Gradle 8.8 fails a build on an unreadable entry instead of rebuilding it; real builds never write the cache).
+#    Real builds read this cache with push=false (CACHE_INIT_SCRIPT); without it, or with a stale one, they just build.
+COPY --chown=1000:1000 rn-template/package.json rn-template/app.json rn-template/App.tsx /build/
+COPY --chown=1000:1000 rn-template/atomvs-abi.gradle /tmp/.gradle/init.d/atomvs-abi.gradle
+RUN cd /build \
+ && npm install --no-audit --no-fund --prefer-offline \
+ && CI=1 EXPO_NO_TELEMETRY=1 npx expo prebuild --platform android --no-install \
+ && npm install --no-audit --no-fund --prefer-offline \
+ && printf "\norg.gradle.workers.max=3\n" >> android/gradle.properties \
+ && printf "org.gradle.parallel=false\n" >> android/gradle.properties \
+ && printf "org.gradle.daemon=false\n" >> android/gradle.properties \
+ && printf "org.gradle.jvmargs=-Xmx2g\n" >> android/gradle.properties \
+ && printf "reactNativeArchitectures=arm64-v8a\n" >> android/gradle.properties \
+ && printf "org.gradle.caching=true\n" >> android/gradle.properties \
+ && (cd android && NODE_ENV=production ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a) \
+ && cd / \
+ && rm -rf /build/* /build/.[!.]* \
+ && rm -rf /tmp/.gradle/caches/modules-2 /tmp/.gradle/daemon /tmp/.gradle/.tmp /tmp/.gradle/native \
+           /tmp/.gradle/kotlin-profile /tmp/.gradle/init.d/atomvs-abi.gradle /tmp/.gradle/gradle.properties \
+           /tmp/.npm-cache/_logs \
+ && find /tmp -mindepth 1 -maxdepth 1 ! -name .gradle ! -name .npm-cache -exec rm -rf {} + \
+ && ! find /tmp /build -xdev \( -name "*.jks" -o -name "*.keystore" -o -name "*.p12" \) | grep . \
+ && test -d /tmp/.gradle/caches/build-cache-1 \
+ && ! find /tmp/.gradle/caches/build-cache-1 -type f -empty ! -name gc.properties | grep . \
+ && du -sh /tmp/.gradle/caches/* 2>/dev/null | sort -h | tail -6

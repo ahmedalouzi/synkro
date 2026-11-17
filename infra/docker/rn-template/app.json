@@ -1,0 +1,11 @@
+{
+  "expo": {
+    "name": "atomvs-warm",
+    "slug": "atomvs-warm",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "splash": { "resizeMode": "contain", "backgroundColor": "#ffffff" },
+    "android": { "package": "com.atomvs.warm" }
+  }
+}
