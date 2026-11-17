@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { BUILD_TIMEOUT_MS, NPM_INSTALL_FN, flutterOrg, getBuildCommand } from '../src/models/docker-sandbox.js';
+import { BUILD_TIMEOUT_MS, NPM_INSTALL_FN, STEP_FN, flutterOrg, getBuildCommand } from '../src/models/docker-sandbox.js';
 
 /** Runs `npm_install <mode>` in sh with a fake npm that fails as `fake` says; returns npm's calls and the output. */
 function runNpmInstall(mode: 'ci' | 'install', fake: 'ok' | 'eresolve' | 'eusage' | 'e404', withLock: boolean) {
@@ -115,7 +115,7 @@ export default async function run() {
 
   // Installing like Expo: npm ci from the lockfile, one --legacy-peer-deps retry on ERESOLVE, nothing else retried.
   if (hasSh()) {
-    const base = '--no-audit --no-fund';
+    const base = '--no-audit --no-fund --prefer-offline';
     const eresolve = runNpmInstall('ci', 'eresolve', true);
     assert.equal(eresolve.status, 0);
     assert.deepEqual(eresolve.npmCalls, [`ci ${base}`, `ci ${base} --legacy-peer-deps`]);
@@ -141,8 +141,10 @@ export default async function run() {
   // Flutter: stable package from the project ID (not com.example) and only the ARM ABIs.
   assert.equal(
     getBuildCommand('flutter', '3F9A1C07-BE42-4d11-9a0e-123456789abc'),
-    'cd /build && ( [ -d android ] || flutter create --platforms=android --org com.atomvs.p3f9a1c07be . )'
-      + ' && flutter build apk --release --target-platform android-arm,android-arm64',
+    `${STEP_FN} cd /build && ( [ -d android ] || flutter create --platforms=android --org com.atomvs.p3f9a1c07be . )`
+      + ' && step_done "flutter create"'
+      + ' && flutter build apk --release --target-platform android-arm,android-arm64'
+      + ' && step_done "gradle (flutter build apk)"',
   );
   assert.equal(flutterOrg('00000000-0000-4000-8000-000000000000'), 'com.atomvs.p0000000000');
   assert.throws(() => getBuildCommand('flutter'), /project ID/);

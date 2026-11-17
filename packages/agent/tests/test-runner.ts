@@ -86,6 +86,7 @@ async function main() {
     'budget-guard.test.ts',
     'build-api-isolation.test.ts',
     'build-cancel-route.test.ts',
+    'build-queue-route.test.ts',
     'build-hardening.test.ts',
     'cancellation.test.ts',
     'failover.test.ts',

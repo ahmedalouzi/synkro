@@ -797,6 +797,10 @@ export interface CloudBuildJob {
   downloadExpiresAt?: number;
   shortUrl?: string;
   shortExpiresAt?: number;
+  /** While queued: 1 = next to start (apps/server/src/build-queue.ts). */
+  queuePosition?: number;
+  /** While queued: rough seconds until this build is done; null without enough build history. */
+  queueEtaSeconds?: number | null;
 }
 
 // ── Publish / Build types ─────────────────────────────────────────────────────

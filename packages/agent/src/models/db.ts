@@ -352,6 +352,56 @@ export async function initDbSchema() {
       GRANT worker_user TO SESSION_USER;
     `);
 
+    // Queue position and ETA for GET /api/build/:jobId (apps/server/src/build-queue.ts). api_user only sees its own
+    // jobs (RLS), but the position depends on everyone's. This function runs as its owner and returns only numbers:
+    // how many queued jobs are ahead (per framework), how long the running build has been going, and the average
+    // duration of the last 10 successful builds per framework. No IDs, users or projects. It answers only for a job
+    // of the caller (app.current_user_id) that is still queued; otherwise no row. RLS on build_jobs is unchanged.
+    await client.query(`
+      CREATE OR REPLACE FUNCTION build_queue_info(p_job_id UUID)
+      RETURNS TABLE (
+        own_framework         TEXT,
+        ahead_react_native    INT,
+        ahead_flutter         INT,
+        running_framework     TEXT,
+        running_elapsed_ms    BIGINT,
+        avg_react_native_ms   BIGINT,
+        avg_flutter_ms        BIGINT
+      )
+      LANGUAGE sql STABLE SECURITY DEFINER
+      SET search_path = pg_catalog, public
+      AS $fn$
+        WITH me AS (
+          SELECT id, framework, created_at FROM build_jobs
+          WHERE id = p_job_id AND status = 'queued'
+            AND user_id = NULLIF(current_setting('app.current_user_id', true), '')::UUID
+        ),
+        ahead AS (
+          SELECT q.framework FROM build_jobs q, me
+          WHERE q.status = 'queued' AND (q.created_at, q.id) < (me.created_at, me.id)
+        ),
+        running AS (
+          SELECT framework, started_at FROM build_jobs WHERE status = 'running' ORDER BY started_at LIMIT 1
+        ),
+        recent AS (
+          SELECT framework, build_duration_ms,
+                 row_number() OVER (PARTITION BY framework ORDER BY completed_at DESC NULLS LAST) AS n
+          FROM build_jobs WHERE status = 'success' AND build_duration_ms IS NOT NULL
+        )
+        SELECT
+          me.framework::text,
+          (SELECT count(*)::int FROM ahead WHERE framework = 'react-native'),
+          (SELECT count(*)::int FROM ahead WHERE framework = 'flutter'),
+          (SELECT framework::text FROM running),
+          (SELECT (extract(epoch FROM (now() - started_at)) * 1000)::bigint FROM running),
+          (SELECT avg(build_duration_ms)::bigint FROM recent WHERE framework = 'react-native' AND n <= 10),
+          (SELECT avg(build_duration_ms)::bigint FROM recent WHERE framework = 'flutter' AND n <= 10)
+        FROM me;
+      $fn$;
+      REVOKE ALL ON FUNCTION build_queue_info(UUID) FROM PUBLIC;
+      GRANT EXECUTE ON FUNCTION build_queue_info(UUID) TO api_user;
+    `);
+
     await client.query('COMMIT');
   } catch (err) {
     await client.query('ROLLBACK');

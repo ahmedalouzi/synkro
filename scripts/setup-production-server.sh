@@ -185,7 +185,7 @@ echo "[+] Configuring PM2 systemd daemon unit for ${SYNKRO_USER}..."
 env PATH="$PATH:/usr/bin:/usr/local/bin" pm2 startup systemd -u "${SYNKRO_USER}" --hp "/home/${SYNKRO_USER}" || true
 
 # ==============================================================================
-# Cloud Build sandbox (sections 10-13)
+# Cloud Build sandbox (sections 10-14)
 # The build worker runs as '${SYNKRO_USER}' (in the docker group) without root. The parts that need root
 # (iptables, ipset, dnsmasq) are set up here and by synkro-build-network.service at every boot, because
 # iptables/ipset rules do not survive a reboot.
@@ -316,7 +316,44 @@ else
   echo "[+] Disk quota enforced: a 1G sandbox could not write 2G (overlay2 on xfs)."
 fi
 
-# 14. Signing key warning
+# 14. Shared READ-ONLY Gradle dependency cache for Cloud Build (DEC-08)
+# The cache lives on the Docker volume (/var/lib/docker, XFS) so it can never fill the root disk where Postgres lives,
+# and appears at ${GRADLE_RO_CACHE_DIR} through a bind mount, with its own 0755 permissions: the build worker (user
+# ${SYNKRO_USER}) must see it, and it cannot traverse /var/lib/docker (0710). Builds mount <framework>/ read-only
+# (DockerSandbox); without a cache, or without this mount, they run as before and download everything.
+# scripts/warm-gradle-cache.sh fills it from a template build. Here it runs for a framework that has no cache yet;
+# SYNKRO_WARM_GRADLE_CACHE=1 refreshes both (e.g. after SYNKRO_REBUILD_IMAGES=1), =0 skips it.
+GRADLE_RO_CACHE_DIR="/var/lib/synkro/gradle-ro-cache"
+GRADLE_RO_CACHE_STORE="/var/lib/docker/synkro-cache/gradle-ro"
+if mountpoint -q /var/lib/docker; then
+  install -d -m 0755 -o root -g root "${GRADLE_RO_CACHE_STORE}" "${GRADLE_RO_CACHE_DIR}"
+  FSTAB_LINE="${GRADLE_RO_CACHE_STORE} ${GRADLE_RO_CACHE_DIR} none bind,nofail,x-systemd.requires-mounts-for=/var/lib/docker 0 0"
+  if ! grep -qF " ${GRADLE_RO_CACHE_DIR} " /etc/fstab; then
+    echo "${FSTAB_LINE}" >> /etc/fstab
+    systemctl daemon-reload
+  fi
+  mountpoint -q "${GRADLE_RO_CACHE_DIR}" || mount "${GRADLE_RO_CACHE_DIR}"
+  if [[ "${SYNKRO_WARM_GRADLE_CACHE:-}" == "0" ]]; then
+    echo "[+] Gradle cache warm-up skipped (SYNKRO_WARM_GRADLE_CACHE=0)."
+  elif [[ "${REPO_READY}" != "true" ]]; then
+    echo "[!] Gradle cache warm-up skipped until the repo is in ${SYNKRO_HOME}."
+  else
+    WARM=()
+    for FW in react-native flutter; do
+      if [[ "${SYNKRO_WARM_GRADLE_CACHE:-}" == "1" || ! -d "${GRADLE_RO_CACHE_DIR}/${FW}/modules-2" ]]; then WARM+=("${FW}"); fi
+    done
+    if [[ ${#WARM[@]} -gt 0 ]]; then
+      # Not fatal: without a cache, builds still work (slower).
+      bash "${SYNKRO_HOME}/scripts/warm-gradle-cache.sh" "${WARM[@]}" || echo "[!] WARNING: Gradle cache warm-up failed (see above). Builds still work, without the cache."
+    else
+      echo "[+] Gradle read-only caches present (SYNKRO_WARM_GRADLE_CACHE=1 to refresh)."
+    fi
+  fi
+else
+  echo "[!] /var/lib/docker is not a separate volume: no shared Gradle cache (it must not fill the root disk)."
+fi
+
+# 15. Signing key warning
 cat <<'WARNING'
 ==============================================================================
 [!] SYNKRO_SIGNING_ENC_KEY (in the server .env) encrypts every app signing key.
