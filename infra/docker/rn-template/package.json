@@ -1,0 +1,20 @@
+{
+  "name": "atomvs-npm-cache-seed",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Only used while building synkro/rn-sandbox: installed once so the image's npm cache holds the whole dependency tree of the Atomvs Expo template. Keep in step with ReactNativeManagedProvider.bootstrapProject (apps/desktop/src/main/services/providers/react-native-managed.ts).",
+  "dependencies": {
+    "expo": "~51.0.0",
+    "expo-status-bar": "~1.12.1",
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
+    "react-native": "0.74.5",
+    "react-native-web": "~0.19.10",
+    "@expo/metro-runtime": "~3.2.3"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.20.0",
+    "@types/react": "~18.2.79",
+    "typescript": "~5.3.3"
+  }
+}

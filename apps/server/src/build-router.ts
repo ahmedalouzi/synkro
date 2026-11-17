@@ -2,6 +2,7 @@ import pino from 'pino';
 import express, { Router } from 'express';
 import multer from 'multer';
 import { db as client, validateZipBuffer, AuthenticationRouter, readSigningKey } from '@peep/agent/server';
+import { queueEstimate } from './build-queue';
 
 export const buildRouter: Router = express.Router();
 
@@ -246,7 +247,16 @@ buildRouter.get('/:jobId', requireAuth, async (req, res) => {
         FROM build_jobs
         WHERE id = $1
       `, [jobId]);
-      
+
+      // Queued: where it is in the line and roughly when it will be done (build-queue.ts).
+      if (result.rows[0]?.status === 'queued') {
+        const estimate = await queueEstimate(dbClient, jobId);
+        if (estimate) {
+          result.rows[0].queuePosition = estimate.position;
+          result.rows[0].queueEtaSeconds = estimate.etaSeconds;
+        }
+      }
+
       await dbClient.query('COMMIT');
 
       if (result.rows.length === 0) {

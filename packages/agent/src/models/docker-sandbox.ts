@@ -1,4 +1,6 @@
 import { spawn } from 'node:child_process';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { promisify } from 'node:util';
 import { setupBuildNetwork, verifyBuildNetwork, BUILD_NETWORK, RESOLVER_IP } from './network-setup.js';
 import { BuildLogLines } from './build-log.js';
@@ -15,6 +17,11 @@ export interface SandboxConfig {
   projectId?: string;
   /** Release signing key for this build (see signing-keys.ts). */
   signing?: SandboxSigning;
+  /**
+   * Mount the shared read-only Gradle cache when it exists (default true). scripts/warm-gradle-cache.ts turns it off:
+   * it builds the cache, so its own Gradle must download and store everything.
+   */
+  gradleRoCache?: boolean;
 }
 
 export interface SandboxSigning {
@@ -140,6 +147,58 @@ export const BUILD_DISK_LIMIT_GB: Record<BuildFramework, number> = {
   'react-native': 12,
 };
 
+/**
+ * CPU and memory of one build, and the Gradle settings that follow from them (DEC-08).
+ * These assume builds run ONE AT A TIME: the worker claims the next job only after the current build has finished
+ * (build-worker.ts, poll), and there is one server process. On the 4 vCPU / 8 GB server a build may then use 3.5 CPUs,
+ * which leaves half a core for the API, Postgres and Docker. If builds ever run in parallel, these must be divided
+ * between them first. Memory stays 5g; pids, disk, network and capabilities are set in createContainerArgs and do not
+ * depend on this.
+ * - gradleWorkers 3: Gradle's parallel workers, one per full CPU.
+ * - gradleHeap 2g: the Gradle JVM (it was 1g); with Gradle's other JVMs, Metro and clang it stays inside the 5g.
+ */
+export const SANDBOX_RESOURCES = {
+  cpus: '3.5',
+  memory: '5g',
+  gradleWorkers: 3,
+  gradleHeap: '2g',
+} as const;
+
+/**
+ * Shared READ-ONLY Gradle dependency cache (DEC-08). One per framework, at <dir>/<framework>/modules-2, filled by
+ * scripts/warm-gradle-cache.sh from a template build. Gradle reads it through GRADLE_RO_DEP_CACHE and never writes to
+ * it: what is not there is downloaded into the build's own GRADLE_USER_HOME as before. It is bind-mounted read-only and
+ * owned by root on the host, so no build can change what the next build reads, and as a bind mount it does not count
+ * against the per-build disk limit. <dir> is a bind mount of a directory on the Docker volume
+ * (scripts/setup-production-server.sh), and <dir>/<framework> a symlink to the current version, which the warm script
+ * swaps atomically; a running build keeps the version it started with. SYNKRO_GRADLE_RO_CACHE_DIR overrides <dir>.
+ */
+export function gradleRoCacheHostDir(): string {
+  return process.env.SYNKRO_GRADLE_RO_CACHE_DIR || '/var/lib/synkro/gradle-ro-cache';
+}
+/** Where the read-only cache appears inside the sandbox. */
+export const GRADLE_RO_CACHE_MOUNT = '/opt/gradle-ro-cache';
+
+/**
+ * The host directory to mount for `framework`, with its symlink resolved (so the build keeps that version even if the
+ * warm script swaps in a new one), or null when there is no cache yet: then builds run exactly as without it.
+ * Exported for tests.
+ */
+export function gradleRoCacheSource(framework: BuildFramework, hostDir: string = gradleRoCacheHostDir()): string | null {
+  try {
+    const dir = fs.realpathSync(path.join(hostDir, framework));
+    return fs.statSync(path.join(dir, 'modules-2')).isDirectory() ? dir : null;
+  } catch {
+    return null;
+  }
+}
+
+/** "1m42s": build step times in the log. Exported for tests. */
+export function formatStepDuration(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000));
+  return `${Math.floor(s / 60)}m${String(s % 60).padStart(2, '0')}s`;
+}
+
 /** One line for the build log, e.g. "[SYSTEM] Disk used: 7.4 GB of 12 GB". Docker's G is 1024³ bytes. Exported for tests. */
 export function formatDiskUsage(bytes: number, limitGb: number): string {
   return `[SYSTEM] Disk used: ${(bytes / 1024 ** 3).toFixed(1)} GB of ${limitGb} GB`;
@@ -205,20 +264,33 @@ const PREPARE_EXPO_CONFIG = `echo ${Buffer.from(PREPARE_EXPO_CONFIG_JS).toString
  * when there is one (a lockfile out of step with package.json falls back to `npm install`). A peer dependency
  * conflict (ERESOLVE) is retried once with --legacy-peer-deps, with a warning in the build log: the same project
  * installs locally, where npm is often run with that flag, so it must not fail only on the server.
- * POSIX sh (the image's /bin/sh may be dash): no PIPESTATUS, so npm's exit code goes through a file. Exported for tests.
+ * POSIX sh (the image's /bin/sh may be dash): no PIPESTATUS, so npm's exit code goes through a file.
+ * --prefer-offline: packages already in the image's npm cache (the whole Expo template tree, Dockerfile.rn-sandbox)
+ * are taken from it without asking the registry; anything else is downloaded as before. Exported for tests.
  */
 export const NPM_INSTALL_FN = [
   'npm_install() {',
   'if [ "$1" = ci ] && [ -f package-lock.json ]; then set -- ci; else set -- install; fi;',
-  '( npm "$1" --no-audit --no-fund 2>&1; echo $? > /tmp/npm-status ) | tee /tmp/npm-install.log;',
+  '( npm "$1" --no-audit --no-fund --prefer-offline 2>&1; echo $? > /tmp/npm-status ) | tee /tmp/npm-install.log;',
   '[ "$(cat /tmp/npm-status)" = 0 ] && return 0;',
   'if [ "$1" = ci ] && grep -q EUSAGE /tmp/npm-install.log; then',
   'echo "[SYSTEM] WARNING: package-lock.json does not match package.json, installing with npm install instead.";',
   'npm_install install; return $?; fi;',
   'if grep -q ERESOLVE /tmp/npm-install.log; then',
   'echo "[SYSTEM] WARNING: conflicting peer dependencies (ERESOLVE). Retrying once with --legacy-peer-deps. Run npx expo install --fix in the project to fix the versions.";',
-  'npm "$1" --no-audit --no-fund --legacy-peer-deps; return $?; fi;',
+  'npm "$1" --no-audit --no-fund --prefer-offline --legacy-peer-deps; return $?; fi;',
   'return 1; };',
+].join(' ');
+
+/**
+ * `step_done <name>`: prints how long the step since the previous one took, e.g. "[STEP] npm install 1m42s" (the
+ * clock starts when the build command starts). A failed step stops the chain, so it has no line; the worker always
+ * logs "[STEP] total". Exported for tests.
+ */
+export const STEP_FN = [
+  '_step_t=$(date +%s);',
+  'step_done() { _step_n=$(date +%s); _step_d=$((_step_n - _step_t)); _step_t=$_step_n;',
+  'printf "[STEP] %s %dm%02ds\\n" "$1" $((_step_d / 60)) $((_step_d % 60)); };',
 ].join(' ');
 
 // Expo projects usually have no android/ folder, so generate it the same way the Flutter command runs
@@ -255,25 +327,27 @@ export function getBuildCommand(framework: BuildFramework, projectId?: string): 
   if (framework === 'flutter') {
     // If the project lacks an android/ folder (e.g. web-only repo), generate it safely
     // without overwriting existing lib/ or pubspec.yaml. An existing android/ keeps its own applicationId.
-    return `cd /build && ( [ -d android ] || flutter create --platforms=android --org ${flutterOrg(projectId)} . )`
-      + ' && flutter build apk --release --target-platform android-arm,android-arm64';
+    return `${STEP_FN} cd /build && ( [ -d android ] || flutter create --platforms=android --org ${flutterOrg(projectId)} . )`
+      + ' && step_done "flutter create"'
+      + ' && flutter build apk --release --target-platform android-arm,android-arm64'
+      + ' && step_done "gradle (flutter build apk)"';
   }
   // Append sandbox Gradle constraints to android/gradle.properties before invoking the wrapper:
-  //   - workers.max=2: cap JVM worker processes to our CPU budget (avoids spawning host-core-count workers)
+  //   - workers.max: JVM worker processes for our CPU budget (SANDBOX_RESOURCES; not the host's core count)
   //   - parallel=false: no inter-project parallel execution (irrelevant for single-app builds, but safe)
   //   - daemon=false: skip the persistent daemon JVM — it is wasted inside a one-shot container and
   //                   costs an extra forked process plus a daemon-watcher process
-  //   - jvmargs=-Xmx1g: cap build JVM heap explicitly (default would be ~25% of container memory;
-  //                      capping at 1g frees headroom for clang during native CMake compilation)
+  //   - jvmargs=-Xmx: the build JVM heap (SANDBOX_RESOURCES; the default would be ~25% of container memory,
+  //                   and a cap leaves headroom for clang during native CMake compilation)
   //   - reactNativeArchitectures=arm64-v8a,armeabi-v7a: ABI filter restricting NDK compilation to ARM devices,
   //     cutting compilation time by ~50% by avoiding x86 and x86_64 emulator binaries.
   // Together these keep Gradle's peak PID count well under 200, letting us use pids-limit=384.
   const gradleConstraints = [
     'mkdir -p android && touch android/gradle.properties',
-    'printf "\\norg.gradle.workers.max=2\\n" >> android/gradle.properties',
+    `printf "\\norg.gradle.workers.max=${SANDBOX_RESOURCES.gradleWorkers}\\n" >> android/gradle.properties`,
     'printf "org.gradle.parallel=false\\n" >> android/gradle.properties',
     'printf "org.gradle.daemon=false\\n" >> android/gradle.properties',
-    'printf "org.gradle.jvmargs=-Xmx1g\\n" >> android/gradle.properties',
+    `printf "org.gradle.jvmargs=-Xmx${SANDBOX_RESOURCES.gradleHeap}\\n" >> android/gradle.properties`,
     'printf "reactNativeArchitectures=arm64-v8a,armeabi-v7a\\n" >> android/gradle.properties',
   ].join(' && ');
 
@@ -287,12 +361,15 @@ export function getBuildCommand(framework: BuildFramework, projectId?: string): 
   // getTaskNames(..., 'bundle') internally, which runs bundleRelease and produces an .aab
   // (Android App Bundle). .aab requires Google Play's bundletool to install; it cannot be
   // sideloaded directly. We invoke ./gradlew assembleRelease explicitly to get a plain .apk.
-  return `${NPM_INSTALL_FN} ` + [
+  return `${NPM_INSTALL_FN} ${STEP_FN} ` + [
     'npm_install ci',
+    'step_done "npm install"',
     ENSURE_RN_ANDROID_PROJECT,
+    'step_done "expo prebuild"',
     '([ -f android/gradlew ] && chmod +x android/gradlew || true)',
     gradleConstraints,
-    gradlewCmd,
+    `(${gradlewCmd})`,
+    'step_done "gradle"',
   ].join(' && ');
 }
 
@@ -360,9 +437,9 @@ export class DockerSandbox {
     const createArgs = [
       'create',
       '--name', this.containerName,
-      '--memory=5g',
-      '--memory-swap=5g',
-      '--cpus=2.0',
+      `--memory=${SANDBOX_RESOURCES.memory}`,
+      `--memory-swap=${SANDBOX_RESOURCES.memory}`,
+      `--cpus=${SANDBOX_RESOURCES.cpus}`,
       '--pids-limit=384',
       '--storage-opt', storageLimit,
       '--cap-drop=ALL',
@@ -373,8 +450,18 @@ export class DockerSandbox {
       '-e', 'NPM_CONFIG_CACHE=/tmp/.npm-cache',
       '-e', 'HOME=/tmp',
       '-e', `GRADLE_USER_HOME=${GRADLE_USER_HOME}`,
-      image,
     ];
+
+    // The shared Gradle cache, read-only (see GRADLE_RO_CACHE_HOST_DIR). `readonly` makes the mount itself read-only,
+    // whatever the files' permissions: even a process that became root inside the sandbox could not write to it.
+    const roCache = this.config.gradleRoCache === false ? null : gradleRoCacheSource(framework);
+    if (roCache) {
+      createArgs.push(
+        '--mount', `type=bind,source=${roCache},target=${GRADLE_RO_CACHE_MOUNT},readonly`,
+        '-e', `GRADLE_RO_DEP_CACHE=${GRADLE_RO_CACHE_MOUNT}`,
+      );
+    }
+    createArgs.push(image);
 
     createArgs.push('sh', '-c', `cd /build && ${getBuildCommand(framework, this.config.projectId)}`);
     return createArgs;
@@ -383,6 +470,8 @@ export class DockerSandbox {
   async runBuild(onLog: (chunk: string) => void): Promise<boolean> {
     const framework = this.config.framework || 'flutter';
     const timeoutMs = this.config.timeoutMs || BUILD_TIMEOUT_MS[framework];
+    const startedAt = Date.now();
+    const logTotal = () => onLog(`[STEP] total ${formatStepDuration(Date.now() - startedAt)}`);
 
     const netName = await this.setupNetwork(onLog);
     if (!netName) return false;
@@ -453,6 +542,9 @@ export class DockerSandbox {
       return false;
     }
 
+    if (createArgs.some((arg) => arg.startsWith('GRADLE_RO_DEP_CACHE='))) {
+      onLog('[SYSTEM] Using the shared Gradle dependency cache (read-only).\n');
+    }
     onLog(`[SYSTEM] Starting ${framework} build process...\n`);
 
     return new Promise((resolve) => {
@@ -464,6 +556,7 @@ export class DockerSandbox {
           isResolved = true;
           onLog(`[SYSTEM] Build timed out after ${Math.round(timeoutMs / 1000)}s. Terminating container...`);
           await this.logDiskUsage(onLog, framework);
+          logTotal();
           await this.forceKill();
           resolve(false);
         }
@@ -481,6 +574,7 @@ export class DockerSandbox {
           clearTimeout(timeoutTimer);
           // Measured before the container is removed, on success and on failure.
           const usedBytes = await this.logDiskUsage(onLog, framework);
+          logTotal();
           if (code === 0) {
             // Do NOT forceKill here. The container must remain (in stopped state)
             // so we can extract the artifact from it.

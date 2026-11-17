@@ -12,31 +12,38 @@ ENV HOME=/tmp \
     GRADLE_USER_HOME=/tmp/.gradle \
     NPM_CONFIG_CACHE=/tmp/.npm-cache
 
-# 1. Pre-warm common Gradle distribution wrappers (Gradle 8.8 and 8.6)
-#    Using the wrapper seed pattern ensures the exact MD5-hashed directory structure
-#    and .ok marker files are generated in $GRADLE_USER_HOME/wrapper/dists.
+# 1. Pre-warm the Gradle distributions the supported templates ask for, both flavours:
+#    Expo SDK 51's prebuild template uses gradle-8.8-all, React Native 0.74's template gradle-8.6-all, and projects
+#    may use -bin. With only -bin pre-warmed, every Expo build downloaded gradle-8.8-all.zip (220 MB) again.
+#    The wrapper seed pattern makes the wrapper itself download and unpack each one, so the hashed directory and its
+#    .ok marker in $GRADLE_USER_HOME/wrapper/dists are exactly what a project's gradlew looks for.
+#    Newer templates (Expo 52+: 8.10.2-all, 8.13, 8.14.3, 9.x) are not pre-warmed: this image targets Expo SDK 51 /
+#    RN 0.74, and each would add 150-220 MB. Such projects still build; they download their distribution.
 RUN mkdir -p /tmp/.gradle/wrapper/dists /tmp/.npm-cache \
  && for VERSION in 8.8 8.6; do \
-      echo "Pre-warming Gradle ${VERSION} wrapper..." \
+      echo "Pre-warming Gradle ${VERSION} (bin and all)..." \
       && curl -fsSL -o /tmp/gradle-${VERSION}-bin.zip https://services.gradle.org/distributions/gradle-${VERSION}-bin.zip \
       && unzip -q /tmp/gradle-${VERSION}-bin.zip -d /tmp \
-      && mkdir -p /tmp/gradle-seed-${VERSION} \
-      && touch /tmp/gradle-seed-${VERSION}/settings.gradle \
-      && /tmp/gradle-${VERSION}/bin/gradle --no-daemon --project-dir /tmp/gradle-seed-${VERSION} wrapper --gradle-version ${VERSION} --distribution-type bin \
-      && /tmp/gradle-seed-${VERSION}/gradlew --no-daemon --version \
-      && rm -rf /tmp/gradle-${VERSION} /tmp/gradle-${VERSION}-bin.zip /tmp/gradle-seed-${VERSION} ; \
+      && for TYPE in bin all; do \
+           mkdir -p /tmp/gradle-seed-${VERSION}-${TYPE} \
+           && touch /tmp/gradle-seed-${VERSION}-${TYPE}/settings.gradle \
+           && /tmp/gradle-${VERSION}/bin/gradle --no-daemon --project-dir /tmp/gradle-seed-${VERSION}-${TYPE} wrapper --gradle-version ${VERSION} --distribution-type ${TYPE} \
+           && /tmp/gradle-seed-${VERSION}-${TYPE}/gradlew --no-daemon --version \
+           && rm -rf /tmp/gradle-seed-${VERSION}-${TYPE} ; \
+         done \
+      && rm -rf /tmp/gradle-${VERSION} /tmp/gradle-${VERSION}-bin.zip ; \
     done
 
-# 2. Warm the global npm cache with Expo SDK 51 & React Native 0.74 core packages
-RUN npm cache add \
-    expo@~51.0.0 \
-    react@18.2.0 \
-    react-dom@18.2.0 \
-    react-native@0.74.5 \
-    @expo/metro-runtime@~3.2.1 \
-    @expo/config@~9.0.0 \
-    @react-native/babel-preset@0.74.87 \
-    typescript@~5.3.3
+# 2. Warm the npm cache with the whole dependency tree of the Atomvs Expo template (~1,150 packages) by installing it
+#    once. `npm cache add` of a few top-level packages left most of the tree to download on every build. Builds run
+#    npm with --prefer-offline, so these come from the cache. The cache is in the image's read-only layers: it does not
+#    count against the per-build disk limit; only new entries are written inside the container.
+#    Also the Expo 51 prebuild template, which `expo prebuild` fetches through npm.
+COPY rn-template/package.json /tmp/rn-template/package.json
+RUN cd /tmp/rn-template \
+ && npm install --no-audit --no-fund \
+ && npm cache add expo-template-bare-minimum@sdk-51 \
+ && cd / && rm -rf /tmp/rn-template
 
 # 3. Create build mount point and set directory ownership for unprivileged sandbox user (1000:1000)
 RUN mkdir -p /build \

@@ -134,9 +134,9 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/
 
 ## Sandbox integration tests
 
-Nine suites run real Docker sandboxes: `concurrent-isolation`, `disk-exhaustion`, `dns-allowlist` (its in-sandbox
-part), `expo-android-build`, `fork-bomb`, `fs-escape`, `memory-exhaustion`, `network-fqdn-distinction`,
-`timeout-zombie`. They need a Linux host with Docker, the `synkro/rn-sandbox:1` image and the `build-restricted`
+Ten suites run real Docker sandboxes: `concurrent-isolation`, `disk-exhaustion`, `dns-allowlist` (its in-sandbox
+part), `expo-android-build`, `fork-bomb`, `fs-escape`, `gradle-ro-cache-sandbox` (the shared Gradle cache cannot be
+written from a build), `memory-exhaustion`, `network-fqdn-distinction`, `timeout-zombie`. They need a Linux host with Docker, the `synkro/rn-sandbox:1` image and the `build-restricted`
 network with the DNS allowlist (sections 2 and 4). `memory-exhaustion` and `network-fqdn-distinction` also need root
 (dmesg, tcpdump), and `disk-exhaustion` needs an **enforced** `--storage-opt` (overlay2 on the XFS volume from
 section 1; the requirement check writes 2G into a 1G container, so "Docker accepts the option" is not enough).
@@ -152,8 +152,24 @@ cd /opt/synkro/packages/agent
 sudo SYNKRO_RUN_SANDBOX_TESTS=1 npx tsx tests/test-runner.ts
 ```
 
-Expected: the nine suites report `🟢 Passed`, none `🟡 Skipped`. The Postgres suites skip unless `DATABASE_URL` points
+Expected: the ten suites report `🟢 Passed`, none `🟡 Skipped`. The Postgres suites skip unless `DATABASE_URL` points
 at a test database. One suite on its own: `sudo SYNKRO_RUN_SANDBOX_TESTS=1 npx tsx tests/fork-bomb.test.ts`.
+
+## Shared read-only Gradle cache (DEC-08)
+
+Builds mount `/var/lib/synkro/gradle-ro-cache/<framework>` read-only and point `GRADLE_RO_DEP_CACHE` at it, so Gradle
+does not download every dependency again. The data is on the Docker volume (`/var/lib/docker/synkro-cache/gradle-ro`,
+bind-mounted there by the setup script, section 14). Without it, builds work as before, only slower.
+
+- [ ] After a reboot too: the bind mount is an `/etc/fstab` line (`bind,nofail,x-systemd.requires-mounts-for=/var/lib/docker`),
+      so systemd mounts it after the Docker volume. If the volume is missing, boot is not blocked (`nofail`) and builds
+      run without the cache.
+- [ ] `mountpoint /var/lib/synkro/gradle-ro-cache` says it is a mountpoint; `ls -l /var/lib/synkro/gradle-ro-cache`
+      shows `react-native` and `flutter` as symlinks into `.versions/`, all owned by root.
+- [ ] Refresh by hand (e.g. after a new template): `sudo bash scripts/warm-gradle-cache.sh` (10-20 minutes per
+      framework, one template build each). It keeps the current and the previous version.
+- [ ] A build log starts with `[SYSTEM] Using the shared Gradle dependency cache (read-only).` and ends with the
+      `[STEP]` times and `Disk used`.
 
 ## 9. Teardown
 
