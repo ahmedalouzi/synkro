@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { BUILD_TIMEOUT_MS, NPM_INSTALL_FN, STEP_FN, flutterOrg, getBuildCommand } from '../src/models/docker-sandbox.js';
+import { BUILD_TIMEOUT_MS, CACHE_REPORT_FN, NPM_INSTALL_FN, STEP_FN, flutterOrg, getBuildCommand } from '../src/models/docker-sandbox.js';
 
 /** Runs `npm_install <mode>` in sh with a fake npm that fails as `fake` says; returns npm's calls and the output. */
 function runNpmInstall(mode: 'ci' | 'install', fake: 'ok' | 'eresolve' | 'eusage' | 'e404', withLock: boolean) {
@@ -76,7 +76,8 @@ export default async function run() {
   // Prebuild must not prompt or call Expo's servers.
   assert.ok(cmd.includes('CI=1 EXPO_NO_TELEMETRY=1 npx expo prebuild'));
   // Phone architectures only, and a plain .apk, not an .aab (see the NOTE in docker-sandbox.ts).
-  assert.ok(cmd.includes('./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a,armeabi-v7a'));
+  assert.ok(cmd.includes('./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a)'));
+  assert.ok(!cmd.includes('armeabi-v7a'), '64-bit only (DEC-09)');
   assert.ok(!cmd.includes('bundleRelease'));
   // The JS bundle step needs NODE_ENV; set on Gradle only (npm ci with it would skip devDependencies).
   assert.ok(cmd.includes('NODE_ENV=production ./gradlew assembleRelease'));
@@ -141,10 +142,11 @@ export default async function run() {
   // Flutter: stable package from the project ID (not com.example) and only the ARM ABIs.
   assert.equal(
     getBuildCommand('flutter', '3F9A1C07-BE42-4d11-9a0e-123456789abc'),
-    `${STEP_FN} cd /build && ( [ -d android ] || flutter create --platforms=android --org com.atomvs.p3f9a1c07be . )`
+    `${STEP_FN} ${CACHE_REPORT_FN} cd /build && ( [ -d android ] || flutter create --platforms=android --org com.atomvs.p3f9a1c07be . )`
       + ' && step_done "flutter create"'
-      + ' && flutter build apk --release --target-platform android-arm,android-arm64'
-      + ' && step_done "gradle (flutter build apk)"',
+      + ' && flutter build apk --release --target-platform android-arm64'
+      + ' && step_done "gradle (flutter build apk)"'
+      + ' && (cache_report build || true)',
   );
   assert.equal(flutterOrg('00000000-0000-4000-8000-000000000000'), 'com.atomvs.p0000000000');
   assert.throws(() => getBuildCommand('flutter'), /project ID/);

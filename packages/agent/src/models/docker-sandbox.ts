@@ -38,8 +38,14 @@ export interface SandboxSigning {
 const GRADLE_USER_HOME = '/tmp/.gradle';
 const SIGNING_KEYSTORE_PATH = `${GRADLE_USER_HOME}/synkro-upload.p12`;
 
-/** ABIs packaged into every APK: real phones are ARM; x86/x86_64 are only for emulators. */
-export const PACKAGED_ABIS = ['arm64-v8a', 'armeabi-v7a'];
+/**
+ * ABIs packaged into every APK (DEC-09): 64-bit ARM only. Every phone sold since ~2017 is 64-bit and Google Play requires
+ * 64-bit; dropping armeabi-v7a halves the native (CMake/NDK) compilation and shrinks the APK. Trade-off: very old
+ * 32-bit-only phones cannot install the app. x86/x86_64 are only for emulators.
+ */
+export const PACKAGED_ABIS = ['arm64-v8a'];
+/** The same list for React Native's Gradle property (comma-separated). */
+const RN_ARCHITECTURES = PACKAGED_ABIS.join(',');
 
 /**
  * Gradle init script (GRADLE_USER_HOME/init.d/, applied to every build) that packages only PACKAGED_ABIS.
@@ -71,6 +77,26 @@ gradle.allprojects { project ->
       }
     }
   }
+}
+`;
+
+/**
+ * Gradle init script for the build cache baked into the sandbox image (Dockerfile.rn-sandbox, DEC-10): builds READ it
+ * (org.gradle.caching=true, see getBuildCommand) but never store new entries in it (push = false), and Gradle's cache
+ * cleanup is off: those caches are image files, and cleaning them would only copy or delete files in this build's own
+ * layer, against its disk limit. Each part is guarded, so an older Gradle without these settings builds as before.
+ * Exported for tests.
+ */
+export const CACHE_INIT_SCRIPT = `// Atomvs Cloud Build: read the image's Gradle build cache, never write it; no cache cleanup.
+gradle.settingsEvaluated { settings ->
+  try { settings.buildCache { local { push = false } } } catch (Throwable ignored) {}
+}
+beforeSettings { settings ->
+  try {
+    if (org.gradle.util.GradleVersion.current() >= org.gradle.util.GradleVersion.version('8.0')) {
+      settings.caches { cleanup = org.gradle.api.cache.Cleanup.DISABLED }
+    }
+  } catch (Throwable ignored) {}
 }
 `;
 
@@ -108,8 +134,9 @@ function tarEntry(name: string, mode: number, content: Buffer | null): Buffer {
 }
 
 /**
- * A tar archive for `docker cp -a - <container>:/` holding GRADLE_USER_HOME: the ABI init script and, when the
- * build is signed, the keystore and the signing properties. Owned by the sandbox user and readable only by it.
+ * A tar archive for `docker cp -a - <container>:/` holding GRADLE_USER_HOME: the ABI init script, the cache init script
+ * (CACHE_INIT_SCRIPT) and, when the build is signed, the keystore and the signing properties. Owned by the sandbox
+ * user and readable only by it. Extracted over the image's GRADLE_USER_HOME, whose caches it leaves in place.
  * Streamed over stdin, so nothing secret is written to the host's disk. Exported for tests.
  */
 export function createGradleHomeArchive(signing?: SandboxSigning): Buffer {
@@ -124,6 +151,8 @@ export function createGradleHomeArchive(signing?: SandboxSigning): Buffer {
           tarEntry(SIGNING_KEYSTORE_PATH.slice(1), 0o600, signing.keystore),
         ]
       : []),
+    // Last, so the entries above keep their positions (tests read them by index).
+    tarEntry(`${dir}/init.d/atomvs-cache.gradle`, 0o600, Buffer.from(CACHE_INIT_SCRIPT, 'utf8')),
     Buffer.alloc(1024),
   ]);
 }
@@ -293,6 +322,43 @@ export const STEP_FN = [
   'printf "[STEP] %s %dm%02ds\\n" "$1" $((_step_d / 60)) $((_step_d % 60)); };',
 ].join(' ');
 
+/**
+ * `cache_report <build output dir>`, run after Gradle: whether the shared read-only Gradle cache (DEC-08) is doing its
+ * job, and where the build's disk use goes. The image has no Gradle dependencies, so every file in the build's own
+ * caches/modules-2 was downloaded during this build because the read-only cache did not have it. "Disk used" alone
+ * cannot tell: it also counts node_modules, native build output and caches/transforms-* (unpacked/dexed AARs), which
+ * the dependency cache does not cover. Never fails the build (callers use `|| true`). Exported for tests.
+ */
+export const CACHE_REPORT_FN = [
+  'cache_report() {',
+  '_gh="${GRADLE_USER_HOME:-/tmp/.gradle}"; _dl="$_gh/caches/modules-2/files-2.1"; _n=0; _mb=0;',
+  '_mbof() { du -sm "$@" 2>/dev/null | awk \'{s+=$1} END {print s+0}\'; };',
+  'if [ -d "$_dl" ]; then _n=$(find "$_dl" -type f | wc -l | tr -d " "); _mb=$(_mbof "$_dl"); fi;',
+  'echo "[CACHE] Downloaded during this build (not in the shared read-only cache): $_n dependency files, $_mb MB";',
+  'if [ -n "$GRADLE_RO_DEP_CACHE" ]; then',
+  'echo "[CACHE] Shared read-only cache: $(find "$GRADLE_RO_DEP_CACHE/modules-2/files-2.1" -type f 2>/dev/null | wc -l | tr -d " ") dependency files available";',
+  'else echo "[CACHE] Shared read-only cache: not mounted"; fi;',
+  'echo "[CACHE] Disk: Gradle caches $(_mbof "$_gh/caches") MB (transforms $(_mbof "$_gh"/caches/transforms-*) MB), node_modules $(_mbof node_modules) MB, $1/ $(_mbof "$1") MB"; };',
+].join(' ');
+
+/**
+ * `gradle_build <command...>`: runs Gradle once; if it failed because an entry of the image's build cache (DEC-10)
+ * could not be read, runs it once more with --no-build-cache. Gradle 8.8 fails the build on such an entry (e.g. a
+ * cached transform) instead of rebuilding it. Real builds never write the cache (push = false) and the image build
+ * refuses empty entries, so this is a safety net. Any other failure is not retried. The output still streams live;
+ * a copy goes to $TMPDIR (/tmp) to look for the error, then is deleted. Exported for tests.
+ */
+export const BUILD_CACHE_ERROR = 'Could not load from local cache|Failed to load cache entry|Could not load entry .* from local build cache';
+export const GRADLE_BUILD_FN = [
+  'gradle_build() {',
+  '_gl="${TMPDIR:-/tmp}/gradle-build.log"; _gs="${TMPDIR:-/tmp}/gradle-status";',
+  '( "$@" 2>&1; echo $? > "$_gs" ) | tee "$_gl"; _gr=$(cat "$_gs");',
+  `if [ "$_gr" != 0 ] && grep -qE '${BUILD_CACHE_ERROR}' "$_gl"; then`,
+  'rm -f "$_gl"; echo "[SYSTEM] Build cache unreadable, retrying without it";',
+  '"$@" --no-build-cache; _gr=$?; fi;',
+  'rm -f "$_gl" "$_gs"; return $_gr; };',
+].join(' ');
+
 // Expo projects usually have no android/ folder, so generate it the same way the Flutter command runs
 // `flutter create`. Checks for android/gradlew, not the folder, so a half-made android/ still counts as missing.
 // CI=1 keeps prebuild non-interactive and EXPO_NO_TELEMETRY stops it calling Expo's servers. With the default
@@ -327,10 +393,11 @@ export function getBuildCommand(framework: BuildFramework, projectId?: string): 
   if (framework === 'flutter') {
     // If the project lacks an android/ folder (e.g. web-only repo), generate it safely
     // without overwriting existing lib/ or pubspec.yaml. An existing android/ keeps its own applicationId.
-    return `${STEP_FN} cd /build && ( [ -d android ] || flutter create --platforms=android --org ${flutterOrg(projectId)} . )`
+    return `${STEP_FN} ${CACHE_REPORT_FN} cd /build && ( [ -d android ] || flutter create --platforms=android --org ${flutterOrg(projectId)} . )`
       + ' && step_done "flutter create"'
-      + ' && flutter build apk --release --target-platform android-arm,android-arm64'
-      + ' && step_done "gradle (flutter build apk)"';
+      + ' && flutter build apk --release --target-platform android-arm64'
+      + ' && step_done "gradle (flutter build apk)"'
+      + ' && (cache_report build || true)';
   }
   // Append sandbox Gradle constraints to android/gradle.properties before invoking the wrapper:
   //   - workers.max: JVM worker processes for our CPU budget (SANDBOX_RESOURCES; not the host's core count)
@@ -339,8 +406,8 @@ export function getBuildCommand(framework: BuildFramework, projectId?: string): 
   //                   costs an extra forked process plus a daemon-watcher process
   //   - jvmargs=-Xmx: the build JVM heap (SANDBOX_RESOURCES; the default would be ~25% of container memory,
   //                   and a cap leaves headroom for clang during native CMake compilation)
-  //   - reactNativeArchitectures=arm64-v8a,armeabi-v7a: ABI filter restricting NDK compilation to ARM devices,
-  //     cutting compilation time by ~50% by avoiding x86 and x86_64 emulator binaries.
+  //   - reactNativeArchitectures=arm64-v8a: ABI filter restricting NDK compilation to 64-bit ARM phones (PACKAGED_ABIS,
+  //     DEC-09): no x86/x86_64 emulator binaries and no 32-bit armeabi-v7a.
   // Together these keep Gradle's peak PID count well under 200, letting us use pids-limit=384.
   const gradleConstraints = [
     'mkdir -p android && touch android/gradle.properties',
@@ -348,20 +415,23 @@ export function getBuildCommand(framework: BuildFramework, projectId?: string): 
     'printf "org.gradle.parallel=false\\n" >> android/gradle.properties',
     'printf "org.gradle.daemon=false\\n" >> android/gradle.properties',
     `printf "org.gradle.jvmargs=-Xmx${SANDBOX_RESOURCES.gradleHeap}\\n" >> android/gradle.properties`,
-    'printf "reactNativeArchitectures=arm64-v8a,armeabi-v7a\\n" >> android/gradle.properties',
+    `printf "reactNativeArchitectures=${RN_ARCHITECTURES}\\n" >> android/gradle.properties`,
+    // Use the Gradle build cache baked into the image (DEC-10; read-only through CACHE_INIT_SCRIPT). A missing or
+    // stale cache is a cache miss: the task simply runs. An unreadable entry: gradle_build retries without the cache.
+    'printf "org.gradle.caching=true\\n" >> android/gradle.properties',
   ].join(' && ');
 
   // Not -Pandroid.injected.build.abi: that is Android Studio's deploy-to-one-device flag, and with it Gradle did not
   // write app/build/outputs/apk/release/app-release.apk, so the worker found no APK (Oct 30, Expo on rn-sandbox:1).
   // NODE_ENV=production for the JS bundle step Gradle runs (Expo's babel preset asks for it), set on Gradle only:
-  // on npm ci it would skip devDependencies the bundle needs.
-  const gradlewCmd = 'cd android && NODE_ENV=production ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a,armeabi-v7a';
+  // on npm ci it would skip devDependencies the bundle needs. gradle_build: one retry without an unreadable build cache.
+  const gradlewCmd = `cd android && gradle_build env NODE_ENV=production ./gradlew assembleRelease -PreactNativeArchitectures=${RN_ARCHITECTURES}`;
 
   // NOTE: We do NOT use `npx react-native build-android` here — the RN CLI wrapper calls
   // getTaskNames(..., 'bundle') internally, which runs bundleRelease and produces an .aab
   // (Android App Bundle). .aab requires Google Play's bundletool to install; it cannot be
   // sideloaded directly. We invoke ./gradlew assembleRelease explicitly to get a plain .apk.
-  return `${NPM_INSTALL_FN} ${STEP_FN} ` + [
+  return `${NPM_INSTALL_FN} ${GRADLE_BUILD_FN} ${STEP_FN} ${CACHE_REPORT_FN} ` + [
     'npm_install ci',
     'step_done "npm install"',
     ENSURE_RN_ANDROID_PROJECT,
@@ -370,6 +440,7 @@ export function getBuildCommand(framework: BuildFramework, projectId?: string): 
     gradleConstraints,
     `(${gradlewCmd})`,
     'step_done "gradle"',
+    '(cache_report android || true)',
   ].join(' && ');
 }
 

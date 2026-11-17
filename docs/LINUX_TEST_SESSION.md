@@ -102,8 +102,11 @@ $BT/aapt2 dump badging app.apk | grep -E "^package|native-code"
       and `--memory`, `--pids-limit=384`, `--cap-drop=ALL` are as before.
 - [ ] Each APK's SHA-256 equals `signing_keys.cert_sha256` for its project; both builds of a project have the same one;
       `build_jobs.signing_cert_sha256` is set.
-- [ ] `native-code` includes **both** `arm64-v8a` and `armeabi-v7a` for RN and Expo (x86 / x86_64 are still there too:
-      shrinking the APK is a post-beta item on the pre-warmed image card).
+- [ ] `native-code` is **only** `arm64-v8a` for RN, Expo and Flutter (64-bit ARM, DEC-09: no armeabi-v7a, x86 or
+      x86_64). A 32-bit-only phone cannot install it; that is the accepted trade-off.
+- [ ] The build log has three `[CACHE]` lines after Gradle: how many dependencies were downloaded (not in the shared
+      read-only cache), how many the cache offers, and where the disk went (Gradle caches/transforms, node_modules,
+      android/).
 - [ ] The first successful build of each project logs "If an older copy of this app is on your phone, uninstall it
       first"; the second does not.
 - [ ] No build log, `docker inspect` output or server log contains a signing password.
@@ -170,6 +173,20 @@ bind-mounted there by the setup script, section 14). Without it, builds work as 
       framework, one template build each). It keeps the current and the previous version.
 - [ ] A build log starts with `[SYSTEM] Using the shared Gradle dependency cache (read-only).` and ends with the
       `[STEP]` times and `Disk used`.
+
+## Gradle build cache in the RN image (DEC-10)
+
+`synkro/rn-sandbox:1` contains Gradle's build cache and transforms from one release build of the Atomvs Expo template
+(Dockerfile step 4), made at image build time with the same settings as real builds. Builds read it
+(`org.gradle.caching=true`) and never write it (`push = false`, `init.d/atomvs-cache.gradle`). It is refreshed only by
+rebuilding the image (`SYNKRO_REBUILD_IMAGES=1`), e.g. after changing the template's Expo SDK.
+A missing or stale cache only means cache misses. Gradle 8.8 fails a build on an unreadable entry instead of
+rebuilding it, so the image build refuses empty entries and `gradle_build` retries Gradle once with `--no-build-cache`
+when the log shows a build-cache load error (`[SYSTEM] Build cache unreadable, retrying without it`).
+
+- [ ] A real Expo build's Gradle output ends with `N actionable tasks: X executed, Y from cache` with Y well above 0.
+- [ ] The image holds no signing material: `docker run --rm synkro/rn-sandbox:1 sh -c 'ls -a /tmp /tmp/.gradle; find / -xdev \( -name "*.jks" -o -name "*.keystore" -o -name "*.p12" \) 2>/dev/null'`
+      lists no `.android` folder, no `gradle.properties` in `/tmp/.gradle`, and only the JDK's own `cacerts`-type stores, if any.
 
 ## 9. Teardown
 
