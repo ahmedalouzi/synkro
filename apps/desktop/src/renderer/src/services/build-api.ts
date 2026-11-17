@@ -141,7 +141,7 @@ export class MockBuildApi implements IBuildApi {
       if (!this.currentJob || this.currentJob.id !== id || this.currentJob.status !== 'running') return false;
       this.currentJob.errorLog = `${this.currentJob.errorLog ?? ''}${line}
 `;
-      this.logListeners.forEach((l) => l(`${line}
+      this.logListeners.forEach((l) => l(`${line}
 `));
       return true;
     };
