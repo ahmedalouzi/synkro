@@ -139,10 +139,8 @@ export class MockBuildApi implements IBuildApi {
     job.errorLog = '';
     const emit = (line: string) => {
       if (!this.currentJob || this.currentJob.id !== id || this.currentJob.status !== 'running') return false;
-      this.currentJob.errorLog = `${this.currentJob.errorLog ?? ''}${line}
-`;
-      this.logListeners.forEach((l) => l(`${line}
-`));
+      this.currentJob.errorLog = `${this.currentJob.errorLog ?? ''}${line}\n`;
+      this.logListeners.forEach((l) => l(`${line}\r\n`));
       return true;
     };
     const timeline: Array<[number, string]> = willFail
