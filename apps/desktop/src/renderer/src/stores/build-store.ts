@@ -18,7 +18,15 @@ interface BuildState {
   setBuildPanelOpen: (isOpen: boolean) => void;
   depsCheck: DepsCheckState | null;
   setDepsCheck: (depsCheck: DepsCheckState | null) => void;
+  /**
+   * The full-screen build experience (BuildExperience.tsx): over the IDE, minimized to a corner pill while the user
+   * keeps working ("Continue working"), or hidden.
+   */
+  experienceMode: BuildExperienceMode;
+  setExperienceMode: (mode: BuildExperienceMode) => void;
 }
+
+export type BuildExperienceMode = 'full' | 'pill' | 'hidden';
 
 export const useBuildStore = create<BuildState>((set) => ({
   currentBuild: null,
@@ -30,4 +38,6 @@ export const useBuildStore = create<BuildState>((set) => ({
   setBuildPanelOpen: (isOpen) => set({ isBuildPanelOpen: isOpen }),
   depsCheck: null,
   setDepsCheck: (depsCheck) => set({ depsCheck }),
+  experienceMode: 'hidden',
+  setExperienceMode: (experienceMode) => set({ experienceMode }),
 }));

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { useBuildStore } from '../../stores/build-store';
 import { buildApi } from '../../services/build-api';
-import { CloudBuildJob, CloudBuildStatus } from '@peep/shared';
+import { CloudBuildJob } from '@peep/shared';
 import { useI18n, t as i18nT } from '../../i18n';
 import { DepsCheckCard } from './DepsCheckCard';
 import { SpaceQrPopup } from './SpaceQrPopup';
@@ -60,31 +60,8 @@ export function BuildPanel() {
   const [qrUrl, setQrUrl] = useState<string>(currentBuild?.shortUrl || '');
   const [expiresAt, setExpiresAt] = useState<number>(currentBuild?.shortExpiresAt || (Date.now() + 15 * 60 * 1000));
   const showQrBtnRef = useRef<HTMLButtonElement>(null);
-  const prevBuildRef = useRef<{ id: string; status: CloudBuildStatus } | null>(null);
-  const autoOpenedJobsRef = useRef<Set<string>>(new Set());
 
-  // Auto-open once when a build transitions to SUCCESS for an APK build
-  useEffect(() => {
-    if (!currentBuild) {
-      prevBuildRef.current = null;
-      return;
-    }
-    const prev = prevBuildRef.current;
-    const isTransitionToSuccess =
-      prev !== null &&
-      prev.id === currentBuild.id &&
-      (prev.status === 'running' || prev.status === 'queued') &&
-      currentBuild.status === 'success';
-
-    const isApk = (currentBuild.target || 'apk') === 'apk' || currentBuild.target === 'both';
-
-    if (isTransitionToSuccess && isApk && !autoOpenedJobsRef.current.has(currentBuild.id)) {
-      autoOpenedJobsRef.current.add(currentBuild.id);
-      setQrFullPageOpen(true);
-    }
-
-    prevBuildRef.current = { id: currentBuild.id, status: currentBuild.status };
-  }, [currentBuild?.id, currentBuild?.status, currentBuild?.target]);
+  // The QR opens by itself after a successful build in BuildExperience; here it opens from "Show QR".
 
   useEffect(() => {
     if (currentBuild?.status !== 'success') return;
@@ -127,21 +104,7 @@ export function BuildPanel() {
     [updateCurrentBuild]
   );
 
-  // Status polling timer
-  useEffect(() => {
-    let timer: ReturnType<typeof setInterval> | undefined;
-    if (currentBuild?.status === 'running' || currentBuild?.status === 'queued') {
-      timer = setInterval(async () => {
-        try {
-          const updated = await buildApi.getBuild(currentBuild.id);
-          updateCurrentBuild(updated);
-        } catch (e) {
-          console.error('Failed to poll build status', e);
-        }
-      }, 3000);
-    }
-    return () => clearInterval(timer);
-  }, [currentBuild?.id, currentBuild?.status, updateCurrentBuild]);
+  // Status polling runs in BuildExperience (it must work while this panel is closed).
 
   // Elapsed time counter
   useEffect(() => {

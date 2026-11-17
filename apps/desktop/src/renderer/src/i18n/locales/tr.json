@@ -104,6 +104,37 @@
     "fullPageError": "QR kodu oluşturulamadı. Lütfen tekrar deneyin.",
     "qrAriaLabel": "APK indirmek için QR kodu"
   },
+  "buildFlow": {
+    "stage": {
+      "preparing": "Projeniz hazırlanıyor",
+      "installing": "Paketler yükleniyor",
+      "compiling": "Android için derleniyor",
+      "signing": "Uygulamanız imzalanıyor",
+      "finishing": "Neredeyse hazır"
+    },
+    "stepsLabel": "Derleme ilerlemesi",
+    "hint": "Uygulamanız sunucularımızda derleniyor. Çalışmaya devam edebilirsiniz: değişiklikleriniz bu derlemeyi etkilemez.",
+    "continueWorking": "Çalışmaya devam et",
+    "reopen": "Derlemeyi göster",
+    "cancel": "Derlemeyi iptal et",
+    "cancelConfirm": "Bu derleme iptal edilsin mi?",
+    "cancelYes": "Evet, iptal et",
+    "cancelNo": "Derlemeye devam",
+    "successTitle": "Uygulamanız hazır!",
+    "successSubtitle": "Yüklemek için kodu telefonunuzla tarayın.",
+    "failedTitle": "Derleme tamamlanmadı",
+    "failed": {
+      "generic": "Projedeki bir şey Android derlemesini durdurdu. Ayrıntılar tam olarak nerede olduğunu gösteriyor.",
+      "disk": "Derleme sunucumuzda bu derleme için yer kalmadı. Bilgilendirildik. Lütfen biraz sonra tekrar deneyin.",
+      "dependencies": "Projedeki bazı paketler birbiriyle uyumlu değil, bu yüzden yüklenemedi.",
+      "timeout": "Derleme izin verilen süreden uzun sürdü ve durduruldu."
+    },
+    "viewDetails": "Ayrıntıları göster",
+    "hideDetails": "Ayrıntıları gizle",
+    "copy": "Kopyala",
+    "copied": "Kopyalandı!",
+    "close": "Kapat"
+  },
   "titlebar": {
     "search": "Ara",
     "searchFile": "Dosyaya Git (Ctrl+P)",

@@ -104,6 +104,37 @@
     "fullPageError": "Could not generate QR code. Please try again.",
     "qrAriaLabel": "QR code to download the APK"
   },
+  "buildFlow": {
+    "stage": {
+      "preparing": "Preparing your project",
+      "installing": "Installing packages",
+      "compiling": "Compiling for Android",
+      "signing": "Signing your app",
+      "finishing": "Almost ready"
+    },
+    "stepsLabel": "Build progress",
+    "hint": "Your app is being built on our servers. You can keep working: your edits won't change this build.",
+    "continueWorking": "Continue working",
+    "reopen": "Show the build",
+    "cancel": "Cancel build",
+    "cancelConfirm": "Cancel this build?",
+    "cancelYes": "Yes, cancel",
+    "cancelNo": "Keep building",
+    "successTitle": "Your app is ready!",
+    "successSubtitle": "Scan the code with your phone to install it.",
+    "failedTitle": "The build didn't finish",
+    "failed": {
+      "generic": "Something in the project stopped the Android build. The details show exactly where.",
+      "disk": "Our build server ran out of space for this build. We've been notified. Please try again in a little while.",
+      "dependencies": "Some packages in the project don't fit together, so they couldn't be installed.",
+      "timeout": "The build took longer than allowed and was stopped."
+    },
+    "viewDetails": "View details",
+    "hideDetails": "Hide details",
+    "copy": "Copy",
+    "copied": "Copied!",
+    "close": "Close"
+  },
   "titlebar": {
     "search": "Search",
     "searchFile": "Go to File (Ctrl+P)",
