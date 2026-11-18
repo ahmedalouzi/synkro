@@ -78,6 +78,13 @@ export class AgentService {
   /** The Preview pane's dev server, which the agent reads and restarts (get_preview_logs, restart_preview). */
   private preview: PreviewManager | null = null;
 
+  /** PIDs of the processes Atomvs started: the only ones a run_command may stop (by PID, after confirmation). */
+  private ownedPids: () => number[] = () => [];
+
+  setOwnedPidsProvider(provider: () => number[]): void {
+    this.ownedPids = provider;
+  }
+
   setPreviewManager(preview: PreviewManager): void {
     this.preview = preview;
   }
@@ -417,7 +424,7 @@ export class AgentService {
             const rewritten = expoProject ? toExpoInstall(requested) : null;
             const commandStr = rewritten ?? requested;
             const rewriteNote = rewritten ? `Rewrote "${requested}" to "${rewritten}" (Expo project: versions that match its SDK).\n` : '';
-            const safety = classifyCommand(commandStr);
+            const safety = classifyCommand(commandStr, { ownPids: new Set(this.ownedPids()) });
 
             if (safety.level === 'blocked') {
               return `BLOCKED: ${safety.reason}`;
