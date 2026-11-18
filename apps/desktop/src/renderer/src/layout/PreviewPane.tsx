@@ -1,4 +1,5 @@
 import { useI18n } from '../i18n';
+import { parseFlutterEnvironmentProblem } from '@peep/shared';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { usePreviewStore } from '../stores/preview-store';
 import { useWorkspaceStore } from '../stores/workspace-store';
@@ -325,6 +326,10 @@ Please modify the selected element and its corresponding component files as foll
      session.error.toLowerCase().includes('enoent') ||
      session.error.includes('Is Flutter SDK installed?'));
 
+  // A problem with the Flutter installation, not the code (SDK inside OneDrive, startup lock held outside Atomvs):
+  // its own explanation and no Auto-Fix (the agent cannot fix it in code, and must not stop the user's processes).
+  const flutterEnvProblem = platform === 'flutter' && session?.status === 'error' ? parseFlutterEnvironmentProblem(session.error) : null;
+
   const handleOpenSdkSettings = () => {
     if (typeof (window.peep as any)?.openSettings === 'function') {
       (window.peep as any).openSettings('sdk');
@@ -488,7 +493,34 @@ Please modify the selected element and its corresponding component files as foll
                       <p>{getStartingMsg(platform)}</p>
                     </div>
                   )}
-                  {session?.status === 'error' && isFlutterSdkMissing ? (
+                  {flutterEnvProblem ? (
+                    <div id="preview-flutter-env" className="preview-placeholder preview-placeholder--error preview-env-problem" role="alert">
+                      <span className="preview-placeholder__icon" aria-hidden="true">{flutterEnvProblem.kind === 'startup-lock' ? '⏳' : '☁️'}</span>
+                      <h3>{flutterEnvProblem.kind === 'startup-lock' ? t('preview.flutterEnv.lockTitle') : t('preview.flutterEnv.syncedTitle', { folder: flutterEnvProblem.folder })}</h3>
+                      <p>
+                        {flutterEnvProblem.kind === 'startup-lock'
+                          ? t('preview.flutterEnv.lockBody')
+                          : t('preview.flutterEnv.syncedBody', { folder: flutterEnvProblem.folder })}
+                      </p>
+                      {flutterEnvProblem.kind === 'startup-lock' && flutterEnvProblem.folder && (
+                        <p>{t('preview.flutterEnv.lockSynced', { folder: flutterEnvProblem.folder })}</p>
+                      )}
+                      {flutterEnvProblem.sdkPath && (
+                        <code className="preview-env-problem__path" dir="ltr">{flutterEnvProblem.sdkPath}</code>
+                      )}
+                      <p className="preview-env-problem__note">{t('preview.flutterEnv.notCode')}</p>
+                      <div className="preview-env-problem__actions">
+                        {flutterEnvProblem.kind === 'sdk-in-synced-folder' && (
+                          <button type="button" id="preview-flutter-env-settings" className="preview-retry-btn preview-retry-btn--primary" onClick={handleOpenSdkSettings}>
+                            {t('preview.flutterEnv.openSettings')}
+                          </button>
+                        )}
+                        <button type="button" id="preview-flutter-env-retry" className="preview-retry-btn" onClick={handleStart} disabled={!project}>
+                          {t('preview.flutterEnv.retry')}
+                        </button>
+                      </div>
+                    </div>
+                  ) : session?.status === 'error' && isFlutterSdkMissing ? (
                     <div className="preview-placeholder preview-placeholder--error" style={{ maxWidth: '340px', margin: '0 auto', padding: '24px 16px' }}>
                       <span className="preview-placeholder__icon">📦</span>
                       <h3>Flutter SDK Required</h3>
