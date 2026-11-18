@@ -6,7 +6,7 @@ import path from 'node:path';
 import { GRADLE_BUILD_FN, getBuildCommand } from '../src/models/docker-sandbox.js';
 
 /**
- * `gradle_build` (docker-sandbox.ts, DEC-10): when Gradle fails because an entry of the image's build cache cannot be
+ * `gradle_build` (docker-sandbox.ts, DEC-11): when Gradle fails because an entry of the image's build cache cannot be
  * read, the build runs once more with --no-build-cache; any other failure is not retried. Runs the real shell
  * function against a fake gradlew (Linux/CI; skipped where there is no sh).
  */

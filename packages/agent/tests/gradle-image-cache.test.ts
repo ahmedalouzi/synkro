@@ -8,7 +8,7 @@ import {
 } from '../src/models/docker-sandbox.js';
 
 /**
- * The Gradle build cache baked into synkro/rn-sandbox (DEC-10). Cache hits need the image's warm-up build to use
+ * The Gradle build cache baked into synkro/rn-sandbox (DEC-11). Cache hits need the image's warm-up build to use
  * exactly what real builds use; these checks keep Dockerfile.rn-sandbox and docker-sandbox.ts in step, and check that
  * the warm-up only runs our template and leaves no signing material or secrets in the image. No Docker needed.
  */
