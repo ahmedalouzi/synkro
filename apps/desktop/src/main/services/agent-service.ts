@@ -433,7 +433,7 @@ export class AgentService {
             if (safety.level === 'dangerous') {
               // Send a confirmation request to the renderer and wait for response
               const confirmId = randomUUID();
-              const confirmed = await new Promise<boolean>((resolve) => {
+              const confirmed = await new Promise<boolean | 'timeout'>((resolve) => {
                 this.mainWindow?.webContents.send('agent:confirm-command', {
                   id: confirmId,
                   command: commandStr,
@@ -445,9 +445,12 @@ export class AgentService {
                   resolve(approved);
                 });
 
-                setTimeout(() => resolve(false), 60000);
+                setTimeout(() => resolve('timeout'), 60000);
               });
 
+              if (confirmed === 'timeout') {
+                return `Not run: this command needs the user's confirmation and none came within 60 s: ${commandStr}`;
+              }
               if (!confirmed) {
                 return `Command was rejected by user: ${commandStr}`;
               }
@@ -516,7 +519,7 @@ export class AgentService {
             const path = this.resolvePath(projectPath, String(args.path));
             // Always require user confirmation for file deletion
             const confirmId = randomUUID();
-            const confirmed = await new Promise<boolean>((resolve) => {
+            const confirmed = await new Promise<boolean | 'timeout'>((resolve) => {
               this.mainWindow?.webContents.send('agent:confirm-command', {
                 id: confirmId,
                 command: `DELETE FILE: ${args.path}`,
@@ -526,8 +529,9 @@ export class AgentService {
               ipcMain.once(`agent:confirm-command-response:${confirmId}`, (_: unknown, approved: boolean) => {
                 resolve(approved);
               });
-              setTimeout(() => resolve(false), 60000);
+              setTimeout(() => resolve('timeout'), 60000);
             });
+            if (confirmed === 'timeout') return `Not run: deleting a file needs the user's confirmation and none came within 60 s: ${args.path}`;
             if (!confirmed) return `File deletion rejected by user: ${args.path}`;
             await unlink(path);
             return `Deleted: ${args.path}`;

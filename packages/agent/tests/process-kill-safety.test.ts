@@ -5,6 +5,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { classifyCommand, findProcessKill, processKillPolicy } from '../src/tools/safety';
 import { FLUTTER_SYSTEM_PROMPT } from '../src/prompts/flutter-system';
+import { NOT_RUN, runAgentLoop } from '../src/orchestrator';
+import { MockAIGateway } from '../src/models/mock-gateway';
+import type { AgentTimelineActivity } from '@peep/shared';
 import { TerminalService } from '../../../apps/desktop/src/main/services/terminal-service';
 import { ProcessRegistry, leftoverPids, stopLeftoverProcesses } from '../../../apps/desktop/src/main/services/process-registry';
 
@@ -84,6 +87,46 @@ export default async function run() {
   assert.match(ipc, /agentService\.setOwnedPidsProvider\(\(\) => \[\.\.\.processManager\.pids\(\), \.\.\.terminalService\.pids\(\)\]\)/);
   assert.match(ipc, /terminalService\.setOwnedPidsProvider\(\(\) => processManager\.pids\(\)\)/);
   assert.match(FLUTTER_SYSTEM_PROMPT, /Never stop processes by name \(taskkill \/IM, pkill, killall, Stop-Process -Name, npx kill-port\)/);
+
+  console.log('  [kill-safety] The chat shows a refused command as "Blocked", never "Ran" (Auto-Fix -> agent -> run_command)...');
+  {
+    const gateway = new MockAIGateway();
+    gateway.setCustomToolCall({ id: 'kill1', name: 'run_command', arguments: JSON.stringify({ command: USER_COMMAND }) });
+    const activities: AgentTimelineActivity[] = [];
+    const results: string[] = [];
+    await runAgentLoop(
+      { capabilityTier: 'fast', sessionToken: 'tok', gateway },
+      'sys',
+      [{ role: 'user', content: 'The application build failed to compile or run. Please fix it.' }],
+      {
+        // As agent-service does: classifyCommand first; a blocked command is never run.
+        execute: async (_name, args) => {
+          gateway.setScenario('success');
+          const safety = classifyCommand(String(args.command), { ownPids: new Set() });
+          const out = safety.level === 'blocked' ? `BLOCKED: ${safety.reason}` : 'ran';
+          results.push(out);
+          return out;
+        },
+      },
+      { onStatus: () => {}, onDelta: () => {}, onError: () => {}, onDone: () => {}, onTimelineActivity: (a) => activities.push(a) },
+      new AbortController().signal,
+    );
+    assert.match(results[0], /^BLOCKED: Stopping processes by name/);
+    const resolved = activities.filter((a) => a.command === USER_COMMAND && a.status !== 'in_progress');
+    assert.equal(resolved.length, 1);
+    assert.equal(resolved[0].status, 'blocked');
+    assert.match(resolved[0].message, /^Blocked: Stopping processes by name/);
+    for (const text of ['BLOCKED: x', "Not run: this command needs the user's confirmation and none came within 60 s: x",
+      'Command was rejected by user: x', 'File deletion rejected by user: a.txt', 'Command error: Command not allowed: x']) {
+      assert.ok(NOT_RUN.test(text), text);
+    }
+    assert.ok(!NOT_RUN.test('Command exited with code 1.\nOutput:\nBLOCKED: inside the output'), 'only the start of a result');
+    const chat = fs.readFileSync(path.join(root, 'apps/desktop/src/renderer/src/layout/ChatPane.tsx'), 'utf8');
+    assert.match(chat, /if \(a\.status === 'blocked'\) return \{ verb: 'Blocked', target \};/);
+    const agent = fs.readFileSync(path.join(root, 'apps/desktop/src/main/services/agent-service.ts'), 'utf8');
+    assert.match(agent, /if \(confirmed === 'timeout'\) \{\s*return `Not run: this command needs the user's confirmation and none came within 60 s/,
+      'no confirmation is not "rejected by user"');
+  }
 
   console.log('  [kill-safety] Atomvs\'s own code never stops processes by name...');
   const walk = (dir: string): string[] => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) =>

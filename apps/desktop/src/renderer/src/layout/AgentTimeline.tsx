@@ -109,7 +109,7 @@ export function AgentTimeline() {
       }}>
         {displayedActivities.map((act) => {
           const icon = ICONS[act.type] || '⚙️';
-          const isError = act.status === 'failed' || act.type === 'error';
+          const isError = act.status === 'failed' || act.status === 'blocked' || act.type === 'error';
           const isDone = act.status === 'completed' || act.type === 'completed';
           const isInProgress = act.status === 'in_progress';
           

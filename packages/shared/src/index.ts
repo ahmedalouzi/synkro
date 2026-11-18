@@ -183,7 +183,8 @@ export interface AgentTimelineActivity {
   threadId?: string;
   type: AgentTimelineActivityType;
   message: string;
-  status: 'in_progress' | 'completed' | 'failed';
+  /** blocked: a safety rule or the user stopped it, so it did not run (e.g. a command that stops processes by name). */
+  status: 'in_progress' | 'completed' | 'failed' | 'blocked';
   timestamp: string;
   file?: string;
   files?: string[];

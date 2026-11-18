@@ -98,6 +98,9 @@ function toolNameToActivityType(name: string): AgentTimelineActivityType {
 // ---------------------------------------------------------------------------
 
 /** A check's output that shows a problem. */
+/** A tool result for something that did not run: refused by a safety rule, or not confirmed. Exported for tests. */
+export const NOT_RUN = /^(BLOCKED: |Not run: |Command was rejected by user|File deletion rejected by user|Command error: Command not allowed)/;
+
 const CHECK_FAILED = /Error lines in the output \(|^Preview: (error|not running)|Start error:|Runtime errors in the page \(|visible content NO|Error overlay on screen|"success": false|error TS\d+|exited with code [1-9]|^Error:|^BLOCKED:/m;
 
 const CHANGE_TOOLS = new Set(['propose_file_edit', 'patch_file', 'delete_file', 'rename_file', 'bootstrap_project']);
@@ -520,16 +523,19 @@ export async function runAgentLoop(
 
         verification.record(verificationRole(name, args), singleCallMsg.content);
 
-        // Determine outcome.
-        const toolFailed = singleCallMsg.content.startsWith('Error:');
+        // Determine outcome. A command that was refused did not run: "Blocked", never "Ran".
+        const toolBlocked = NOT_RUN.test(singleCallMsg.content);
+        const toolFailed = !toolBlocked && singleCallMsg.content.startsWith('Error:');
 
         // Dispatch 'completed' or 'failed' AFTER execution.
         dispatchTimeline({
           id: resolvedId,
           runId,
           type: activityType,
-          message: toolFailed ? `Failed: ${singleCallMsg.content.slice(0, 120)}` : inProgressMsg,
-          status: toolFailed ? 'failed' : 'completed',
+          message: toolBlocked
+            ? `Blocked: ${singleCallMsg.content.replace(/^(BLOCKED|Not run): /, '').slice(0, 300)}`
+            : toolFailed ? `Failed: ${singleCallMsg.content.slice(0, 120)}` : inProgressMsg,
+          status: toolBlocked ? 'blocked' : toolFailed ? 'failed' : 'completed',
           timestamp: new Date().toISOString(),
           ...(fileHint ? { file: fileHint } : {}),
           ...(cmdHint  ? { command: cmdHint } : {}),
