@@ -81,7 +81,7 @@ gradle.allprojects { project ->
 `;
 
 /**
- * Gradle init script for the build cache baked into the sandbox image (Dockerfile.rn-sandbox, DEC-10): builds READ it
+ * Gradle init script for the build cache baked into the sandbox image (Dockerfile.rn-sandbox, DEC-11): builds READ it
  * (org.gradle.caching=true, see getBuildCommand) but never store new entries in it (push = false), and Gradle's cache
  * cleanup is off: those caches are image files, and cleaning them would only copy or delete files in this build's own
  * layer, against its disk limit. Each part is guarded, so an older Gradle without these settings builds as before.
@@ -342,7 +342,7 @@ export const CACHE_REPORT_FN = [
 ].join(' ');
 
 /**
- * `gradle_build <command...>`: runs Gradle once; if it failed because an entry of the image's build cache (DEC-10)
+ * `gradle_build <command...>`: runs Gradle once; if it failed because an entry of the image's build cache (DEC-11)
  * could not be read, runs it once more with --no-build-cache. Gradle 8.8 fails the build on such an entry (e.g. a
  * cached transform) instead of rebuilding it. Real builds never write the cache (push = false) and the image build
  * refuses empty entries, so this is a safety net. Any other failure is not retried. The output still streams live;
@@ -416,7 +416,7 @@ export function getBuildCommand(framework: BuildFramework, projectId?: string): 
     'printf "org.gradle.daemon=false\\n" >> android/gradle.properties',
     `printf "org.gradle.jvmargs=-Xmx${SANDBOX_RESOURCES.gradleHeap}\\n" >> android/gradle.properties`,
     `printf "reactNativeArchitectures=${RN_ARCHITECTURES}\\n" >> android/gradle.properties`,
-    // Use the Gradle build cache baked into the image (DEC-10; read-only through CACHE_INIT_SCRIPT). A missing or
+    // Use the Gradle build cache baked into the image (DEC-11; read-only through CACHE_INIT_SCRIPT). A missing or
     // stale cache is a cache miss: the task simply runs. An unreadable entry: gradle_build retries without the cache.
     'printf "org.gradle.caching=true\\n" >> android/gradle.properties',
   ].join(' && ');
