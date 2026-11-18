@@ -143,7 +143,14 @@ export class MockBuildApi implements IBuildApi {
       this.logListeners.forEach((l) => l(`${line}\r\n`));
       return true;
     };
-    const timeline: Array<[number, string]> = willFail
+    // A Flutter project with an outdated android/ (v1 embedding): the sandbox generates it again (FLUTTER_ANDROID_FN).
+    const flutter: Array<[number, string]> = [[1, '[SYSTEM] Starting flutter build process...'],
+      [4, '[SYSTEM] android/ was outdated (v1 embedding), regenerated it'], [8, '[STEP] flutter create 0m21s'],
+      ...(willFail
+        ? [[14, '[ERROR] FAILURE: Build failed with an exception.'], [15, "lib/main.dart:3:8: Error: Undefined name 'Foo'."], [17, '[STEP] total 2m31s']] as Array<[number, string]>
+        : [[16, "Running Gradle task 'assembleRelease'..."], [24, 'Built build/app/outputs/flutter-apk/app-release.apk'],
+           [26, '[STEP] gradle (flutter build apk) 5m02s'], [28, '[STEP] total 5m40s']] as Array<[number, string]>)];
+    const timeline: Array<[number, string]> = job.framework === 'flutter' ? flutter : willFail
       ? [[1, '[SYSTEM] Starting react-native build process...'], [5, 'added 1148 packages in 41s'], [6, '[STEP] npm install 0m41s'],
          [10, '[STEP] expo prebuild 0m38s'], [14, '> Task :app:compileReleaseKotlin FAILED'], [15, '[ERROR] FAILURE: Build failed with an exception.'],
          [16, "e: file:///build/android/app/src/main/java/com/demo/MainActivity.kt:3:8 Unresolved reference: Foo"], [17, '[STEP] total 2m31s']]

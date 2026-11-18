@@ -95,3 +95,12 @@ export function failureKind(log: string | undefined): FailureKind {
   if (/Build timed out after/.test(log)) return 'timeout';
   return 'generic';
 }
+
+/** Something the build changed on its own that the user should know about (shown under the progress or failure text). */
+export type BuildNotice = 'androidRegenerated';
+
+export function buildNotices(log: string | undefined): BuildNotice[] {
+  if (!log) return [];
+  // docker-sandbox.ts FLUTTER_ANDROID_FN: an outdated (v1 embedding) or incomplete android/ was generated again.
+  return /^\[SYSTEM\] android\/ was (outdated|incomplete) .*regenerated it$/m.test(log) ? ['androidRegenerated'] : [];
+}

@@ -53,7 +53,7 @@ RUN mkdir -p /build \
 WORKDIR /build
 USER 1000:1000
 
-# 4. Pre-warm Gradle's build cache and transforms (DEC-10) with one release build of the Atomvs Expo template: our own
+# 4. Pre-warm Gradle's build cache and transforms (DEC-11) with one release build of the Atomvs Expo template: our own
 #    files only (rn-template/), never user code. It runs as the sandbox user, in /build like a real build (task cache
 #    keys contain paths), with exactly the settings of a real build: the ABI init script (atomvs-abi.gradle, the same
 #    text as ABI_INIT_SCRIPT in docker-sandbox.ts) and the gradle.properties lines of getBuildCommand. A test keeps them

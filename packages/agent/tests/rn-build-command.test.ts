@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { BUILD_TIMEOUT_MS, CACHE_REPORT_FN, NPM_INSTALL_FN, STEP_FN, flutterOrg, getBuildCommand } from '../src/models/docker-sandbox.js';
+import { BUILD_TIMEOUT_MS, CACHE_REPORT_FN, FLUTTER_ANDROID_FN, NPM_INSTALL_FN, STEP_FN, flutterOrg, getBuildCommand } from '../src/models/docker-sandbox.js';
 
 /** Runs `npm_install <mode>` in sh with a fake npm that fails as `fake` says; returns npm's calls and the output. */
 function runNpmInstall(mode: 'ci' | 'install', fake: 'ok' | 'eresolve' | 'eusage' | 'e404', withLock: boolean) {
@@ -142,7 +142,7 @@ export default async function run() {
   // Flutter: stable package from the project ID (not com.example) and only the ARM ABIs.
   assert.equal(
     getBuildCommand('flutter', '3F9A1C07-BE42-4d11-9a0e-123456789abc'),
-    `${STEP_FN} ${CACHE_REPORT_FN} cd /build && ( [ -d android ] || flutter create --platforms=android --org com.atomvs.p3f9a1c07be . )`
+    `${STEP_FN} ${CACHE_REPORT_FN} ${FLUTTER_ANDROID_FN} cd /build && flutter_android com.atomvs.p3f9a1c07be`
       + ' && step_done "flutter create"'
       + ' && flutter build apk --release --target-platform android-arm64'
       + ' && step_done "gradle (flutter build apk)"'
