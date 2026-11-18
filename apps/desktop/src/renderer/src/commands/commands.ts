@@ -2,7 +2,7 @@ import type { ProjectInfo } from '@peep/shared';
 import { useWorkspaceStore, type OpenFile } from '../stores/workspace-store';
 import { useComposerStore } from '../stores/composer-store';
 import { useBuildStore } from '../stores/build-store';
-import { buildApi } from '../services/build-api';
+import { startCloudBuild } from '../features/build/start-build';
 import { isAICompletionsEnabled, toggleAICompletions } from '../features/editor/inline-completions';
 import { openAgentTab, useAgentsStore } from '../features/agents/agents-store';
 import { addSelectionToChat } from '../features/chat/ask-agent';
@@ -319,21 +319,17 @@ const APK_PLATFORMS = ['flutter', 'react-native', 'react-native-local', 'expo'];
 
 export function canBuildApk(): boolean {
   const project = ws().project;
-  const status = useBuildStore.getState().currentBuild?.status;
-  return !!project && APK_PLATFORMS.includes(project.platform as string) && status !== 'queued' && status !== 'running';
+  const { currentBuild, depsCheck } = useBuildStore.getState();
+  const status = currentBuild?.status;
+  const busy = depsCheck?.state === 'checking' || depsCheck?.state === 'fixing';
+  return !!project && APK_PLATFORMS.includes(project.platform as string) && status !== 'queued' && status !== 'running' && !busy;
 }
 
 export async function buildApk() {
-  const project = ws().project;
-  if (!project || !canBuildApk()) return;
+  if (!ws().project || !canBuildApk()) return;
   showPanel('build');
-  try {
-    const platform = project.platform === 'expo' || project.platform.startsWith('react-native') ? 'react-native' : 'flutter';
-    const build = await buildApi.startBuild(project.path, platform, 'apk');
-    useBuildStore.getState().setCurrentBuild(build);
-  } catch (err) {
-    console.error('BUILD START FAILED:', err);
-  }
+  // A dependency check first for React Native (see start-build.ts).
+  await startCloudBuild();
 }
 
 function previewAction(action: 'start' | 'stop' | 'reload') {

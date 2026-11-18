@@ -5,6 +5,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { DockerSandbox } from '../src/models/docker-sandbox.js';
+import { requireSandbox } from './sandbox-requirements.js';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
@@ -13,10 +14,8 @@ const execFileAsync = promisify(execFile);
 async function run() {
   console.log('\n--- ADVERSARIAL TEST: Concurrent User Isolation ---');
 
-  if (process.platform !== 'linux') {
-    console.log('  SKIPPED: This test must be run on a Linux host with Docker.');
-    return;
-  }
+  // Skipped (or, with SYNKRO_RUN_SANDBOX_TESTS=1, failed) without the Linux build server: see sandbox-requirements.ts.
+  await requireSandbox();
 
   
 
@@ -146,6 +145,9 @@ async function run() {
   assert.ok(!fullLogA.includes('[FS_ISOLATION_FAILED]'), 'Job A accessed Job B files! Filesystem isolation broken.');
   console.log('PASS: Filesystem overlay isolation strictly enforced.');
 
+  // Both fake builds exit 0, so runBuild keeps each stopped container for the APK copy, as designed. The worker
+  // removes it after extractArtifact(); do the same before checking for leftovers.
+  await Promise.all([sandboxA.forceKill(), sandboxB.forceKill()]);
   console.log(`  [ASSERT] Checking for lingering containers...`);
   const { stdout: psA } = await execFileAsync('docker', ['ps', '-a', '--filter', `name=${containerNameA}`, '--format', '{{.Names}}']);
   assert.strictEqual(psA.trim(), '', `Container A (${containerNameA}) still exists on host!`);

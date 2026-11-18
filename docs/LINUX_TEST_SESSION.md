@@ -10,9 +10,14 @@ Delete the server and its volume when done.
 
 - [ ] Droplet: Ubuntu 24.04, **at least 4 vCPU / 8 GB RAM** (one build uses 5 GB + the server), 25 GB disk is enough
       for the system.
-- [ ] **A separate 100 GB Volume for Docker, formatted XFS.** `--storage-opt size=` (5G RN / 15G Flutter) only works on
+- [ ] **A separate 100 GB Volume for Docker, formatted XFS.** `--storage-opt size=` (12G RN/Expo / 15G Flutter, `BUILD_DISK_LIMIT_GB`) only works on
       overlay2 over XFS mounted with `pquota`; on the default ext4 every build fails at `docker create`. Images alone are
       ~20 GB (flutter-sandbox 12 GB, rn-sandbox 7.4 GB).
+- [ ] **Trap: Docker 29+ ignores `--storage-opt` with its default containerd image store** (`docker info` says
+      `Storage Driver: overlayfs`, `driver-type: io.containerd.snapshotter.v1`). It accepts the option without an error,
+      writes container layers under `/var/lib/containerd` on the root disk, and a "5G" build can fill the disk Postgres
+      is on. The setup script switches Docker to the classic `overlay2` driver with the containerd snapshotter off
+      (`/etc/docker/daemon.json`, DEC-06) and then checks for real that a 1G container cannot write 2G.
 - [ ] An SSH key on the droplet; a test domain for Caddy is optional (the tests below call the API on `127.0.0.1:8080`).
 - [ ] A real Android phone (arm64) for the install test; an older armv7 phone if you have one.
 - [ ] Generate `SYNKRO_SIGNING_ENC_KEY` on your own machine (`openssl rand -base64 32`) and put it in the team password
@@ -31,7 +36,13 @@ sudo mount -a && mount | grep /var/lib/docker        # must show xfs and prjquot
 
 - [ ] `sudo SYNKRO_DOMAIN=<domain or test.invalid> bash scripts/setup-production-server.sh` (first run: system, Docker,
       user `synkro`, Caddy; sections 11-12 are skipped because the repo is not there yet).
-- [ ] `docker info | grep -E "Storage Driver|Backing Filesystem"` shows `overlay2` and `xfs`.
+- [ ] `docker info | grep -E "Storage Driver|Backing Filesystem"` shows `overlay2` and `xfs` (not `overlayfs`: that is
+      the containerd snapshotter, see the trap in section 0). `/etc/docker/daemon.json` has `"storage-driver": "overlay2"`
+      and `"features": {"containerd-snapshotter": false}` (the script writes them).
+- [ ] The second run ends with `[+] Disk quota enforced: a 1G sandbox could not write 2G`. If it says `FAILED`, Cloud
+      Builds are refused (the worker logs `Disk quota NOT enforced`) until it passes. By hand:
+      `docker run --rm --network none --storage-opt size=1G synkro/rn-sandbox:1 dd if=/dev/zero of=/tmp/x bs=1M count=2048`
+      must stop with `No space left on device`.
 - [ ] Clone the repo into `/opt/synkro` as `synkro`, then `pnpm install`.
 - [ ] Run the script again: it builds `synkro/flutter-sandbox:2` and `synkro/rn-sandbox:1` (time it) and installs
       `synkro-build-network.service`.
@@ -57,8 +68,9 @@ sudo mount -a && mount | grep /var/lib/docker        # must show xfs and prjquot
   `docker run --rm --network build-restricted --dns 172.30.0.1 synkro/rn-sandbox:1 sh -c 'getent hosts registry.npmjs.org; getent hosts example.com || echo "example.com UNRESOLVED"'`
   prints an address for registry.npmjs.org and then `example.com UNRESOLVED`.
 - [ ] `iptables -S DOCKER-USER | grep build0`: the last build0 rule is `-i build0 -j DROP`.
-- [ ] `cd /opt/synkro/packages/agent && sudo npx tsx tests/dns-allowlist.test.ts` passes (includes the in-sandbox check).
-- [ ] `sudo npx tsx tests/network-fqdn-distinction.test.ts` passes (DNS BAD must say NXDOMAIN, not "RESOLVED").
+- [ ] `cd /opt/synkro/packages/agent && sudo SYNKRO_RUN_SANDBOX_TESTS=1 npx tsx tests/dns-allowlist.test.ts` passes (includes the in-sandbox check).
+- [ ] `sudo SYNKRO_RUN_SANDBOX_TESTS=1 npx tsx tests/network-fqdn-distinction.test.ts` passes (DNS BAD must say NXDOMAIN, not "RESOLVED").
+- [ ] All real-Docker sandbox tests (see "Sandbox integration tests" below) pass with `SYNKRO_RUN_SANDBOX_TESTS=1`.
 - [ ] Reboot the droplet; after it comes back, repeat the first three checks (the service must re-apply everything).
 
 ## 5. Server boot without the signing key
@@ -90,8 +102,11 @@ $BT/aapt2 dump badging app.apk | grep -E "^package|native-code"
       and `--memory`, `--pids-limit=384`, `--cap-drop=ALL` are as before.
 - [ ] Each APK's SHA-256 equals `signing_keys.cert_sha256` for its project; both builds of a project have the same one;
       `build_jobs.signing_cert_sha256` is set.
-- [ ] `native-code` includes **both** `arm64-v8a` and `armeabi-v7a` for RN and Expo (x86 / x86_64 are still there too:
-      shrinking the APK is a post-beta item on the pre-warmed image card).
+- [ ] `native-code` is **only** `arm64-v8a` for RN, Expo and Flutter (64-bit ARM, DEC-09: no armeabi-v7a, x86 or
+      x86_64). A 32-bit-only phone cannot install it; that is the accepted trade-off.
+- [ ] The build log has three `[CACHE]` lines after Gradle: how many dependencies were downloaded (not in the shared
+      read-only cache), how many the cache offers, and where the disk went (Gradle caches/transforms, node_modules,
+      android/).
 - [ ] The first successful build of each project logs "If an older copy of this app is on your phone, uninstall it
       first"; the second does not.
 - [ ] No build log, `docker inspect` output or server log contains a signing password.
@@ -119,6 +134,59 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/
       follows automatically: longest timeout + 5).
 - [ ] **React Native / Expo**: timeout is 35 minutes now (Expo measured 23-25 min); keep it until the pre-warmed image.
 - [ ] oss.sonatype.org: stays out unless step 6 needed it.
+
+## Sandbox integration tests
+
+Ten suites run real Docker sandboxes: `concurrent-isolation`, `disk-exhaustion`, `dns-allowlist` (its in-sandbox
+part), `expo-android-build`, `fork-bomb`, `fs-escape`, `gradle-ro-cache-sandbox` (the shared Gradle cache cannot be
+written from a build), `memory-exhaustion`, `network-fqdn-distinction`, `timeout-zombie`. They need a Linux host with Docker, the `synkro/rn-sandbox:1` image and the `build-restricted`
+network with the DNS allowlist (sections 2 and 4). `memory-exhaustion` and `network-fqdn-distinction` also need root
+(dmesg, tcpdump), and `disk-exhaustion` needs an **enforced** `--storage-opt` (overlay2 on the XFS volume from
+section 1; the requirement check writes 2G into a 1G container, so "Docker accepts the option" is not enough).
+
+- Without them (CI, Windows, macOS) the suites are reported as **skipped** with what is missing, like the Postgres
+  suites without a database (`tests/sandbox-requirements.ts`).
+- With `SYNKRO_RUN_SANDBOX_TESTS=1` a missing piece is a **failure**, so they can't be skipped by accident on the server.
+
+Run them on the server, as root, when no user build is running: the fork bomb, OOM and disk tests load the host.
+
+```bash
+cd /opt/synkro/packages/agent
+sudo SYNKRO_RUN_SANDBOX_TESTS=1 npx tsx tests/test-runner.ts
+```
+
+Expected: the ten suites report `🟢 Passed`, none `🟡 Skipped`. The Postgres suites skip unless `DATABASE_URL` points
+at a test database. One suite on its own: `sudo SYNKRO_RUN_SANDBOX_TESTS=1 npx tsx tests/fork-bomb.test.ts`.
+
+## Shared read-only Gradle cache (DEC-08)
+
+Builds mount `/var/lib/synkro/gradle-ro-cache/<framework>` read-only and point `GRADLE_RO_DEP_CACHE` at it, so Gradle
+does not download every dependency again. The data is on the Docker volume (`/var/lib/docker/synkro-cache/gradle-ro`,
+bind-mounted there by the setup script, section 14). Without it, builds work as before, only slower.
+
+- [ ] After a reboot too: the bind mount is an `/etc/fstab` line (`bind,nofail,x-systemd.requires-mounts-for=/var/lib/docker`),
+      so systemd mounts it after the Docker volume. If the volume is missing, boot is not blocked (`nofail`) and builds
+      run without the cache.
+- [ ] `mountpoint /var/lib/synkro/gradle-ro-cache` says it is a mountpoint; `ls -l /var/lib/synkro/gradle-ro-cache`
+      shows `react-native` and `flutter` as symlinks into `.versions/`, all owned by root.
+- [ ] Refresh by hand (e.g. after a new template): `sudo bash scripts/warm-gradle-cache.sh` (10-20 minutes per
+      framework, one template build each). It keeps the current and the previous version.
+- [ ] A build log starts with `[SYSTEM] Using the shared Gradle dependency cache (read-only).` and ends with the
+      `[STEP]` times and `Disk used`.
+
+## Gradle build cache in the RN image (DEC-11)
+
+`synkro/rn-sandbox:1` contains Gradle's build cache and transforms from one release build of the Atomvs Expo template
+(Dockerfile step 4), made at image build time with the same settings as real builds. Builds read it
+(`org.gradle.caching=true`) and never write it (`push = false`, `init.d/atomvs-cache.gradle`). It is refreshed only by
+rebuilding the image (`SYNKRO_REBUILD_IMAGES=1`), e.g. after changing the template's Expo SDK.
+A missing or stale cache only means cache misses. Gradle 8.8 fails a build on an unreadable entry instead of
+rebuilding it, so the image build refuses empty entries and `gradle_build` retries Gradle once with `--no-build-cache`
+when the log shows a build-cache load error (`[SYSTEM] Build cache unreadable, retrying without it`).
+
+- [ ] A real Expo build's Gradle output ends with `N actionable tasks: X executed, Y from cache` with Y well above 0.
+- [ ] The image holds no signing material: `docker run --rm synkro/rn-sandbox:1 sh -c 'ls -a /tmp /tmp/.gradle; find / -xdev \( -name "*.jks" -o -name "*.keystore" -o -name "*.p12" \) 2>/dev/null'`
+      lists no `.android` folder, no `gradle.properties` in `/tmp/.gradle`, and only the JDK's own `cacerts`-type stores, if any.
 
 ## 9. Teardown
 

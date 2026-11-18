@@ -77,6 +77,12 @@ export function formatPreviewReport(
         parts.push('No runtime errors in the page.');
       }
       if (runtime.overlay) parts.push(`Error overlay on screen:\n${runtime.overlay}`);
+      // Layout problems a phone would show (e.g. tab labels cut off under the home indicator): the app looks broken
+      // to the user even with no errors, so they count as failures to fix.
+      if (runtime.layout?.length) {
+        parts.push(`Layout problems on screen (${runtime.layout.length}), fix these before saying it works:\n`
+          + runtime.layout.map((l) => `[${l.kind}] ${l.message}`).join('\n'));
+      }
     }
   }
   const tail = clean.length > tailChars ? `…${clean.slice(-tailChars)}` : clean;

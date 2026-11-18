@@ -11,8 +11,13 @@ import path from 'node:path';
 import os from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { DockerSandbox } from '../src/models/docker-sandbox.js';
+import { requireSandbox } from './sandbox-requirements.js';
 
-/** Same files as ReactNativeManagedProvider.bootstrapProject (no android/, no android.package, no assets). */
+/**
+ * Same files as ReactNativeManagedProvider.bootstrapProject (no android/, no android.package, no assets), including
+ * its app.json splash (resizeMode + backgroundColor, no image). Without the color, Expo 51's prebuild left a dangling
+ * splashscreen_background reference and Gradle failed; the sandbox now adds it (expo-config-prepare.test.ts).
+ */
 async function writeExpoProject(dir: string) {
   await fs.mkdir(path.join(dir, 'assets'), { recursive: true });
   await fs.writeFile(path.join(dir, 'package.json'), JSON.stringify({
@@ -31,7 +36,14 @@ async function writeExpoProject(dir: string) {
     private: true,
   }, null, 2));
   await fs.writeFile(path.join(dir, 'app.json'), JSON.stringify({
-    expo: { name: 'synkro-expo-app', slug: 'synkro-expo-app', version: '1.0.0', orientation: 'portrait' },
+    expo: {
+      name: 'synkro-expo-app',
+      slug: 'synkro-expo-app',
+      version: '1.0.0',
+      orientation: 'portrait',
+      userInterfaceStyle: 'light',
+      splash: { resizeMode: 'contain', backgroundColor: '#ffffff' },
+    },
   }, null, 2));
   await fs.writeFile(path.join(dir, 'App.tsx'), [
     "import { Text, View } from 'react-native';",
@@ -45,10 +57,8 @@ async function writeExpoProject(dir: string) {
 async function run() {
   console.log('\n--- E2E: Expo project without android/ builds to an APK behind the allowlist ---');
 
-  if (process.platform !== 'linux') {
-    console.log('  SKIPPED: This test must be run on a Linux host with Docker.');
-    return;
-  }
+  // Skipped (or, with SYNKRO_RUN_SANDBOX_TESTS=1, failed) without the Linux build server: see sandbox-requirements.ts.
+  await requireSandbox();
 
   const jobId = `expo-e2e-${randomUUID().slice(0, 8)}`;
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'expo-e2e-'));
@@ -64,7 +74,7 @@ async function run() {
       process.stdout.write(chunk);
     });
     assert.ok(ok, 'build failed (see the log above)');
-    assert.match(logs, /android\.package is not set, using com\.synkro\.synkroexpoapp/);
+    assert.match(logs, /android\.package is not set, using com\.atomvs\.synkroexpoapp/);
     assert.ok(await sandbox.extractArtifact(apkPath), 'APK extraction failed');
 
     // An APK is a zip: starts with "PK".

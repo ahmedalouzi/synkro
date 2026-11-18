@@ -1,5 +1,6 @@
 import { db } from './db';
-import { DockerSandbox, BuildFramework, BUILD_TIMEOUT_MS as SANDBOX_TIMEOUT_MS } from './docker-sandbox';
+import { DockerSandbox, BuildFramework, BUILD_TIMEOUT_MS as SANDBOX_TIMEOUT_MS, DISK_QUOTA_PROBE_IMAGE } from './docker-sandbox';
+import { cachedDiskQuota, diskQuotaRequired } from './disk-quota';
 import { uploadArtifact, ensureBucket, isMinioConfigured } from './artifact-store';
 import { getOrCreateSigningKey, recordSigningPackageName, type SigningKey } from './signing-keys';
 import { verifyApk, isDebugCertificate } from './apk-verify';
@@ -303,6 +304,15 @@ export async function startBuildWorker() {
     }
   } else {
     console.log('[BUILD_WORKER] MinIO not configured, using local disk storage.');
+  }
+
+  // Check once at startup that the per-build disk quota is really enforced (disk-quota.ts). The result is cached;
+  // each build waits for it and is refused while it fails (DockerSandbox.runBuild).
+  if (diskQuotaRequired()) {
+    cachedDiskQuota(DISK_QUOTA_PROBE_IMAGE).then((quota) => {
+      if (quota.ok) console.log('[BUILD_WORKER] Disk quota enforced (overlay2 on xfs; a 1G sandbox could not write 2G).');
+      else console.error(`[BUILD_WORKER] Disk quota NOT enforced: ${quota.problem}. Cloud Builds are refused until it is fixed: re-run scripts/setup-production-server.sh (docs/LINUX_TEST_SESSION.md).`);
+    });
   }
 
   // Startup cleanup: reap any lingering containers from previous crashes

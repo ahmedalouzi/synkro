@@ -246,6 +246,24 @@ export async function initDbSchema() {
       );
     `);
 
+    // Short-lived opaque APK download short links (hashes only; raw codes are never persisted)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS download_short_links (
+        id          UUID        PRIMARY KEY,
+        code_hash   TEXT        NOT NULL UNIQUE,
+        job_id      UUID        NOT NULL REFERENCES build_jobs(id) ON DELETE CASCADE,
+        user_id     UUID        NOT NULL,
+        purpose     TEXT        NOT NULL,
+        expires_at  TIMESTAMPTZ NOT NULL,
+        created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+        used_count  INT         NOT NULL DEFAULT 0
+      );
+      CREATE INDEX IF NOT EXISTS idx_download_short_links_job_purpose
+        ON download_short_links(job_id, purpose);
+      CREATE INDEX IF NOT EXISTS idx_download_short_links_expires_at
+        ON download_short_links(expires_at);
+    `);
+
     // Enable Row-Level Security
     await client.query(`
       ALTER TABLE signing_keys ENABLE ROW LEVEL SECURITY;
@@ -309,7 +327,10 @@ export async function initDbSchema() {
       EXCEPTION WHEN duplicate_object THEN null; END $$;
       
       GRANT SELECT, INSERT ON build_jobs TO api_user;
-      GRANT UPDATE (status) ON build_jobs TO api_user;
+      -- Cancel (POST /build/:jobId/cancel) sets status and updated_at. Postgres checks every column an UPDATE
+      -- assigns, so without updated_at the whole cancel failed with "permission denied for table build_jobs".
+      -- Only these two columns: the API never writes artifacts, logs or timings (the worker does).
+      GRANT UPDATE (status, updated_at) ON build_jobs TO api_user;
       -- Owners can only read their keys (keystore download); keys are created by the worker.
       GRANT SELECT ON signing_keys TO api_user;
       GRANT SELECT, INSERT, UPDATE, DELETE ON chat_threads, chat_messages, chat_runs TO api_user;
@@ -329,6 +350,56 @@ export async function initDbSchema() {
       -- "permission denied to set role".
       GRANT api_user TO SESSION_USER;
       GRANT worker_user TO SESSION_USER;
+    `);
+
+    // Queue position and ETA for GET /api/build/:jobId (apps/server/src/build-queue.ts). api_user only sees its own
+    // jobs (RLS), but the position depends on everyone's. This function runs as its owner and returns only numbers:
+    // how many queued jobs are ahead (per framework), how long the running build has been going, and the average
+    // duration of the last 10 successful builds per framework. No IDs, users or projects. It answers only for a job
+    // of the caller (app.current_user_id) that is still queued; otherwise no row. RLS on build_jobs is unchanged.
+    await client.query(`
+      CREATE OR REPLACE FUNCTION build_queue_info(p_job_id UUID)
+      RETURNS TABLE (
+        own_framework         TEXT,
+        ahead_react_native    INT,
+        ahead_flutter         INT,
+        running_framework     TEXT,
+        running_elapsed_ms    BIGINT,
+        avg_react_native_ms   BIGINT,
+        avg_flutter_ms        BIGINT
+      )
+      LANGUAGE sql STABLE SECURITY DEFINER
+      SET search_path = pg_catalog, public
+      AS $fn$
+        WITH me AS (
+          SELECT id, framework, created_at FROM build_jobs
+          WHERE id = p_job_id AND status = 'queued'
+            AND user_id = NULLIF(current_setting('app.current_user_id', true), '')::UUID
+        ),
+        ahead AS (
+          SELECT q.framework FROM build_jobs q, me
+          WHERE q.status = 'queued' AND (q.created_at, q.id) < (me.created_at, me.id)
+        ),
+        running AS (
+          SELECT framework, started_at FROM build_jobs WHERE status = 'running' ORDER BY started_at LIMIT 1
+        ),
+        recent AS (
+          SELECT framework, build_duration_ms,
+                 row_number() OVER (PARTITION BY framework ORDER BY completed_at DESC NULLS LAST) AS n
+          FROM build_jobs WHERE status = 'success' AND build_duration_ms IS NOT NULL
+        )
+        SELECT
+          me.framework::text,
+          (SELECT count(*)::int FROM ahead WHERE framework = 'react-native'),
+          (SELECT count(*)::int FROM ahead WHERE framework = 'flutter'),
+          (SELECT framework::text FROM running),
+          (SELECT (extract(epoch FROM (now() - started_at)) * 1000)::bigint FROM running),
+          (SELECT avg(build_duration_ms)::bigint FROM recent WHERE framework = 'react-native' AND n <= 10),
+          (SELECT avg(build_duration_ms)::bigint FROM recent WHERE framework = 'flutter' AND n <= 10)
+        FROM me;
+      $fn$;
+      REVOKE ALL ON FUNCTION build_queue_info(UUID) FROM PUBLIC;
+      GRANT EXECUTE ON FUNCTION build_queue_info(UUID) TO api_user;
     `);
 
     await client.query('COMMIT');

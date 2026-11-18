@@ -11,6 +11,8 @@ import { NoProjectEmptyState } from '../features/shared/EmptyState';
 import { useWorkspaceStore } from '../stores/workspace-store';
 import { useWorkspace } from '../hooks/useWorkspace';
 import { useComposerStore } from '../stores/composer-store';
+import { BuildExperience } from '../features/build/BuildExperience';
+import '../features/build/BuildExperience.css';
 import './AppShell.css';
 
 const ComposerOverlay = lazy(() => import('../features/composer/ComposerOverlay').then(m => ({ default: m.ComposerOverlay })));
@@ -199,6 +201,9 @@ export function AppShell({ onOpenSettings }: AppShellProps) {
       <Suspense fallback={null}>
         {composerOpen && <ComposerOverlay />}
       </Suspense>
+
+      {/* Cloud Build: full-screen progress, the corner pill, and the result (it also polls a running build). */}
+      <BuildExperience />
     </>
   );
 }

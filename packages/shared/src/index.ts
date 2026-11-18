@@ -48,7 +48,69 @@ export interface PreviewRuntimeReport {
   textChars: number;
   /** Text of an error overlay (Expo's red box) if one is showing. */
   overlay: string;
+  /** Layout problems the preview can see, e.g. a bottom tab bar under the home indicator (see tabBarLayoutIssues). */
+  layout: PreviewLayoutIssue[];
 }
+
+export type PreviewLayoutIssueKind = 'tab-bar-under-home-indicator' | 'tab-labels-clipped';
+export interface PreviewLayoutIssue { kind: PreviewLayoutIssueKind; message: string }
+
+/** What the preview shim measures of a bottom tab bar ([role=tablist] in the lower half of the screen), in CSS px. */
+export interface TabBarMeasurement {
+  /** The page's height and the bottom safe-area inset the preview gives it (home indicator / gesture bar). */
+  innerHeight: number;
+  insetBottom: number;
+  bars: Array<{
+    top: number;
+    bottom: number;
+    /** The tabs (buttons or links) inside it. */
+    items: Array<{ top: number; bottom: number }>;
+    /** Its text leaves: the box they got, and the height their text needs. */
+    labels: Array<{ height: number; scrollHeight: number }>;
+  }>;
+}
+
+/**
+ * Layout problems of bottom tab bars, as a phone would show them (the user's report: tab labels missing or cut in half,
+ * because the app's tabBarStyle fixed the height and padding, ignoring the safe-area inset):
+ *  - a tab reaches into the home-indicator / gesture-bar area (the bottom inset);
+ *  - a label is squashed or cut: its box is clearly smaller than the text needs.
+ * Pure (the shim measures, this decides), so it is tested directly and passed into the page shim. Must stay
+ * self-contained: it is serialised with toString() into the app's page.
+ */
+export function tabBarLayoutIssues(m: TabBarMeasurement): PreviewLayoutIssue[] {
+  // How to fix it (React Navigation); the agent reads this in get_preview_logs. Inside the function: it runs in the page.
+  const TAB_BAR_FIX = 'Do not set a fixed height or paddingBottom in tabBarStyle: React Navigation adds the bottom safe-area '
+    + 'inset itself. If a custom height is really needed, add the inset: const insets = useSafeAreaInsets(); '
+    + 'tabBarStyle: { height: 60 + insets.bottom, paddingBottom: insets.bottom + 8 }.';
+  const issues: PreviewLayoutIssue[] = [];
+  const homeTop = m.innerHeight - m.insetBottom;
+  for (const bar of m.bars) {
+    if (m.insetBottom > 0 && bar.items.length) {
+      const lowest = Math.max(...bar.items.map((i) => i.bottom));
+      if (lowest > homeTop + 1) {
+        issues.push({
+          kind: 'tab-bar-under-home-indicator',
+          message: `The bottom tab bar's tabs reach ${Math.round(m.innerHeight - lowest)} px from the bottom of the screen, `
+            + `inside the ${Math.round(m.insetBottom)} px the device keeps for its home indicator / gesture bar, so they sit under it. `
+            + TAB_BAR_FIX,
+        });
+      }
+    }
+    const cut = bar.labels.filter((l) => l.scrollHeight > 0 && l.height + 2 < l.scrollHeight);
+    if (cut.length) {
+      const worst = cut.reduce((a, b) => (a.height / a.scrollHeight < b.height / b.scrollHeight ? a : b));
+      issues.push({
+        kind: 'tab-labels-clipped',
+        message: `${cut.length} bottom tab label(s) are squashed or cut off (e.g. ${Math.round(worst.height)} px tall where the text `
+          + `needs ${Math.round(worst.scrollHeight)} px): the tab bar is too short for its icons and labels. ` + TAB_BAR_FIX,
+      });
+    }
+  }
+  return issues.slice(0, 5);
+}
+
+const LAYOUT_KINDS = new Set<string>(['tab-bar-under-home-indicator', 'tab-labels-clipped']);
 
 /**
  * The agent's proposed-edits event: main sends { edits, threadId }. Read as if it were the array, it threw
@@ -80,7 +142,18 @@ export function parsePreviewRuntimeReport(data: unknown): PreviewRuntimeReport |
     if (typeof kind !== 'string' || !RUNTIME_ERROR_KINDS.has(kind) || typeof message !== 'string') return null;
     errors.push({ kind: kind as PreviewRuntimeReport['errors'][number]['kind'], message: message.slice(0, 1500) });
   }
-  return { errors, rendered: d.rendered, textChars: Math.max(0, Math.round(d.textChars)), overlay: d.overlay.slice(0, 1500) };
+  // Optional: reports from before layout checks (or an older shim) have none.
+  const layout: PreviewLayoutIssue[] = [];
+  if (d.layout !== undefined) {
+    if (!Array.isArray(d.layout)) return null;
+    for (const issue of d.layout.slice(0, 5)) {
+      if (!issue || typeof issue !== 'object') return null;
+      const { kind, message } = issue as Record<string, unknown>;
+      if (typeof kind !== 'string' || !LAYOUT_KINDS.has(kind) || typeof message !== 'string') return null;
+      layout.push({ kind: kind as PreviewLayoutIssueKind, message: message.slice(0, 600) });
+    }
+  }
+  return { errors, rendered: d.rendered, textChars: Math.max(0, Math.round(d.textChars)), overlay: d.overlay.slice(0, 1500), layout };
 }
 
 export type ErrorCategory =
@@ -183,7 +256,8 @@ export interface AgentTimelineActivity {
   threadId?: string;
   type: AgentTimelineActivityType;
   message: string;
-  status: 'in_progress' | 'completed' | 'failed';
+  /** blocked: a safety rule or the user stopped it, so it did not run (e.g. a command that stops processes by name). */
+  status: 'in_progress' | 'completed' | 'failed' | 'blocked';
   timestamp: string;
   file?: string;
   files?: string[];
@@ -753,6 +827,9 @@ export const IPC_CHANNELS = {
   CLOUD_BUILD_HISTORY: 'cloudBuild:history',
   CLOUD_BUILD_CANCEL: 'cloudBuild:cancel',
   CLOUD_BUILD_DOWNLOAD_TOKEN: 'cloudBuild:downloadToken',
+  CLOUD_BUILD_CHECK_DEPS: 'cloudBuild:checkDeps',
+  CLOUD_BUILD_FIX_DEPS: 'cloudBuild:fixDeps',
+  CLOUD_BUILD_SHORT_LINK: 'cloudBuild:shortLink',
 } as const;
 
 export interface ConnectedDevice {
@@ -766,6 +843,15 @@ export interface ConnectedDevice {
 export type CloudBuildFramework = 'flutter' | 'react-native';
 export type CloudBuildStatus = 'queued' | 'running' | 'success' | 'failed' | 'cancelled';
 export type CloudBuildTarget = 'apk' | 'aab' | 'both';
+
+/** The dependency check before a Cloud Build upload (Expo + npm projects). */
+export interface BuildDepsCheck {
+  ok: boolean;
+  /** One line per package the server's `npm ci` would reject or that does not match the Expo SDK. */
+  problems: string[];
+  /** The end of `npx expo install --fix`'s output when it failed. */
+  fixError?: string;
+}
 
 export interface CloudBuildJob {
   id: string;
@@ -783,6 +869,12 @@ export interface CloudBuildJob {
   artifactSizeBytes?: number;
   downloadToken?: string;
   downloadExpiresAt?: number;
+  shortUrl?: string;
+  shortExpiresAt?: number;
+  /** While queued: 1 = next to start (apps/server/src/build-queue.ts). */
+  queuePosition?: number;
+  /** While queued: rough seconds until this build is done; null without enough build history. */
+  queueEtaSeconds?: number | null;
 }
 
 // ── Publish / Build types ─────────────────────────────────────────────────────
@@ -1074,6 +1166,9 @@ export interface IpcApi {
   cancelCloudBuild?: (id: string) => Promise<any>;
   getCloudBuildHistory?: () => Promise<any[]>;
   getCloudBuildDownloadToken?: (id: string) => Promise<{ token: string; downloadUrl: string; expiresAt: number }>;
+  checkBuildDependencies?: (projectPath: string) => Promise<BuildDepsCheck>;
+  fixBuildDependencies?: (projectPath: string) => Promise<BuildDepsCheck>;
+  createCloudBuildShortLink?: (id: string) => Promise<{ url: string; expiresAt: number }>;
   onBuildLogChunk?: (callback: (payload: { id: string; chunk: string }) => void) => () => void;
   openSettingsWindow?: (section?: string) => Promise<void>;
   onSettingsUpdated?: (callback: (settings: Partial<Settings>) => void) => () => void;

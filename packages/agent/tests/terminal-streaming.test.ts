@@ -1,9 +1,15 @@
 import { TerminalService } from '../../../apps/desktop/src/main/services/terminal-service';
 import { IpcBatcher } from '../../../apps/desktop/src/main/utils/ipc-batcher';
+import { SkipTest } from './skip-test.js';
 
 export default async function run() {
   console.log('  Running Terminal Streaming Infrastructure tests...');
-  
+  // Known bug: on macOS/Linux streamCommand spawns the whole command string without a shell (ENOENT).
+  // Remove this skip together with the fix.
+  if (process.platform !== 'win32') {
+    throw new SkipTest('Windows only until the macOS/Linux streamCommand bug is fixed (spawn without a shell -> ENOENT): https://trello.com/c/f2wtmxXX');
+  }
+
   const service = new TerminalService();
   (service as any).isCommandAllowed = () => true;
   

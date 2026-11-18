@@ -5,14 +5,13 @@ import path from 'node:path';
 import os from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { DockerSandbox } from '../src/models/docker-sandbox.js';
+import { requireSandbox } from './sandbox-requirements.js';
 
 async function run() {
   console.log('\n--- ADVERSARIAL TEST: Filesystem Escape & Symlink Attack ---');
 
-  if (process.platform !== 'linux') {
-    console.log('  SKIPPED: This test must be run on a Linux host with Docker.');
-    return;
-  }
+  // Skipped (or, with SYNKRO_RUN_SANDBOX_TESTS=1, failed) without the Linux build server: see sandbox-requirements.ts.
+  await requireSandbox();
 
   
 

@@ -77,6 +77,32 @@ if ! command -v docker >/dev/null 2>&1; then
   systemctl start docker
 fi
 
+# 4b. Docker storage: classic overlay2 graph driver, containerd snapshotter OFF (DEC-06).
+# The per-build disk limit (--storage-opt size=, docker-sandbox.ts) only works with overlay2 on XFS mounted with
+# pquota (/var/lib/docker, docs/LINUX_TEST_SESSION.md section 1). Docker 29+ defaults to the containerd image store,
+# which accepts --storage-opt and silently ignores it, and keeps container layers under /var/lib/containerd on the
+# root disk (where Postgres lives). Existing keys in daemon.json are kept; Docker restarts only if this changes it.
+# Images do not carry over between the two stores: section 11 rebuilds the sandbox images when they are missing.
+DAEMON_JSON="/etc/docker/daemon.json"
+DOCKER_STORAGE_WANT='{"storage-driver":"overlay2","features":{"containerd-snapshotter":false}}'
+mkdir -p /etc/docker
+DOCKER_CONFIG_NOW="$(if [[ -s "${DAEMON_JSON}" ]]; then cat "${DAEMON_JSON}"; else echo '{}'; fi)"
+if ! jq -e . >/dev/null 2>&1 <<<"${DOCKER_CONFIG_NOW}"; then
+  echo "[-] ERROR: ${DAEMON_JSON} is not valid JSON; fix it by hand, then run this script again." >&2
+  exit 1
+fi
+DOCKER_CONFIG_NEW="$(jq -S --argjson want "${DOCKER_STORAGE_WANT}" '. * $want' <<<"${DOCKER_CONFIG_NOW}")"
+if [[ "$(jq -S . <<<"${DOCKER_CONFIG_NOW}")" != "${DOCKER_CONFIG_NEW}" ]]; then
+  echo "[+] Setting Docker storage to overlay2 (containerd snapshotter off) in ${DAEMON_JSON}..."
+  if [[ -s "${DAEMON_JSON}" ]]; then cp "${DAEMON_JSON}" "${DAEMON_JSON}.bak.$(date +%Y%m%d%H%M%S)"; fi
+  printf '%s\n' "${DOCKER_CONFIG_NEW}" > "${DAEMON_JSON}"
+  # Stops every running container, including a Cloud Build in progress: run this script when no build runs.
+  echo "[!] Restarting Docker (running containers stop)..."
+  systemctl restart docker
+else
+  echo "[+] Docker storage already set to overlay2 (containerd snapshotter off)."
+fi
+
 # 5. Non-root service user 'synkro'
 echo "[+] Provisioning non-root user '${SYNKRO_USER}'..."
 if ! id -u "${SYNKRO_USER}" >/dev/null 2>&1; then
@@ -159,7 +185,7 @@ echo "[+] Configuring PM2 systemd daemon unit for ${SYNKRO_USER}..."
 env PATH="$PATH:/usr/bin:/usr/local/bin" pm2 startup systemd -u "${SYNKRO_USER}" --hp "/home/${SYNKRO_USER}" || true
 
 # ==============================================================================
-# Cloud Build sandbox (sections 10-13)
+# Cloud Build sandbox (sections 10-14)
 # The build worker runs as '${SYNKRO_USER}' (in the docker group) without root. The parts that need root
 # (iptables, ipset, dnsmasq) are set up here and by synkro-build-network.service at every boot, because
 # iptables/ipset rules do not survive a reboot.
@@ -261,7 +287,73 @@ else
   echo "[!] Skipping synkro-build-network.service until the repo is in ${SYNKRO_HOME}."
 fi
 
-# 13. Signing key warning
+# 13. Disk quota verification (hard check). Same check as the build worker (packages/agent/src/models/disk-quota.ts):
+# overlay2 on xfs, and a container limited to 1G that writes 2G must fail with "No space left on device".
+echo "[+] Verifying the per-build disk quota..."
+DOCKER_DRIVER="$(docker info --format '{{.Driver}}')"
+DOCKER_BACKING_FS="$(docker info --format '{{range .DriverStatus}}{{if eq (index . 0) "Backing Filesystem"}}{{index . 1}}{{end}}{{end}}')"
+if [[ "${DOCKER_DRIVER}" != "overlay2" || "${DOCKER_BACKING_FS}" != "xfs" ]]; then
+  echo "[!] FAILED: Docker storage is '${DOCKER_DRIVER}' on '${DOCKER_BACKING_FS:-unknown}'; the disk quota needs overlay2 on xfs." >&2
+  echo "[!] /var/lib/docker must be the XFS volume mounted with pquota (docs/LINUX_TEST_SESSION.md section 1), and" >&2
+  echo "[!] ${DAEMON_JSON} must keep storage-driver overlay2 with the containerd snapshotter off (section 4b)." >&2
+  echo "[!] Cloud Builds are refused until this passes." >&2
+  exit 1
+fi
+QUOTA_IMAGE="$(grep -oE "synkro/rn-sandbox:[0-9]+" "${SYNKRO_HOME}/packages/agent/src/models/docker-sandbox.ts" 2>/dev/null | head -n 1 || true)"
+if [[ "${REPO_READY}" != "true" || -z "${QUOTA_IMAGE}" ]] || ! docker image inspect "${QUOTA_IMAGE}" >/dev/null 2>&1; then
+  echo "[!] WARNING: no sandbox image yet: disk quota enforcement NOT confirmed. Run this script again after cloning the repo."
+else
+  QUOTA_PROBE="synkro-quota-probe-$$"
+  QUOTA_OUT="$(docker run --rm --name "${QUOTA_PROBE}" --network none --cap-drop=ALL --user=1000:1000 --storage-opt size=1G \
+    "${QUOTA_IMAGE}" sh -c 'dd if=/dev/zero of=/tmp/quota-probe bs=1M count=2048 2>&1' 2>&1)" && QUOTA_RC=0 || QUOTA_RC=$?
+  docker rm -f "${QUOTA_PROBE}" >/dev/null 2>&1 || true
+  if [[ "${QUOTA_RC}" -eq 0 ]] || ! grep -qiE "No space left on device|Disk quota exceeded" <<<"${QUOTA_OUT}"; then
+    echo "${QUOTA_OUT}" | tail -n 3
+    echo "[!] FAILED: a container limited to 1G could write 2G (or the probe failed for another reason, output above)." >&2
+    echo "[!] --storage-opt is NOT enforced; one build could fill the disk. Cloud Builds are refused until this passes." >&2
+    exit 1
+  fi
+  echo "[+] Disk quota enforced: a 1G sandbox could not write 2G (overlay2 on xfs)."
+fi
+
+# 14. Shared READ-ONLY Gradle dependency cache for Cloud Build (DEC-08)
+# The cache lives on the Docker volume (/var/lib/docker, XFS) so it can never fill the root disk where Postgres lives,
+# and appears at ${GRADLE_RO_CACHE_DIR} through a bind mount, with its own 0755 permissions: the build worker (user
+# ${SYNKRO_USER}) must see it, and it cannot traverse /var/lib/docker (0710). Builds mount <framework>/ read-only
+# (DockerSandbox); without a cache, or without this mount, they run as before and download everything.
+# scripts/warm-gradle-cache.sh fills it from a template build. Here it runs for a framework that has no cache yet;
+# SYNKRO_WARM_GRADLE_CACHE=1 refreshes both (e.g. after SYNKRO_REBUILD_IMAGES=1), =0 skips it.
+GRADLE_RO_CACHE_DIR="/var/lib/synkro/gradle-ro-cache"
+GRADLE_RO_CACHE_STORE="/var/lib/docker/synkro-cache/gradle-ro"
+if mountpoint -q /var/lib/docker; then
+  install -d -m 0755 -o root -g root "${GRADLE_RO_CACHE_STORE}" "${GRADLE_RO_CACHE_DIR}"
+  FSTAB_LINE="${GRADLE_RO_CACHE_STORE} ${GRADLE_RO_CACHE_DIR} none bind,nofail,x-systemd.requires-mounts-for=/var/lib/docker 0 0"
+  if ! grep -qF " ${GRADLE_RO_CACHE_DIR} " /etc/fstab; then
+    echo "${FSTAB_LINE}" >> /etc/fstab
+    systemctl daemon-reload
+  fi
+  mountpoint -q "${GRADLE_RO_CACHE_DIR}" || mount "${GRADLE_RO_CACHE_DIR}"
+  if [[ "${SYNKRO_WARM_GRADLE_CACHE:-}" == "0" ]]; then
+    echo "[+] Gradle cache warm-up skipped (SYNKRO_WARM_GRADLE_CACHE=0)."
+  elif [[ "${REPO_READY}" != "true" ]]; then
+    echo "[!] Gradle cache warm-up skipped until the repo is in ${SYNKRO_HOME}."
+  else
+    WARM=()
+    for FW in react-native flutter; do
+      if [[ "${SYNKRO_WARM_GRADLE_CACHE:-}" == "1" || ! -d "${GRADLE_RO_CACHE_DIR}/${FW}/modules-2" ]]; then WARM+=("${FW}"); fi
+    done
+    if [[ ${#WARM[@]} -gt 0 ]]; then
+      # Not fatal: without a cache, builds still work (slower).
+      bash "${SYNKRO_HOME}/scripts/warm-gradle-cache.sh" "${WARM[@]}" || echo "[!] WARNING: Gradle cache warm-up failed (see above). Builds still work, without the cache."
+    else
+      echo "[+] Gradle read-only caches present (SYNKRO_WARM_GRADLE_CACHE=1 to refresh)."
+    fi
+  fi
+else
+  echo "[!] /var/lib/docker is not a separate volume: no shared Gradle cache (it must not fill the root disk)."
+fi
+
+# 15. Signing key warning
 cat <<'WARNING'
 ==============================================================================
 [!] SYNKRO_SIGNING_ENC_KEY (in the server .env) encrypts every app signing key.

@@ -6,11 +6,20 @@ export interface IBuildApi {
   cancelBuild(id: string): Promise<CloudBuildJob>;
   streamLogs(id: string, onChunk: (chunk: string) => void): () => void;
   getDownloadToken?(id: string): Promise<{ token: string; downloadUrl: string; expiresAt: number }>;
+  createShortLink?(id: string): Promise<{ url: string; expiresAt: number }>;
 }
 
 export class MockBuildApi implements IBuildApi {
   /** Set to true before calling startBuild to simulate a build failure */
   public simulateFailure = false;
+
+  /**
+   * Dev only (VITE_MOCK_BUILD_QUEUE=true): a build that looks like a real one to the build experience
+   * (BuildExperience.tsx): queued for a few seconds with an ETA, then the same "[STEP]" lines the server writes, about
+   * 35 seconds in all, and the log in errorLog as the server returns it. With simulateFailure (VITE_MOCK_BUILD_FAIL=true)
+   * it fails while compiling. Off by default: the build starts after 2 seconds, as the tests expect.
+   */
+  constructor(private readonly simulateStages = false) {}
 
   private currentJob: CloudBuildJob | null = null;
   private logInterval: ReturnType<typeof setInterval> | null = null;
@@ -37,6 +46,12 @@ export class MockBuildApi implements IBuildApi {
     };
 
     const willFail = this.simulateFailure;
+
+    if (this.simulateStages) {
+      this.currentJob.queueEtaSeconds = 11 * 60;
+      this.statusTimeout = setTimeout(() => this.runStagedDemo(id, willFail), 6000);
+      return { ...this.currentJob };
+    }
 
     // Simulate transition to running after 2 seconds
     this.statusTimeout = setTimeout(() => {
@@ -103,8 +118,57 @@ export class MockBuildApi implements IBuildApi {
     };
   }
 
+  async createShortLink(id: string): Promise<{ url: string; expiresAt: number }> {
+    return {
+      url: `http://localhost:8080/d/mockShortCode12345678_${id.slice(-4)}`,
+      expiresAt: Date.now() + 15 * 60 * 1000,
+    };
+  }
+
   getCurrentJob(): CloudBuildJob | null {
     return this.currentJob ? { ...this.currentJob } : null;
+  }
+
+  /** The staged demo (see the constructor): log lines on a timeline, appended to errorLog like the real server. */
+  private runStagedDemo(id: string, willFail: boolean) {
+    const job = this.currentJob;
+    if (!job || job.id !== id || job.status !== 'queued') return;
+    delete job.queueEtaSeconds;
+    job.status = 'running';
+    job.startedAt = new Date();
+    job.errorLog = '';
+    const emit = (line: string) => {
+      if (!this.currentJob || this.currentJob.id !== id || this.currentJob.status !== 'running') return false;
+      this.currentJob.errorLog = `${this.currentJob.errorLog ?? ''}${line}\n`;
+      this.logListeners.forEach((l) => l(`${line}\r\n`));
+      return true;
+    };
+    // A Flutter project with an outdated android/ (v1 embedding): the sandbox generates it again (FLUTTER_ANDROID_FN).
+    const flutter: Array<[number, string]> = [[1, '[SYSTEM] Starting flutter build process...'],
+      [4, '[SYSTEM] android/ was outdated (v1 embedding), regenerated it'], [8, '[STEP] flutter create 0m21s'],
+      ...(willFail
+        ? [[14, '[ERROR] FAILURE: Build failed with an exception.'], [15, "lib/main.dart:3:8: Error: Undefined name 'Foo'."], [17, '[STEP] total 2m31s']] as Array<[number, string]>
+        : [[16, "Running Gradle task 'assembleRelease'..."], [24, 'Built build/app/outputs/flutter-apk/app-release.apk'],
+           [26, '[STEP] gradle (flutter build apk) 5m02s'], [28, '[STEP] total 5m40s']] as Array<[number, string]>)];
+    const timeline: Array<[number, string]> = job.framework === 'flutter' ? flutter : willFail
+      ? [[1, '[SYSTEM] Starting react-native build process...'], [5, 'added 1148 packages in 41s'], [6, '[STEP] npm install 0m41s'],
+         [10, '[STEP] expo prebuild 0m38s'], [14, '> Task :app:compileReleaseKotlin FAILED'], [15, '[ERROR] FAILURE: Build failed with an exception.'],
+         [16, "e: file:///build/android/app/src/main/java/com/demo/MainActivity.kt:3:8 Unresolved reference: Foo"], [17, '[STEP] total 2m31s']]
+      : [[1, '[SYSTEM] Using the shared Gradle dependency cache (read-only).'], [2, '[SYSTEM] Starting react-native build process...'],
+         [7, 'added 1148 packages in 41s'], [8, '[STEP] npm install 0m41s'], [14, '[STEP] expo prebuild 0m38s'],
+         [20, '> Task :app:compileReleaseKotlin'], [26, '> Task :app:packageRelease'], [28, '[STEP] gradle 5m12s'],
+         [29, '[SYSTEM] Disk used: 3.1 GB of 12 GB'], [30, '[STEP] total 6m44s']];
+    for (const [sec, line] of timeline) {
+      setTimeout(() => emit(line), sec * 1000);
+    }
+    const endSec = timeline[timeline.length - 1][0] + 3;
+    this.statusTimeout = setTimeout(() => {
+      const j = this.currentJob;
+      if (!j || j.id !== id || j.status !== 'running') return;
+      j.status = willFail ? 'failed' : 'success';
+      j.completedAt = new Date();
+      if (!willFail) j.artifactUrl = 'https://example.com/mock-artifact.apk';
+    }, endSec * 1000);
   }
 
   private startLogSimulation() {
@@ -175,6 +239,10 @@ class RealBuildApi implements IBuildApi {
     return (window as any).peep.cancelCloudBuild(id);
   }
 
+  async createShortLink(id: string): Promise<{ url: string; expiresAt: number }> {
+    return (window as any).peep.createCloudBuildShortLink(id);
+  }
+
   streamLogs(id: string, onChunk: (chunk: string) => void): () => void {
     // Requires main process to emit peep:build-log-chunk events
     const handler = (payload: { id: string, chunk: string }) => {
@@ -196,5 +264,8 @@ export const buildApi: IBuildApi = (() => {
   // the packaged app fell back to the mock, which fakes builds. The mock is a dev-only option.
   const useReal = env.PROD === true || shouldUseRealBuildApi(env.VITE_USE_REAL_BUILD_API);
   if (env.DEV) console.log('[BUILD API] using', useReal ? 'the real Cloud Build API' : 'the mock (set VITE_USE_REAL_BUILD_API=true for the real one)');
-  return useReal ? new RealBuildApi() : new MockBuildApi();
+  if (useReal) return new RealBuildApi();
+  const mock = new MockBuildApi(env.VITE_MOCK_BUILD_QUEUE === 'true');
+  mock.simulateFailure = env.VITE_MOCK_BUILD_FAIL === 'true';
+  return mock;
 })();

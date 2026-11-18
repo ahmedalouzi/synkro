@@ -1,0 +1,12 @@
+[Unit]
+Description=Run Synkro Automated Database Backup Daily
+Requires=synkro-backup.service
+
+[Timer]
+# Fires daily at 03:00 UTC with randomized delay up to 15 minutes to avoid load spikes
+OnCalendar=*-*-* 03:00:00 UTC
+RandomizedDelaySec=900
+Persistent=true
+
+[Install]
+WantedBy=timers.target

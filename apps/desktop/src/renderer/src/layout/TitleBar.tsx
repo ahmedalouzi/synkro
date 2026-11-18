@@ -7,6 +7,7 @@ import { DEVICES } from './PreviewPane';
 import { buildApk, getCommand, isCommandEnabled, runCommand } from '../commands/commands';
 import { MenuBar } from './MenuBar';
 import { useBuildStore } from '../stores/build-store';
+import { reopenBuildExperience } from '../features/build/BuildExperience';
 import { openWebPage } from '../config/web';
 import { useI18n } from '../i18n';
 import './TitleBar.css';
@@ -138,10 +139,10 @@ export function TitleBar() {
           <button
             id="build-apk-btn"
             type="button"
-            className="topbar__build"
-            disabled={isBuildActive}
-            onClick={() => void buildApk()}
-            title={isBuildActive ? t('titlebar.buildInProgress') : t('titlebar.buildApkTooltip')}
+            className={`topbar__build${isBuildActive ? ' is-building' : ''}`}
+            // While a build runs, the button brings back its full-screen page (BuildExperience).
+            onClick={() => (isBuildActive ? reopenBuildExperience() : void buildApk())}
+            title={isBuildActive ? t('buildFlow.reopen') : t('titlebar.buildApkTooltip')}
           >
             {isBuildActive ? t('titlebar.building') : t('titlebar.buildApk')}
           </button>

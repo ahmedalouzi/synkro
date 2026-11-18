@@ -99,15 +99,21 @@ function toolNameToActivityType(name: string): AgentTimelineActivityType {
 // ---------------------------------------------------------------------------
 
 /** A check's output that shows a problem. */
+/** A tool result for something that did not run: refused by a safety rule, or not confirmed. Exported for tests. */
+export const NOT_RUN = /^(BLOCKED: |Not run: |Command was rejected by user|File deletion rejected by user|Command error: Command not allowed)/;
+
 const CHECK_FAILED = /Error lines in the output \(|^Preview: (error|not running)|Start error:|Runtime errors in the page \(|visible content NO|Error overlay on screen|"success": false|error TS\d+|exited with code [1-9]|^Error:|^BLOCKED:/m;
 
 const CHANGE_TOOLS = new Set(['propose_file_edit', 'patch_file', 'delete_file', 'rename_file', 'bootstrap_project']);
 const PACKAGE_COMMAND = /\b(npm|pnpm|yarn|bun)\s+(install|i|ci|add|remove|uninstall|rm)\b|\bexpo\s+install\b/i;
-const DEPS_CHECK_COMMAND = /\bexpo\s+install\b.*--check\b/i;
+const DEPS_CHECK_COMMAND = /\bexpo\s+install\b.*--check\b|\bnpm\s+(ls|list)\b/i;
 const TYPECHECK_COMMAND = /\btsc\b|\b(flutter|dart)\s+analyze\b/i;
 /** Notes, not the app: the plan and walkthrough under .peep/, Markdown and text files. */
 const NOTES = /(^|[\\/])\.peep[\\/]|\.(md|txt)$/i;
-/** The Expo dependency check the app appends to a package command's output (agent-service run_command). */
+/**
+ * The Expo dependency check the app appends to a package command's output (agent-service run_command), followed
+ * by `npm ls --depth=0` in npm projects: a non-zero exit in either fails the check.
+ */
 const DEPS_CHECK_MARKER = 'npx expo install --check:';
 
 export type VerificationRole = 'change' | 'deps' | 'depscheck' | 'typecheck' | 'preview' | null;
@@ -181,7 +187,7 @@ export class RunVerification {
     if (this.checks.typecheck === 'failed') gaps.push('the type check reports errors');
     if (this.checks.preview === 'missing') gaps.push('the preview was not checked after the last change');
     if (this.checks.preview === 'failed') gaps.push('the preview shows errors or an empty screen');
-    if (this.deps === 'failed') gaps.push("some packages do not match the project's Expo SDK (npx expo install --check)");
+    if (this.deps === 'failed') gaps.push("some packages do not match the project's Expo SDK or each other's peer dependencies (npx expo install --check, npm ls --depth=0); Cloud Build would fail on them");
     return gaps;
   }
 
@@ -521,16 +527,19 @@ export async function runAgentLoop(
 
         verification.record(verificationRole(name, args), singleCallMsg.content);
 
-        // Determine outcome.
-        const toolFailed = singleCallMsg.content.startsWith('Error:');
+        // Determine outcome. A command that was refused did not run: "Blocked", never "Ran".
+        const toolBlocked = NOT_RUN.test(singleCallMsg.content);
+        const toolFailed = !toolBlocked && singleCallMsg.content.startsWith('Error:');
 
         // Dispatch 'completed' or 'failed' AFTER execution.
         dispatchTimeline({
           id: resolvedId,
           runId,
           type: activityType,
-          message: toolFailed ? `Failed: ${singleCallMsg.content.slice(0, 120)}` : inProgressMsg,
-          status: toolFailed ? 'failed' : 'completed',
+          message: toolBlocked
+            ? `Blocked: ${singleCallMsg.content.replace(/^(BLOCKED|Not run): /, '').slice(0, 300)}`
+            : toolFailed ? `Failed: ${singleCallMsg.content.slice(0, 120)}` : inProgressMsg,
+          status: toolBlocked ? 'blocked' : toolFailed ? 'failed' : 'completed',
           timestamp: new Date().toISOString(),
           ...(fileHint ? { file: fileHint } : {}),
           ...(cmdHint  ? { command: cmdHint } : {}),

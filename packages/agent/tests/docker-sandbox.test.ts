@@ -27,9 +27,9 @@ export default async function runDockerSandboxTests() {
       'RN build command must safely check if gradlew exists before chmod',
     );
     assert.equal(
-      rnCommandNoKey.includes('reactNativeArchitectures=arm64-v8a,armeabi-v7a'),
+      rnCommandNoKey.includes('reactNativeArchitectures=arm64-v8a\\n') && !rnCommandNoKey.includes('armeabi-v7a'),
       true,
-      'RN build command must inject reactNativeArchitectures=arm64-v8a,armeabi-v7a into gradle.properties',
+      'RN build command must inject reactNativeArchitectures=arm64-v8a (64-bit only, DEC-09) into gradle.properties',
     );
     assert.equal(
       rnCommandNoKey.includes('android.injected.build.abi'),
@@ -46,7 +46,7 @@ export default async function runDockerSandboxTests() {
   {
     const flutterCmd = getBuildCommand('flutter', '3f9a1c07-be42-4d11-9a0e-123456789abc');
     assert.equal(
-      flutterCmd.includes('flutter build apk --release --target-platform android-arm,android-arm64'),
+      flutterCmd.includes('flutter build apk --release --target-platform android-arm64') && !flutterCmd.includes('android-arm,'),
       true,
       'Flutter build command must remain release APK build',
     );

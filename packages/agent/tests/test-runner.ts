@@ -85,6 +85,8 @@ async function main() {
     'backend-gateway.test.ts',
     'budget-guard.test.ts',
     'build-api-isolation.test.ts',
+    'build-cancel-route.test.ts',
+    'build-queue-route.test.ts',
     'build-hardening.test.ts',
     'cancellation.test.ts',
     'failover.test.ts',
@@ -123,6 +125,12 @@ async function main() {
         console.log(`  ⚠️ Warning: No default export function\n`);
       }
     } catch (error: any) {
+      // SkipTest (skip-test.ts): the suite needs something this host does not have.
+      if (error?.name === 'SkipTest') {
+        console.warn(`  🟡 Skipped (${error.message})\n`);
+        skipped++;
+        continue;
+      }
       console.error(`  🔴 Failed:`, error);
       failed++;
     }

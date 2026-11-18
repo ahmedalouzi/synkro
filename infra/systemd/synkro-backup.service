@@ -1,0 +1,20 @@
+[Unit]
+Description=Synkro Automated Off-Site Database Backup Service
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=synkro
+Group=synkro
+Environment=ENV_FILE=/opt/synkro/.env
+ExecStart=/usr/local/bin/synkro-backup-offsite.sh
+StandardOutput=journal
+StandardError=journal
+
+# Security Sandboxing
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/var/backups/synkro
+PrivateTmp=true
+NoNewPrivileges=true

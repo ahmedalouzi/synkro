@@ -36,6 +36,9 @@ export const ALLOWLISTED_FQDNS = [
   'release-assets.githubusercontent.com',
   'plugins-artifacts.gradle.org',
   'repo.maven.apache.org',
+  // Maven Central's own mirror on Google Cloud: repo.maven.apache.org and repo1.maven.org answer some downloads
+  // with a 302 to it (seen Nov 13 for org.robolectric jars). Only this host, not all of maven.org.
+  'gcp.mirrors.maven.org',
   'repo.reactnative.dev',
 ];
 

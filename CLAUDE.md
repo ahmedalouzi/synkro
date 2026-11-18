@@ -42,3 +42,4 @@ Local dev backend: sign up a normal account against it. There is no auth bypass 
 - Cloud Build changes must be checked on Linux too: on Windows/macOS the `build0` firewall and `--storage-opt` are not applied (see `docs/LINUX_TEST_SESSION.md`).
 - ufw must allow DNS in on `build0` to 172.30.0.1:53 (udp+tcp), or sandboxes can't resolve any name while host-side DNS checks still pass.
 - Antivirus HTTPS scanning (e.g. Avast) breaks builds in local Docker: containers do not trust its certificate.
+- Docker 29+ containerd snapshotter (`Storage Driver: overlayfs`) silently ignores `--storage-opt size=`: no error, no disk quota, layers on the root disk. Production must run overlay2 with the snapshotter off (DEC-06, set by `scripts/setup-production-server.sh`); `src/models/disk-quota.ts` checks real enforcement and the worker refuses builds without it.

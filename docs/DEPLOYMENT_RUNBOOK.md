@@ -48,17 +48,26 @@ echo "[+] Backup successfully verified: $BACKUP_FILE ($(du -h "$BACKUP_FILE" | c
 
 ## 3. Standard Zero-Downtime Deployment Procedure
 
-Atomvs packages (such as `@peep/agent`) export TypeScript directly without bundling to CJS/ESM. Therefore, the production server runs via `tsx` under PM2 cluster/fork mode. Type-checking is performed upfront via `pnpm typecheck` before process reload.
+Atomvs packages (such as `@peep/agent`) export TypeScript directly without bundling to CJS/ESM. Therefore, the production server runs via `tsx` under PM2 cluster/fork mode. Type-checking runs in CI on every pull request (`pnpm typecheck`), **not on the server**: it also checks the desktop app, and failing there would stop a deploy halfway. Only deploy commits whose CI is green.
 
 ### Sandbox Images
 The Cloud Build worker uses two pre-warmed, unprivileged Docker sandboxes:
 - `synkro/flutter-sandbox:2` (`infra/docker/Dockerfile.flutter-sandbox`): Pre-warmed Flutter SDK environment.
 - `synkro/rn-sandbox:1` (`infra/docker/Dockerfile.rn-sandbox`): Pre-warmed React Native / Expo environment with Gradle 8.8 & 8.6 distribution wrappers and Expo SDK 51 & React Native 0.74 npm packages cached to `/tmp/.npm-cache`.
 
-Execute deployment as the `synkro` service user:
+First make sure **no Cloud Build is running**: `pm2 reload` restarts the build worker, which stops a build in progress
+(the reconciler later marks it failed).
 
 ```bash
-sudo -u synkro bash -lc '
+# Must print nothing. If a build_sandbox_<jobId> container is listed, wait for it to finish and check again.
+docker ps --filter name=build_sandbox_ --format '{{.Names}} {{.Status}}'
+```
+
+Then deploy as the `synkro` service user. `-H` sets HOME to /home/synkro, so PM2 finds its own process list
+(~/.pm2) instead of looking in the caller's home:
+
+```bash
+sudo -u synkro -H bash -lc '
   set -euo pipefail
   cd /opt/synkro
 
@@ -70,17 +79,14 @@ sudo -u synkro bash -lc '
   # 2. Install dependencies with lockfile consistency
   pnpm install --frozen-lockfile
 
-  # 3. Validate entire monorepo TypeScript definitions
-  pnpm typecheck
-
-  # 4. Pre-build / update Cloud Build sandbox Docker images
+  # 3. Pre-build / update Cloud Build sandbox Docker images
   docker build -t synkro/flutter-sandbox:2 -f infra/docker/Dockerfile.flutter-sandbox infra/docker
   docker build -t synkro/rn-sandbox:1 -f infra/docker/Dockerfile.rn-sandbox infra/docker
 
-  # 5. Gracefully reload or launch PM2 process with updated environment
+  # 4. Gracefully reload or launch PM2 process with updated environment
   pm2 reload synkro-server --update-env || pm2 start npx --name synkro-server -- tsx apps/server/src/index.ts
 
-  # 6. Save PM2 process list for auto-boot on server restart
+  # 5. Save PM2 process list for auto-boot on server restart
   pm2 save
 '
 ```
@@ -131,7 +137,7 @@ curl -sf -H "Authorization: Bearer $TOKEN" https://api.atomvs.com/api/build/hist
 
 ### 6. Application Logs Audit
 ```bash
-pm2 logs synkro-server --lines 50 --nostream | grep "\[DATABASE_BOOT\] Database initialized successfully!"
+sudo -u synkro -H pm2 logs synkro-server --lines 50 --nostream | grep "\[DATABASE_BOOT\] Database initialized successfully!"
 echo "[+] Database boot confirmation verified in PM2 logs."
 ```
 
@@ -157,10 +163,11 @@ psql "$DATABASE_URL" -c "UPDATE system_config SET value = '{\"is_active\": false
 ```
 
 ### 5.2 Fast Rollback (<60 Seconds)
-If smoke checks fail or severe regressions occur:
+If smoke checks fail or severe regressions occur. The reload stops a running Cloud Build too: check
+`docker ps --filter name=build_sandbox_` first if the situation allows waiting.
 
 ```bash
-sudo -u synkro bash -lc "
+sudo -u synkro -H bash -lc "
   set -euo pipefail
   cd /opt/synkro
   

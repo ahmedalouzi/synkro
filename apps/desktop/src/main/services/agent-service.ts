@@ -53,7 +53,7 @@ import { ProjectIndexer, ProjectRetrieval, MemoryManager, MemoryRetrieval } from
 import type { PlatformRegistry } from './platform-registry';
 import type { PreviewManager } from './preview-manager';
 import { formatPreviewReport, waitForBundle } from './preview-log';
-import { EXPO_DEPS_CHECK, changesDependencies, isExpoProject, toExpoInstall } from './expo-deps';
+import { EXPO_DEPS_CHECK, NPM_PEERS_CHECK, changesDependencies, isExpoProject, toExpoInstall, usesNpm } from './expo-deps';
 
 export class AgentService {
   private pendingEdits: ProposedEdit[] = [];
@@ -77,6 +77,13 @@ export class AgentService {
 
   /** The Preview pane's dev server, which the agent reads and restarts (get_preview_logs, restart_preview). */
   private preview: PreviewManager | null = null;
+
+  /** PIDs of the processes Atomvs started: the only ones a run_command may stop (by PID, after confirmation). */
+  private ownedPids: () => number[] = () => [];
+
+  setOwnedPidsProvider(provider: () => number[]): void {
+    this.ownedPids = provider;
+  }
 
   setPreviewManager(preview: PreviewManager): void {
     this.preview = preview;
@@ -412,7 +419,7 @@ export class AgentService {
             const rewritten = expoProject ? toExpoInstall(requested) : null;
             const commandStr = rewritten ?? requested;
             const rewriteNote = rewritten ? `Rewrote "${requested}" to "${rewritten}" (Expo project: versions that match its SDK).\n` : '';
-            const safety = classifyCommand(commandStr);
+            const safety = classifyCommand(commandStr, { ownPids: new Set(this.ownedPids()) });
 
             if (safety.level === 'blocked') {
               return `BLOCKED: ${safety.reason}`;
@@ -421,7 +428,7 @@ export class AgentService {
             if (safety.level === 'dangerous') {
               // Send a confirmation request to the renderer and wait for response
               const confirmId = randomUUID();
-              const confirmed = await new Promise<boolean>((resolve) => {
+              const confirmed = await new Promise<boolean | 'timeout'>((resolve) => {
                 this.mainWindow?.webContents.send('agent:confirm-command', {
                   id: confirmId,
                   command: commandStr,
@@ -433,9 +440,12 @@ export class AgentService {
                   resolve(approved);
                 });
 
-                setTimeout(() => resolve(false), 60000);
+                setTimeout(() => resolve('timeout'), 60000);
               });
 
+              if (confirmed === 'timeout') {
+                return `Not run: this command needs the user's confirmation and none came within 60 s: ${commandStr}`;
+              }
               if (!confirmed) {
                 return `Command was rejected by user: ${commandStr}`;
               }
@@ -492,9 +502,11 @@ export class AgentService {
             };
 
             let result = rewriteNote + await runCaptured(commandStr);
-            // After a dependency change in an Expo project, check every package against the SDK.
+            // After a dependency change in an Expo project, check every package against the SDK, and (npm) for
+            // unmet peer dependencies: Cloud Build's npm ci fails on those even when the preview runs.
             if (expoProject && changesDependencies(commandStr)) {
               result += `\n\n${EXPO_DEPS_CHECK}:\n${await runCaptured(EXPO_DEPS_CHECK)}`;
+              if (await usesNpm(projectPath)) result += `\n\n${NPM_PEERS_CHECK}:\n${await runCaptured(NPM_PEERS_CHECK)}`;
             }
             return result;
           }
@@ -502,7 +514,7 @@ export class AgentService {
             const path = this.resolvePath(projectPath, String(args.path));
             // Always require user confirmation for file deletion
             const confirmId = randomUUID();
-            const confirmed = await new Promise<boolean>((resolve) => {
+            const confirmed = await new Promise<boolean | 'timeout'>((resolve) => {
               this.mainWindow?.webContents.send('agent:confirm-command', {
                 id: confirmId,
                 command: `DELETE FILE: ${args.path}`,
@@ -512,8 +524,9 @@ export class AgentService {
               ipcMain.once(`agent:confirm-command-response:${confirmId}`, (_: unknown, approved: boolean) => {
                 resolve(approved);
               });
-              setTimeout(() => resolve(false), 60000);
+              setTimeout(() => resolve('timeout'), 60000);
             });
+            if (confirmed === 'timeout') return `Not run: deleting a file needs the user's confirmation and none came within 60 s: ${args.path}`;
             if (!confirmed) return `File deletion rejected by user: ${args.path}`;
             await unlink(path);
             return `Deleted: ${args.path}`;

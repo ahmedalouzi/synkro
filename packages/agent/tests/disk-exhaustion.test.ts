@@ -4,14 +4,21 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { randomUUID } from 'node:crypto';
-import { DockerSandbox } from '../src/models/docker-sandbox.js';
+import { BUILD_DISK_LIMIT_GB, DockerSandbox } from '../src/models/docker-sandbox.js';
+import { requireSandbox } from './sandbox-requirements.js';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
 
+// The RN limit (DEC-07) plus 2 GB: the quota must stop the write before it ends.
+const LIMIT_MB = BUILD_DISK_LIMIT_GB['react-native'] * 1024;
+const PAYLOAD_MB = LIMIT_MB + 2048;
+
+/** Free space where container layers live (Docker's root dir, the XFS volume since DEC-06), not the root disk. */
 async function getHostFreeDiskMB() {
-  const { stdout } = await execFileAsync('df', ['-m', '/']);
+  const { stdout: root } = await execFileAsync('docker', ['info', '--format', '{{.DockerRootDir}}']);
+  const { stdout } = await execFileAsync('df', ['-m', root.trim() || '/']);
   const lines = stdout.trim().split('\n');
   const parts = lines[1].trim().split(/\s+/);
   return parseInt(parts[3], 10);
@@ -20,10 +27,8 @@ async function getHostFreeDiskMB() {
 async function run() {
   console.log('\n--- ADVERSARIAL TEST: Disk Exhaustion (Quota Verification) ---');
 
-  if (process.platform !== 'linux') {
-    console.log('  SKIPPED: This test must be run on a Linux host with Docker.');
-    return;
-  }
+  // Skipped (or, with SYNKRO_RUN_SANDBOX_TESTS=1, failed) without the Linux build server: see sandbox-requirements.ts.
+  await requireSandbox({ storageQuota: true });
 
   
 
@@ -39,12 +44,12 @@ async function run() {
 
   const gradlewPath = path.join(androidDir, 'gradlew');
   const attackScript = '#!/bin/sh\n' +
-    'echo "[DISK] Starting disk exhaustion payload (8GB write to overlay layer)..."\n' +
-    'dd if=/dev/zero of=/tmp/hugefile bs=1M count=8000\n' +
+    `echo "[DISK] Starting disk exhaustion payload (${PAYLOAD_MB} MB write to overlay layer, limit ${LIMIT_MB} MB)..."\n` +
+    `dd if=/dev/zero of=/tmp/hugefile bs=1M count=${PAYLOAD_MB}\n` +
     'DD_EXIT=$?\n' +
     'echo "[DISK_EXIT] dd exited with code $DD_EXIT"\n' +
     'if [ $DD_EXIT -eq 0 ]; then\n' +
-    '  echo "[DISK_FAILED] The quota failed to block the write! 8GB was successfully written."\n' +
+    `  echo "[DISK_FAILED] The quota failed to block the write! ${PAYLOAD_MB} MB was successfully written."\n` +
     'else\n' +
     '  echo "[DISK_SUCCESS] The quota successfully blocked the write (ENOSPC expected)."\n' +
     'fi\n' +
@@ -55,7 +60,7 @@ async function run() {
   const keystorePath = path.join(tmpDir, 'dummy.jks');
   await fs.writeFile(keystorePath, 'dummy keystore content');
 
-  const timeoutMs = 60000;
+  const timeoutMs = 180000; // writing ~12 GB takes longer than the old 8 GB
   const sandbox = new DockerSandbox({
     jobId,
     projectPath,
@@ -102,12 +107,12 @@ async function run() {
   const maxConsumptionMB = diskBefore - minDiskObserved;
   console.log(`  [FINDING] Maximum disk space consumed during run: ~${maxConsumptionMB} MB`);
 
-  const quotaUnenforced = maxConsumptionMB > 6000;
+  const quotaUnenforced = maxConsumptionMB > LIMIT_MB + 1024;
 
   if (quotaUnenforced || fullLog.includes('[DISK_FAILED]')) {
     console.warn(`\n  ARCHITECTURE FLAW PROVEN: STORAGE QUOTA NOT ENFORCED!`);
     console.warn(`  Current ext4 + overlay2 backend allows containers to consume host disk up to available space.`);
-    console.warn(`  The container successfully wrote ~8GB despite the intended 5GB Docker storage-opt limit.`);
+    console.warn(`  The container wrote ${maxConsumptionMB} MB despite the ${LIMIT_MB} MB Docker storage-opt limit.`);
     console.warn(`  TRELLO RECOMMENDATION: Production deployment MUST use XFS with pquota mount option,`);
     console.warn(`  or an alternative like a host-side periodic disk-usage monitor/killer, before`);
     console.warn(`  Cloud Build can be considered safe against disk exhaustion attacks.\n`);
@@ -115,6 +120,9 @@ async function run() {
     console.log(`  [FINDING] Storage quota appeared to enforce limits (consumed ${maxConsumptionMB} MB).`);
   }
 
+  // The fake gradlew exits 0, so runBuild treats it as a successful build and keeps the stopped container for the
+  // APK copy, as designed. The worker removes it after extractArtifact(); do the same before checking for leftovers.
+  await sandbox.forceKill();
   console.log(`  [ASSERT] Checking for lingering container: ${containerName}`);
   const { stdout } = await execFileAsync('docker', ['ps', '-a', '--filter', `name=${containerName}`, '--format', '{{.Names}}']);
   const lingering = stdout.trim();

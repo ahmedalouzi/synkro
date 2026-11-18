@@ -1,6 +1,7 @@
 import { spawn, exec, type ChildProcess } from 'node:child_process';
 import { platform } from 'node:os';
 import { join } from 'node:path';
+import type { ProcessRegistry } from './process-registry';
 
 export interface ProcessInfo {
   id: number;
@@ -87,6 +88,19 @@ export class ProcessManager {
   private processes = new Map<number, ProcessInfo>();
   private nextId = 1;
   private flutterSdkPath?: string;
+  private registry?: ProcessRegistry;
+
+  /** Records every started process, so a later start of Atomvs can stop exactly those it left behind. */
+  setRegistry(registry: ProcessRegistry): void {
+    this.registry = registry;
+  }
+
+  /** PIDs of the processes this manager started that are still running. */
+  pids(): number[] {
+    return [...this.processes.values()]
+      .filter((p) => p.process.pid !== undefined && p.process.exitCode === null && p.process.signalCode === null)
+      .map((p) => p.process.pid!);
+  }
 
   setFlutterSdkPath(path: string | undefined): void {
     this.flutterSdkPath = path;
@@ -135,8 +149,12 @@ export class ProcessManager {
     });
 
     this.processes.set(info.id, info);
+    // Only the program, not its arguments (they can hold paths or values that don't belong in a file).
+    const recorded = child.pid !== undefined ? { pid: child.pid, startedAt: Date.now(), command: command.slice(0, 200) } : null;
+    if (recorded) this.registry?.add(recorded);
 
     child.on('exit', (code) => {
+      if (recorded) this.registry?.remove([recorded]);
       info.exitCode = code;
       info.status = code === 0 ? 'exited' : (code === null ? 'stopped' : 'crashed');
     });

@@ -103,6 +103,8 @@ export default async function run() {
       ['tmp/.gradle/init.d/atomvs-abi.gradle', '600', 1000],
       ['tmp/.gradle/gradle.properties', '600', 1000],
       ['tmp/.gradle/synkro-upload.p12', '600', 1000],
+      // Read-only use of the image's Gradle build cache (DEC-11, gradle-image-cache.test.ts).
+      ['tmp/.gradle/init.d/atomvs-cache.gradle', '600', 1000],
     ]);
     assert.equal(entries[2].size, Buffer.byteLength(ABI_INIT_SCRIPT));
     assert.equal(entries[4].size, generated.keystore.length);
@@ -110,8 +112,11 @@ export default async function run() {
     const unsigned = createGradleHomeArchive();
     assert.ok(unsigned.includes(Buffer.from('init.d/atomvs-abi.gradle')));
     assert.ok(!unsigned.includes(Buffer.from('gradle.properties')));
-    assert.ok(ABI_INIT_SCRIPT.includes("def abis = ['arm64-v8a', 'armeabi-v7a']"));
+    assert.ok(ABI_INIT_SCRIPT.includes("def abis = ['arm64-v8a']"));
     assert.ok(ABI_INIT_SCRIPT.includes('finalizeDsl'));
+    // No lint on release builds: lintVital pulls the libraries' test dependencies (Robolectric) and costs minutes.
+    assert.ok(ABI_INIT_SCRIPT.includes('android.lint.checkReleaseBuilds = false'));
+    assert.ok(ABI_INIT_SCRIPT.includes('lintOptions.checkReleaseBuilds = false'));
 
     // --- apksigner / aapt2 output ---
     const sample = (prefix: string, dn: string, sha: string) => [

@@ -173,16 +173,21 @@ export default async function runTests() {
   if (Date.now() - t0 > 1000) throw new Error('waitForBundle did not return on "Bundled"');
 
   console.log('  [verify] Processes for user projects do not inherit the Atomvs repo (pnpm dev)...');
-  const sep = process.platform === 'win32' ? ';' : ':';
+  // PATH as this platform writes it: "C:\..." entries joined with ":" would split at the drive letter.
+  const win = process.platform === 'win32';
+  const sep = win ? ';' : ':';
+  const repo = win ? 'C:\\peep' : '/home/me/peep';
+  const at = (...parts: string[]) => (win ? path.win32 : path.posix).join(repo, ...parts);
+  const systemPath = win ? ['C:\\Program Files\\nodejs', 'C:\\Windows'] : ['/usr/local/bin', '/usr/bin'];
   const { env, removed } = userProjectEnv({
-    NODE_PATH: 'C:\\peep\\node_modules\\.pnpm\\node_modules',
-    npm_config_user_agent: 'pnpm/9', npm_lifecycle_event: 'dev', PNPM_SCRIPT_SRC_DIR: 'C:\\peep', INIT_CWD: 'C:\\peep',
-    Path: ['C:\\peep\\apps\\desktop\\node_modules\\.bin', 'C:\\peep\\node_modules\\.bin', 'C:\\Program Files\\nodejs', 'C:\\Windows'].join(sep),
-    HOME: 'C:\\Users\\me',
+    NODE_PATH: at('node_modules', '.pnpm', 'node_modules'),
+    npm_config_user_agent: 'pnpm/9', npm_lifecycle_event: 'dev', PNPM_SCRIPT_SRC_DIR: repo, INIT_CWD: repo,
+    Path: [at('apps', 'desktop', 'node_modules', '.bin'), at('node_modules', '.bin'), ...systemPath].join(sep),
+    HOME: win ? 'C:\\Users\\me' : '/home/me',
   });
   const left = Object.keys(env).sort().join(',');
   if (left !== 'HOME,Path') throw new Error(`Env keys left: ${left}`);
-  if (env.Path !== ['C:\\Program Files\\nodejs', 'C:\\Windows'].join(sep)) throw new Error(`PATH: ${env.Path}`);
+  if (env.Path !== systemPath.join(sep)) throw new Error(`PATH: ${env.Path}`);
   if (!removed.includes('NODE_PATH') || !removed.some((r) => r.startsWith('Path (2'))) throw new Error(`removed: ${removed.join(', ')}`);
 
   console.log('  [expo] npm install <pkg> in an Expo project becomes npx expo install <pkg>...');
@@ -190,6 +195,9 @@ export default async function runTests() {
     ['npm install @expo/vector-icons', 'npx expo install @expo/vector-icons'],
     ['npm i expo-font react-native-svg', 'npx expo install expo-font react-native-svg'],
     ['yarn add expo-image@^1.0.0', 'npx expo install expo-image'],
+    ['npm i react-native-screens@4', 'npx expo install react-native-screens'], // the SDK decides
+    // A library expo install does not know keeps the version asked for (React Navigation 6 on SDK 51).
+    ['npm install @react-navigation/native@^6 @react-navigation/bottom-tabs@^6', 'npx expo install @react-navigation/native@^6 @react-navigation/bottom-tabs@^6'],
     ['pnpm add -D @types/react', 'npx expo install @types/react -- --save-dev'],
     ['npm install', null], // reinstall: nothing to rewrite
     ['npm install -g eas-cli', null], // global
@@ -231,6 +239,22 @@ export default async function runTests() {
     });
     if (r.text.includes('Not verified') || r.calls !== 4) throw new Error(`Clean dependency change not accepted: ${r.text}`);
   }
+  // A JS library whose peers need a newer SDK passes expo's check; npm ls catches it (Cloud Build's npm ci: ERESOLVE).
+  {
+    const r = await run('Add tabs', [
+      { tool: 'run_command', args: { command: 'npx expo install @react-navigation/bottom-tabs' } },
+      { tool: 'validate_project' },
+      { tool: 'restart_preview' },
+      { text: 'Tabs added.' },
+      { text: 'Tabs added, really.' },
+    ], {
+      run_command: ['Command exited with code 0.\n\nnpx expo install --check:\nCommand exited with code 0.\nOutput:\nDependencies are up to date'
+        + '\n\nnpm ls --depth=0:\nCommand exited with code 1.\nOutput:\n+-- react-native-screens@3.31.1 invalid: ">= 4.0.0" from node_modules/@react-navigation/bottom-tabs'],
+      validate_project: [TYPES_OK.replace('"checks": [', '"checks": [{ "type": "tsc", "success": true },')], restart_preview: [CLEAN],
+    });
+    if (!r.text.includes('peer dependencies')) throw new Error(`Unmet peer dependency not reported: ${r.text}`);
+  }
+  if (verificationRole('run_command', { command: 'npm ls --depth=0' }) !== 'depscheck') throw new Error('npm ls is a dependency check');
 
   console.log('  [expo] New projects get Fast Refresh on the web; older entries get a hint...');
   if (!PREVIEW_ENTRY.startsWith("import '@expo/metro-runtime';")) throw new Error('Entry does not import metro-runtime first');

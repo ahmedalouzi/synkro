@@ -230,10 +230,11 @@
 .build-qr-banner {
   flex-shrink: 0;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 14px;
+  gap: 16px;
   margin: 8px 12px 0;
-  padding: 10px 14px;
+  padding: 12px 14px;
   border: 1px solid rgba(74, 222, 128, 0.25);
   border-radius: 8px;
   background: rgba(74, 222, 128, 0.05);
@@ -241,27 +242,38 @@
 
 .build-qr-preview {
   flex-shrink: 0;
-  width: 90px;
-  height: 90px;
-  border-radius: 6px;
+  width: 100%;
+  max-width: 256px;
+  border: none;
+  border-radius: 8px;
   background: #ffffff;
-  padding: 3px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  padding: 8px;
+  box-sizing: border-box;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
   display: flex;
   align-items: center;
   justify-content: center;
+  cursor: zoom-in;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.build-qr-preview:hover {
+  transform: scale(1.01);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
 }
 
 .build-qr-img {
   width: 100%;
-  height: 100%;
+  max-width: 280px;
+  height: auto;
   display: block;
   border-radius: 4px;
 }
 
 .build-qr-skeleton {
   width: 100%;
-  height: 100%;
+  aspect-ratio: 1 / 1;
+  max-width: 256px;
   background: #e2e8f0;
   border-radius: 4px;
   animation: build-pulse 1.2s ease-in-out infinite;
@@ -288,6 +300,14 @@
   flex-shrink: 0;
 }
 
+.build-qr-helper {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+  max-width: 360px;
+}
+
 .build-qr-expiry {
   font-size: 11.5px;
   color: var(--text-secondary);
@@ -296,6 +316,62 @@
 .build-qr-expired-badge {
   color: #f87171;
   font-weight: 500;
+}
+
+/* ── Compact Phone Install Row ── */
+.build-phone-install-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 6px 12px 0;
+  padding: 8px 12px;
+  background: rgba(34, 197, 94, 0.08);
+  border: 1px solid rgba(34, 197, 94, 0.22);
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+.build-phone-install-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-primary);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.build-phone-install-info svg {
+  color: #4ade80;
+  flex-shrink: 0;
+}
+
+.btn-show-qr {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 12px;
+  border-radius: 5px;
+  border: 1px solid rgba(74, 222, 128, 0.4);
+  background: rgba(34, 197, 94, 0.18);
+  color: #4ade80;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.btn-show-qr:hover {
+  background: rgba(34, 197, 94, 0.32);
+  border-color: #4ade80;
+  color: #86efac;
+}
+
+.btn-show-qr:focus-visible {
+  outline: 2px solid #4ade80;
+  outline-offset: 1px;
 }
 
 .build-qr-actions {
@@ -329,4 +405,132 @@
 .btn-qr-refresh:disabled {
   opacity: 0.6;
   cursor: default;
+}
+
+/* ── Dependency check before the upload (DepsCheckCard) ── */
+.build-deps-card {
+  flex-shrink: 0;
+  margin: 8px 12px 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  border-radius: 6px;
+  background: rgba(251, 191, 36, 0.07);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.build-panel.empty .build-deps-card { align-self: stretch; margin: 0 0 8px; text-align: left; }
+.build-deps-card.is-busy { display: flex; align-items: center; gap: 8px; border-color: var(--border-bright); background: none; }
+.build-deps-title { color: #fbbf24; font-weight: 600; }
+.build-deps-card.is-busy .build-deps-title { color: var(--text-secondary); font-weight: 400; }
+.build-deps-hint { margin-top: 4px; }
+.build-deps-list {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  max-height: 96px;
+  overflow-y: auto;
+  color: var(--text-primary);
+  font-family: var(--font-code);
+  font-size: 11px;
+}
+.build-deps-more { color: var(--text-secondary); font-family: inherit; list-style: none; margin-left: -18px; }
+.build-deps-error {
+  margin: 8px 0 0;
+  max-height: 80px;
+  overflow-y: auto;
+  color: #f87171;
+  font-family: var(--font-code);
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.build-deps-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.build-deps-actions button {
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--border-bright);
+  border-radius: 5px;
+  background: none;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.build-deps-actions button:hover { background: var(--bg-hover); color: var(--text-primary); }
+.build-deps-actions button.is-primary { border-color: transparent; background: #fbbf24; color: #1f1300; font-weight: 600; }
+.build-deps-actions button.is-primary:hover { background: #fcd34d; color: #1f1300; }
+.build-deps-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--border-bright);
+  border-top-color: #fbbf24;
+  border-radius: 50%;
+  animation: build-deps-spin 0.8s linear infinite;
+}
+@keyframes build-deps-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .build-deps-spinner { animation: none; } }
+
+/* ── QR Enlarge Modal ── */
+.build-qr-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.build-qr-modal-card {
+  position: relative;
+  background: var(--bg-panel, #18181b);
+  border: 1px solid var(--border-bright, #3f3f46);
+  border-radius: 12px;
+  padding: 20px;
+  max-width: calc(100vw - 32px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+}
+
+.build-qr-modal-close {
+  position: absolute;
+  top: 10px;
+  inset-inline-end: 10px;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border-bright, #3f3f46);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary, #a1a1aa);
+  font-size: 16px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.build-qr-modal-close:hover {
+  background: var(--bg-hover, rgba(255, 255, 255, 0.08));
+  color: var(--text-primary, #f4f4f5);
+}
+
+.build-qr-modal-frame {
+  background: #ffffff;
+  padding: 12px;
+  border-radius: 10px;
+  margin-top: 16px;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.build-qr-modal-img {
+  width: 100%;
+  max-width: 400px;
+  height: auto;
+  display: block;
+  border-radius: 4px;
 }

@@ -274,6 +274,8 @@
 
 .topbar__build:hover:not(:disabled) { background: rgba(74, 222, 128, 0.18); }
 .topbar__build:disabled { opacity: 0.55; cursor: not-allowed; }
+.topbar__build.is-building { border-color: rgba(103, 232, 249, 0.45); background: rgba(34, 211, 238, 0.12); color: #67e8f9; }
+.topbar__build.is-building:hover { background: rgba(34, 211, 238, 0.2); }
 .topbar__avatar {
   width: 22px;
   height: 22px;
