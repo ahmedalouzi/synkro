@@ -1167,3 +1167,4 @@ export interface AIGateway {
 }
 
 export { ProviderError } from './provider-error';
+export { syncedFolderOf, flutterEnvironmentMessage, parseFlutterEnvironmentProblem, FLUTTER_STARTUP_LOCK_LINE, type FlutterEnvironmentProblem } from './flutter-environment';
