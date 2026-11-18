@@ -1,5 +1,5 @@
 import { webFrame } from 'electron';
-import { tabBarLayoutIssues } from '@peep/shared';
+import { flutterLayoutIssues, tabBarLayoutIssues } from '@peep/shared';
 
 /**
  * Safe-area insets for the app in the Preview pane.
@@ -48,6 +48,7 @@ export function isSafeAreaMessage(data: unknown): data is { type: 'atomvs:safe-a
  */
 function pageShim(
   rewrite: (css: string) => string, isInsets: (data: unknown) => boolean, tabBarIssues: (m: unknown) => unknown[],
+  flutterIssues: (m: unknown) => unknown[],
 ): void {
   if ((window as any).__atomvsSafeArea) return;
   Object.defineProperty(window, '__atomvsSafeArea', { value: true });
@@ -273,7 +274,14 @@ function pageShim(
       rendered: root.childElementCount > 0 && (text.length > 0 || media > 0),
       textChars: text.length,
       overlay: OVERLAY.test(text) ? text.slice(0, 1500) : '',
-      layout: (() => { try { return tabBarIssues(measureTabBars()); } catch { return []; } })(),
+      layout: (() => {
+        try {
+          // A Flutter app (canvas): its preview entrypoint measured the screen (window.__atomvsFlutterLayout).
+          const f = (window as any).__atomvsFlutterLayout;
+          const flutter = f && typeof f === 'object' && typeof f.innerHeight === 'number' && Array.isArray(f.texts) ? flutterIssues(f) : [];
+          return [...tabBarIssues(measureTabBars()), ...flutter].slice(0, 5);
+        } catch { return []; }
+      })(),
     };
     const key = JSON.stringify(state);
     if (key !== lastRuntime) {
@@ -288,7 +296,7 @@ function pageShim(
   function schedule() { if (!pending) pending = window.setTimeout(() => { pending = 0; report(); reportRuntime(); }, 250); }
   new MutationObserver(schedule).observe(document, { subtree: true, childList: true, attributes: true });
   for (const type of ['scroll', 'transitionend', 'animationend']) window.addEventListener(type, schedule, { capture: true, passive: true });
-  for (const type of ['resize', 'popstate', 'hashchange']) window.addEventListener(type, schedule);
+  for (const type of ['resize', 'popstate', 'hashchange', 'atomvs:flutter-layout']) window.addEventListener(type, schedule);
   prefersDark.addEventListener('change', schedule);
 
   // Insets from the host.
@@ -320,6 +328,6 @@ function isPreviewFrame(): boolean {
 export function installPreviewSafeArea(): void {
   if (!isPreviewFrame()) return;
   void webFrame.executeJavaScript(
-    `(${pageShim.toString()})(${rewriteSafeAreaEnv.toString()}, ${isSafeAreaMessage.toString()}, ${tabBarLayoutIssues.toString()});`,
+    `(${pageShim.toString()})(${rewriteSafeAreaEnv.toString()}, ${isSafeAreaMessage.toString()}, ${tabBarLayoutIssues.toString()}, ${flutterLayoutIssues.toString()});`,
   );
 }

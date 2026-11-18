@@ -52,7 +52,8 @@ export interface PreviewRuntimeReport {
   layout: PreviewLayoutIssue[];
 }
 
-export type PreviewLayoutIssueKind = 'tab-bar-under-home-indicator' | 'tab-labels-clipped';
+export type PreviewLayoutIssueKind = 'tab-bar-under-home-indicator' | 'tab-labels-clipped'
+  | 'content-under-status-bar' | 'content-under-home-indicator' | 'too-many-tabs';
 export interface PreviewLayoutIssue { kind: PreviewLayoutIssueKind; message: string }
 
 /** What the preview shim measures of a bottom tab bar ([role=tablist] in the lower half of the screen), in CSS px. */
@@ -110,7 +111,63 @@ export function tabBarLayoutIssues(m: TabBarMeasurement): PreviewLayoutIssue[] {
   return issues.slice(0, 5);
 }
 
-const LAYOUT_KINDS = new Set<string>(['tab-bar-under-home-indicator', 'tab-labels-clipped']);
+/**
+ * What the Flutter preview entrypoint measures (flutter-preview-entry.ts): the screen height, the insets it gave the
+ * app, the bottom-navigation destinations, and every visible text with where it is (inside an AppBar or a bottom
+ * navigation bar) and whether it is cut (ellipsis, or a navigation label that does not fit on one line). CSS px.
+ */
+export interface FlutterLayoutMeasurement {
+  innerHeight: number;
+  insetTop: number;
+  insetBottom: number;
+  navItems: number;
+  texts: Array<{ top: number; bottom: number; appBar: boolean; nav: boolean; clipped: boolean }>;
+}
+
+/**
+ * Layout problems of a Flutter screen, as a phone would show them (a user's preview: the header under the status bar /
+ * Dynamic Island, a 7-item bottom navigation with cut labels down at the home indicator):
+ *  - text under the status bar, or under the home indicator / gesture bar;
+ *  - more than 5 bottom-navigation destinations;
+ *  - bottom-navigation labels that do not fit.
+ * Self-contained like tabBarLayoutIssues: serialised into the page shim.
+ */
+export function flutterLayoutIssues(m: FlutterLayoutMeasurement): PreviewLayoutIssue[] {
+  const SAFE_FIX = 'Build each screen with a Scaffold (appBar for the header) and wrap content that is not in an AppBar or a '
+    + 'bottom navigation bar in SafeArea: they keep it clear of the status bar / Dynamic Island and the home indicator.';
+  const NAV_FIX = 'Use at most 5 bottom-navigation destinations (move the rest into a "More" tab or a Drawer) with short labels '
+    + '(one or two short words), so every label fits.';
+  const issues: PreviewLayoutIssue[] = [];
+  const texts = Array.isArray(m.texts) ? m.texts : [];
+  const homeTop = m.innerHeight - m.insetBottom;
+  const underTop = m.insetTop > 0 ? texts.filter((t) => !t.appBar && t.top < m.insetTop - 1 && t.bottom > 1) : [];
+  if (underTop.length) {
+    issues.push({
+      kind: 'content-under-status-bar',
+      message: `${underTop.length} text(s) start inside the top ${Math.round(m.insetTop)} px the phone keeps for its status bar / `
+        + `camera cutout (the highest at ${Math.round(Math.min(...underTop.map((t) => t.top)))} px), so they sit under it. ` + SAFE_FIX,
+    });
+  }
+  const underBottom = m.insetBottom > 0 ? texts.filter((t) => t.bottom > homeTop + 1 && t.top < m.innerHeight - 1) : [];
+  if (underBottom.length) {
+    issues.push({
+      kind: 'content-under-home-indicator',
+      message: `${underBottom.length} text(s) reach into the bottom ${Math.round(m.insetBottom)} px the phone keeps for its home `
+        + `indicator / gesture bar, so they sit under it. ` + SAFE_FIX,
+    });
+  }
+  if (m.navItems > 5) {
+    issues.push({ kind: 'too-many-tabs', message: `The bottom navigation has ${m.navItems} destinations; phones fit 5 at most. ` + NAV_FIX });
+  }
+  const cut = texts.filter((t) => t.nav && t.clipped);
+  if (cut.length) {
+    issues.push({ kind: 'tab-labels-clipped', message: `${cut.length} bottom-navigation label(s) do not fit and are cut or wrapped. ` + NAV_FIX });
+  }
+  return issues.slice(0, 5);
+}
+
+const LAYOUT_KINDS = new Set<string>(['tab-bar-under-home-indicator', 'tab-labels-clipped', 'content-under-status-bar',
+  'content-under-home-indicator', 'too-many-tabs']);
 
 /**
  * The agent's proposed-edits event: main sends { edits, threadId }. Read as if it were the array, it threw

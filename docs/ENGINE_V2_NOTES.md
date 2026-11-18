@@ -55,3 +55,27 @@ Short lessons from real user problems, for the next version of the agent engine.
 - **Run a preflight before queuing a build**, on the desktop, in seconds: SDK and toolchain compatibility, platform-folder health, and dependency resolution. Fail fast with a fix the agent can apply, not after a slot on the build server.
 - **Feed Cloud Build failures back to the agent** as structured errors (kind, file, line, suggested fix), the same way preview errors are fed back. The agent can then fix the project and rebuild without the user copying logs around.
 - **Pin and record the toolchain version per build** (Flutter, Gradle, AGP) in the build log and job row, so "worked last month, fails today" is visible at once.
+
+---
+
+## 3. A preview has to give the app what a phone gives it, for every framework (2026-11-18)
+
+**What happened.** A user's Flutter app in the iPhone 15 frame showed its header under the status bar / Dynamic Island, and a 7-item bottom navigation with cut labels down at the home indicator. On a real phone, Scaffold and SafeArea would have moved the header down.
+
+**Why the engine let it through.**
+- The preview's safe-area support was written for the web (CSS `env(safe-area-inset-*)`). Flutter web draws on a canvas and reads its insets from the engine. In a browser they are 0, on every device. The phone frame looked right, but the app inside it had no idea a status bar was there.
+- The agent was never told about bottom-navigation limits (5 destinations, short labels). The layout check (lesson 1) only looked at React Navigation's DOM.
+
+**What we did (v1).**
+- **A preview-only entrypoint** (`.dart_tool/atomvs_preview/main.dart`, run with `flutter run -t`). Its binding's `wrapWithDefaultView` puts a `MediaQuery` with the device's insets above the app. Scaffold, AppBar, NavigationBar and SafeArea now behave as on a phone.
+- **The same entrypoint measures the screen from the render tree**: text under the status bar or home indicator, more than 5 destinations, labels that do not fit. The shim reports these to the agent as "Layout problems on screen" (`flutterLayoutIssues`).
+- **A prompt rule** `SAFE AREAS (Flutter)`.
+- **Verified** with Flutter 3.44 on five devices:
+  - without the entrypoint, padding is 0;
+  - with it, padding equals the device's insets and there are no problems;
+  - the user's broken screen is reported on every device.
+
+**What v2 should do by design.**
+- **One device contract for every framework.** The preview must hand each runtime (web CSS, React Native, Flutter, later native) the same device facts a phone gives it: insets, size, pixel ratio, text scale, dark mode, keyboard. Each needs its own adapter, and the facts get tested per framework. A frame that only looks like a phone is not enough.
+- **Measure the rendered result, not the DOM.** Canvas frameworks need a probe inside the runtime (render tree, semantics tree). The layout rules (safe areas, cut text, tap targets, tab counts) then run on one common measurement format, whatever drew the pixels.
+- **Platform guidelines as checked rules.** Material and Apple limits (bottom navigation 3 to 5 items, minimum tap targets, label length) belong in the layout checks with a fix each, not only in prose.

@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import type { Diagnostic, MobileEnvironment } from '@peep/shared';
 import { getTemplate, parseFlutterAnalyze } from '@peep/flutter-adapter';
 import type { ProcessManager } from './process-manager';
+import { writePreviewEntry } from './flutter-preview-entry';
 import { FrameworkProvider, type ProviderPreviewSession } from './providers/base-provider';
 
 export function isFlutterSdkNotFoundError(msg: string): boolean {
@@ -139,9 +140,11 @@ void main() {
     onLog?: (line: string) => void
   ): Promise<{ url: string; processId: number; logs: string[] }> {
     const flutterRoot = await this.findFlutterRoot(projectRoot);
+    // Through the preview entrypoint: the app gets the phone's safe-area insets (see flutter-preview-entry.ts).
+    const target = await writePreviewEntry(flutterRoot);
     const info = this.processManager.spawn(
       this.getFlutterBin(),
-      ['run', '-d', 'web-server', '--web-port', String(port), '--web-hostname', '127.0.0.1'],
+      ['run', '-d', 'web-server', '--web-port', String(port), '--web-hostname', '127.0.0.1', ...(target ? ['-t', target] : [])],
       flutterRoot,
     );
 
