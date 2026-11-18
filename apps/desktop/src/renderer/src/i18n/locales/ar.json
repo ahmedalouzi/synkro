@@ -455,6 +455,21 @@
     "update.checkForUpdates": "التحقق من وجود تحديثات...",
     "workbench.action.showAboutDialog": "حول التطبيق"
   },
+  "approval": {
+    "commandTitle": "يريد الوكيل تشغيل أمر",
+    "deleteTitle": "يريد الوكيل حذف ملف",
+    "deleteReason": "السبب: {reason}",
+    "deleteNoReason": "لم يذكر سببًا.",
+    "deleteReversible": "يمكنك استعادته بـ «استعادة نقطة الحفظ».",
+    "deleteNotReversible": "لا يمكن التراجع عن هذا الحذف من Atomvs.",
+    "allowOnce": "السماح مرة واحدة",
+    "allowDelete": "حذف",
+    "always": "السماح دائمًا بـ «{key}» في هذا المشروع",
+    "alwaysHint": "سيشغّل Atomvs أوامر «{key}» في هذا المشروع دون أن يسأل.",
+    "reject": "رفض",
+    "waiting": "بانتظار موافقتك",
+    "addedPackage": "أُضيفت حزمة: {name}"
+  },
   "chat": {
     "askAnything": "اسأل أي شيء، @ للإشارة، / للإجراءات",
     "inputPlaceholder": "خطّط، ابنِ، @ لإضافة سياق",

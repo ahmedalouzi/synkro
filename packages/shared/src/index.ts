@@ -189,6 +189,8 @@ export interface AgentTimelineActivity {
   file?: string;
   files?: string[];
   command?: string;
+  /** run_command: new packages it added to the project, shown as "Added package: <name>". */
+  packages?: string[];
   count?: number;
 }
 
@@ -687,6 +689,10 @@ export const IPC_CHANNELS = {
   AGENT_RESTORE_CHECKPOINT: 'agent:restoreCheckpoint',
   AGENT_LIST_CHECKPOINTS: 'agent:listCheckpoints',
   RUN_COMMAND: 'terminal:runCommand',
+  /** (id, decision): the user's answer to an approval card. */
+  AGENT_APPROVAL_RESPOND: 'agent:approvalRespond',
+  /** The approval cards still waiting (after a reload of the window). */
+  AGENT_APPROVAL_PENDING: 'agent:approvalPending',
   PROJECT_LIST_TEMPLATES: 'project:listTemplates',
   PROJECT_CREATE: 'project:create',
   PROJECT_CREATE_FROM_PROMPT: 'project:createFromPrompt',
@@ -891,6 +897,10 @@ export const IPC_EVENTS = {
   PUBLISH_LOG: 'publish:log',
   AUTH_SESSION_EXPIRED: 'auth:sessionExpired',
   AGENT_TIMELINE: 'agent:timeline',
+  /** ApprovalRequest: the agent wants to do something the user must allow (main -> renderer). */
+  AGENT_APPROVAL_REQUEST: 'agent:approvalRequest',
+  /** { id, outcome }: a request was answered, or ended without an answer (main -> renderer). */
+  AGENT_APPROVAL_RESOLVED: 'agent:approvalResolved',
   AGENT_PHASE_CHANGED: 'agent:phaseChanged',
   FILE_CHANGED: 'file:changed',
   // Cloud Build
@@ -905,6 +915,25 @@ export interface WorkspaceChangeEvent {
   type: 'add' | 'addDir' | 'change' | 'unlink' | 'unlinkDir';
   path: string;
 }
+
+/** What the agent asks the user to allow: a command, or deleting a file. */
+export interface ApprovalRequest {
+  id: string;
+  threadId?: string;
+  kind: 'command' | 'delete-file';
+  /** The command line, or the file path (relative to the project). */
+  subject: string;
+  /** Why it needs the user's approval. */
+  reason: string;
+  /** What "Always allow in this project" would remember (e.g. "git checkout"), or null when it is not offered. */
+  alwaysAllowKey: string | null;
+  /** For a file deletion: whether a checkpoint can restore it. */
+  reversible?: boolean;
+}
+
+export type ApprovalDecision = 'allow-once' | 'always' | 'reject';
+/** How a request ended: the user's decision, or no answer (a new message, Stop, or the run ended). */
+export type ApprovalOutcome = ApprovalDecision | 'no-answer';
 
 export interface IpcApi {
   openFolder: () => Promise<ProjectInfo | null>;
@@ -1033,6 +1062,10 @@ export interface IpcApi {
   onAgentStream: (callback: (event: AgentStreamEvent) => void) => () => void;
   onAgentActivity: (callback: (event: AgentActivityEvent) => void) => () => void;
   onAgentTimeline: (callback: (activity: AgentTimelineActivity) => void) => () => void;
+  onApprovalRequest: (callback: (request: ApprovalRequest) => void) => () => void;
+  onApprovalResolved: (callback: (event: { id: string; outcome: ApprovalOutcome }) => void) => () => void;
+  respondApproval: (id: string, decision: ApprovalDecision) => Promise<boolean>;
+  getPendingApprovals: () => Promise<ApprovalRequest[]>;
   onAgentPhase: (callback: (phase: AgentPhase) => void) => () => void;
   /** `threadId`: the chat the edits belong to, when the agent knows it. */
   onProposedEdits: (callback: (edits: ProposedEdit[], threadId?: string) => void) => () => void;
