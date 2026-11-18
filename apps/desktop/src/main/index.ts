@@ -3,7 +3,8 @@ import { app, BrowserWindow, Menu } from 'electron';
 import { handleWindowOpenSafely } from './safe-external';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { cleanupServices, registerIpcHandlers, setMainWindow } from './ipc';
+import { cleanupServices, processRegistry, registerIpcHandlers, setMainWindow } from './ipc';
+import { stopLeftoverProcesses } from './services/process-registry';
 import { config } from 'dotenv';
 import * as Sentry from '@sentry/electron/main';
 import log from 'electron-log/main';
@@ -195,9 +196,10 @@ import { setupPoCIpc } from './ipc/poc';
 app.whenReady().then(() => {
   if (process.platform === 'win32') {
     app.setAppUserModelId('com.atomvs.desktop');
-    // Terminate any orphaned dart processes to release active sockets and lockfiles
-    import('node:child_process').then(({ exec }) => {
-      exec('taskkill /f /im dart.exe', () => {});
+    // Stop the processes a previous run of Atomvs left behind (a crash or forced quit), by PID: only those, never
+    // every dart.exe on the PC (that also stopped the user's own Flutter tools outside Atomvs).
+    void stopLeftoverProcesses(processRegistry()).then((pids) => {
+      if (pids.length) log.info(`[startup] Stopped ${pids.length} process(es) left over from the last run: ${pids.join(', ')}`);
     });
   }
 

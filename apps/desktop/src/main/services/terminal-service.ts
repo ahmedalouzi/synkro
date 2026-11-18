@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { existsSync } from 'node:fs';
 import type { BrowserWindow } from 'electron';
 import { IPC_EVENTS } from '@peep/shared';
+import { processKillPolicy } from '@peep/agent';
 import type { RunCommandResult } from '@peep/shared';
 import { globalIpcBatcher } from '../utils/ipc-batcher';
 import { cleanUserProjectEnv } from './process-manager';
@@ -316,16 +317,43 @@ export class TerminalService {
     }
   }
 
-  isCommandAllowed(command: string): boolean {
-    const trimmed = command.trim().toLowerCase();
-    if (!trimmed) return false;
+  /** PIDs of processes Atomvs started elsewhere (ProcessManager: preview, dev servers). */
+  private otherOwnedPids: () => number[] = () => [];
 
-    return ALLOWED_PREFIXES.some((prefix) => trimmed.startsWith(prefix));
+  setOwnedPidsProvider(provider: () => number[]): void {
+    this.otherOwnedPids = provider;
+  }
+
+  /** PIDs of the processes this service started (terminals and command runs) that are still running. */
+  pids(): number[] {
+    const pids: number[] = [];
+    for (const pty of this.ptySessions.values()) pids.push(pty.pid);
+    for (const s of [...this.sessions.values(), ...this.commandSessions.values()]) {
+      if (s.process.pid !== undefined && s.process.exitCode === null) pids.push(s.process.pid);
+    }
+    return pids;
+  }
+
+  /**
+   * Why `command` may not run here, or null. A command that stops processes is refused anywhere in the line (an
+   * allowed prefix does not help: "flutter --version & taskkill /F /IM dart.exe" runs both in the shell) unless it
+   * stops only processes Atomvs started, by PID. Otherwise the command must start with an allowed prefix.
+   */
+  commandRejection(command: string): string | null {
+    const trimmed = command.trim().toLowerCase();
+    if (!trimmed) return 'empty command';
+    const kill = processKillPolicy(command, new Set([...this.pids(), ...this.otherOwnedPids()]));
+    if (!kill.allowed) return kill.reason!;
+    return ALLOWED_PREFIXES.some((prefix) => trimmed.startsWith(prefix)) ? null : command;
+  }
+
+  isCommandAllowed(command: string): boolean {
+    return this.commandRejection(command) === null;
   }
 
   async runCommand(command: string, cwd: string): Promise<RunCommandResult> {
     if (!this.isCommandAllowed(command)) {
-      throw new Error(`Command not allowed: ${command}`);
+      throw new Error(`Command not allowed: ${this.commandRejection(command) ?? command}`);
     }
 
     return new Promise((resolve, reject) => {
@@ -363,7 +391,7 @@ export class TerminalService {
 
   async streamCommand(id: string, command: string, cwd: string): Promise<number> {
     if (!this.isCommandAllowed(command)) {
-      throw new Error(`Command not allowed: ${command}`);
+      throw new Error(`Command not allowed: ${this.commandRejection(command) ?? command}`);
     }
 
     if (!cwd || !existsSync(cwd)) {
