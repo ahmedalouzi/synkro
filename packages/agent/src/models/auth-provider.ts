@@ -11,5 +11,5 @@ export interface IAuthProvider {
     emailOrOptions?: string | { enforceCooldown?: boolean },
     options?: { enforceCooldown?: boolean }
   ): Promise<{ success: boolean; code?: string }>;
-  verifyEmailOtp?(userIdOrEmail: string, code: string): Promise<{ success: boolean; emailVerified: boolean }>;
+  verifyEmailOtp?(userIdOrEmail: string, code: string, deviceId?: string): Promise<{ success: boolean; emailVerified: boolean }>;
 }

@@ -39,7 +39,7 @@ export class AuthenticationRouter implements IAuthProvider {
     return this.productionProvider.sendVerificationCode(userIdOrEmail, emailOrOptions, options);
   }
 
-  async verifyEmailOtp(userIdOrEmail: string, code: string) {
-    return this.productionProvider.verifyEmailOtp(userIdOrEmail, code);
+  async verifyEmailOtp(userIdOrEmail: string, code: string, deviceId?: string) {
+    return this.productionProvider.verifyEmailOtp(userIdOrEmail, code, deviceId);
   }
 }

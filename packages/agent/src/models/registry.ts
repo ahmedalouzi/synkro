@@ -1,4 +1,5 @@
 import type { ModelProfile } from './types';
+import { getModelPriceRates } from './pricing';
 
 export class ModelRegistry {
   private models: Map<string, ModelProfile> = new Map();
@@ -8,14 +9,17 @@ export class ModelRegistry {
   }
 
   private registerDefaults() {
+    // Helper to get rates from authoritative pricing table
+    const getRates = (id: string) => getModelPriceRates(id);
+
     // OpenAI Models
     this.register({
       provider: 'openai',
       modelId: 'gpt-4o',
       capabilities: { reasoning: 9, coding: 9, debugging: 9, ui_generation: 8, vision: 9, speed: 6 },
       contextWindow: 128000,
-      costInput: 5.00,
-      costOutput: 15.00,
+      costInput: getRates('gpt-4o').inputPerMillion,
+      costOutput: getRates('gpt-4o').outputPerMillion,
       tier: 'strong'
     });
     this.register({
@@ -23,19 +27,28 @@ export class ModelRegistry {
       modelId: 'gpt-4o-mini',
       capabilities: { reasoning: 6, coding: 5, debugging: 5, ui_generation: 4, vision: 7, speed: 9 },
       contextWindow: 128000,
-      costInput: 0.15,
-      costOutput: 0.60,
+      costInput: getRates('gpt-4o-mini').inputPerMillion,
+      costOutput: getRates('gpt-4o-mini').outputPerMillion,
       tier: 'fast'
     });
 
     // Google Models
     this.register({
       provider: 'google',
+      modelId: 'gemini-3.5-flash-lite',
+      capabilities: { reasoning: 6, coding: 6, debugging: 5, ui_generation: 5, vision: 7, speed: 10 },
+      contextWindow: 1000000,
+      costInput: getRates('gemini-3.5-flash-lite').inputPerMillion,
+      costOutput: getRates('gemini-3.5-flash-lite').outputPerMillion,
+      tier: 'fast'
+    });
+    this.register({
+      provider: 'google',
       modelId: 'gemini-3.1-pro',
       capabilities: { reasoning: 9, coding: 9, debugging: 9, ui_generation: 8, vision: 9, speed: 6 },
       contextWindow: 2000000,
-      costInput: 1.25,
-      costOutput: 5.00,
+      costInput: getRates('gemini-3.1-pro').inputPerMillion,
+      costOutput: getRates('gemini-3.1-pro').outputPerMillion,
       tier: 'strong'
     });
     this.register({
@@ -43,9 +56,18 @@ export class ModelRegistry {
       modelId: 'gemini-3.6-flash',
       capabilities: { reasoning: 7, coding: 6, debugging: 6, ui_generation: 5, vision: 8, speed: 9 },
       contextWindow: 1000000,
-      costInput: 0.075,
-      costOutput: 0.30,
+      costInput: getRates('gemini-3.6-flash').inputPerMillion,
+      costOutput: getRates('gemini-3.6-flash').outputPerMillion,
       tier: 'fast'
+    });
+    this.register({
+      provider: 'google',
+      modelId: 'gemini-4-argon',
+      capabilities: { reasoning: 10, coding: 9, debugging: 9, ui_generation: 8, vision: 9, speed: 7 },
+      contextWindow: 2000000,
+      costInput: getRates('gemini-4-argon').inputPerMillion,
+      costOutput: getRates('gemini-4-argon').outputPerMillion,
+      tier: 'strong'
     });
 
     // Anthropic Models (for future/completeness)
@@ -54,8 +76,8 @@ export class ModelRegistry {
       modelId: 'claude-3-5-sonnet',
       capabilities: { reasoning: 10, coding: 10, debugging: 10, ui_generation: 9, vision: 8, speed: 7 },
       contextWindow: 200000,
-      costInput: 3.00,
-      costOutput: 15.00,
+      costInput: getRates('claude-3-5-sonnet').inputPerMillion,
+      costOutput: getRates('claude-3-5-sonnet').outputPerMillion,
       tier: 'strong'
     });
   }

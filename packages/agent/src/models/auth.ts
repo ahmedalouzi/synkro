@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { promisify } from 'util';
 import { db } from './db';
 import { randomUUID } from 'node:crypto';
+import { creditLedgerService } from './credit-ledger';
 
 const scryptAsync = promisify(crypto.scrypt);
 const randomBytesAsync = promisify(crypto.randomBytes);
@@ -543,7 +544,7 @@ export class AuthService implements IAuthProvider {
     console.log(`[EmailVerification] OTP for ${email}: ${otp}`);
   }
 
-  async verifyEmailOtp(userIdOrEmail: string, code: string): Promise<{ success: boolean; emailVerified: boolean }> {
+  async verifyEmailOtp(userIdOrEmail: string, code: string, deviceId?: string): Promise<{ success: boolean; emailVerified: boolean }> {
     if (!code || typeof code !== 'string') {
       throw new Error('Verification code is required');
     }
@@ -621,6 +622,10 @@ export class AuthService implements IAuthProvider {
       );
       await client.query('COMMIT');
       committed = true;
+
+      // Grant welcome credits (250) and initial monthly plan credits
+      await creditLedgerService.grantWelcomeCredits(userId, userIdOrEmail.includes('@') ? userIdOrEmail : '', deviceId).catch(() => {});
+      await creditLedgerService.ensureMonthlyPlanGrant(userId, 'free').catch(() => {});
 
       return { success: true, emailVerified: true };
     } catch (err) {

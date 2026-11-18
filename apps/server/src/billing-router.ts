@@ -1,6 +1,6 @@
 import express, { Router } from 'express';
 import * as crypto from 'node:crypto';
-import { db } from '@peep/agent/server';
+import { db, creditLedgerService } from '@peep/agent/server';
 
 let customDbPool: any = null;
 export function setBillingDbPool(pool: any) {
@@ -37,7 +37,7 @@ export function verifyStripeSignature(rawBody: Buffer, signatureHeader: string |
   return crypto.timingSafeEqual(expectedBuf, actualBuf);
 }
 
-interface NormalizedBillingEvent {
+export interface NormalizedBillingEvent {
   provider: 'lemonsqueezy' | 'stripe';
   eventId: string;
   eventType: string;
@@ -46,7 +46,15 @@ interface NormalizedBillingEvent {
   customerId?: string;
   subscriptionId?: string;
   status: string;
-  targetPlan: 'pro' | 'free';
+  targetPlan: 'pro_plus' | 'pro' | 'free';
+  isCreditPack?: boolean;
+  packCredits?: number;
+}
+
+function isProPlusText(val: unknown): boolean {
+  if (!val) return false;
+  const s = String(val).toLowerCase().trim();
+  return s === 'pro_plus' || s === 'pro+' || /pro[\s_-]*(\+|plus)/i.test(s);
 }
 
 export function normalizeWebhookPayload(provider: 'lemonsqueezy' | 'stripe', payload: any): NormalizedBillingEvent | null {
@@ -61,6 +69,38 @@ export function normalizeWebhookPayload(provider: 'lemonsqueezy' | 'stripe', pay
     if (!eventName) return null;
 
     const status: string = String(attrs.status || '').toLowerCase();
+    const eventId =
+      String(payload.meta?.webhook_id || '') ||
+      `ls_${eventName}_${data.id || 'unknown'}_${attrs.updated_at || Date.now()}`;
+
+    // Detect one-time credit pack order
+    const lsVariantName = String(attrs.variant_name || attrs.first_order_item?.variant_name || attrs.product_name || '');
+    const isLsPack =
+      eventName === 'order_created' &&
+      (status === 'paid' || status === '') &&
+      (customData.type === 'credit_pack' ||
+        customData.is_credit_pack === true ||
+        customData.is_credit_pack === 'true' ||
+        /pack|credit/i.test(lsVariantName) ||
+        Boolean(customData.pack_credits));
+
+    if (isLsPack) {
+      const packCredits = Number(customData.pack_credits) || 500;
+      return {
+        provider: 'lemonsqueezy',
+        eventId,
+        eventType: eventName,
+        email: attrs.user_email ? String(attrs.user_email).toLowerCase().trim() : undefined,
+        userId: customData.user_id ? String(customData.user_id).trim() : undefined,
+        customerId: attrs.customer_id !== undefined ? String(attrs.customer_id) : undefined,
+        subscriptionId: undefined,
+        status: status || 'paid',
+        targetPlan: 'free',
+        isCreditPack: true,
+        packCredits,
+      };
+    }
+
     const isUpgrade =
       (eventName === 'subscription_created' ||
         eventName === 'subscription_updated' ||
@@ -78,9 +118,12 @@ export function normalizeWebhookPayload(provider: 'lemonsqueezy' | 'stripe', pay
 
     if (!isUpgrade && !isDowngrade) return null;
 
-    const eventId =
-      String(payload.meta?.webhook_id || '') ||
-      `ls_${eventName}_${data.id || 'unknown'}_${attrs.updated_at || Date.now()}`;
+    const proPlusVariantEnv = process.env.LEMONSQUEEZY_PRO_PLUS_VARIANT_ID;
+    const isProPlus =
+      (proPlusVariantEnv && String(attrs.variant_id || '') === proPlusVariantEnv) ||
+      isProPlusText(attrs.variant_name) ||
+      isProPlusText(attrs.product_name) ||
+      isProPlusText(customData.plan);
 
     return {
       provider: 'lemonsqueezy',
@@ -91,7 +134,8 @@ export function normalizeWebhookPayload(provider: 'lemonsqueezy' | 'stripe', pay
       customerId: attrs.customer_id !== undefined ? String(attrs.customer_id) : undefined,
       subscriptionId: data.id !== undefined ? String(data.id) : undefined,
       status: status || (isUpgrade ? 'active' : 'expired'),
-      targetPlan: isUpgrade && !isDowngrade ? 'pro' : 'free',
+      targetPlan: isUpgrade && !isDowngrade ? (isProPlus ? 'pro_plus' : 'pro') : 'free',
+      isCreditPack: false,
     };
   }
 
@@ -102,6 +146,42 @@ export function normalizeWebhookPayload(provider: 'lemonsqueezy' | 'stripe', pay
   if (!eventType || !eventId) return null;
 
   const status: string = String(obj.status || '').toLowerCase();
+  const email =
+    obj.customer_email ||
+    obj.customer_details?.email ||
+    obj.receipt_email;
+
+  // Detect one-time credit pack purchase in Stripe
+  const isStripePack =
+    (eventType === 'checkout.session.completed' &&
+      (obj.mode === 'payment' ||
+        obj.metadata?.type === 'credit_pack' ||
+        obj.metadata?.is_credit_pack === 'true' ||
+        Boolean(obj.metadata?.pack_credits) ||
+        Boolean(obj.metadata?.pack))) ||
+    (eventType === 'payment_intent.succeeded' &&
+      (obj.metadata?.type === 'credit_pack' ||
+        obj.metadata?.is_credit_pack === 'true' ||
+        Boolean(obj.metadata?.pack_credits) ||
+        Boolean(obj.metadata?.pack)));
+
+  if (isStripePack) {
+    const packCredits = Number(obj.metadata?.pack_credits || obj.metadata?.pack) || 500;
+    return {
+      provider: 'stripe',
+      eventId,
+      eventType,
+      email: email ? String(email).toLowerCase().trim() : undefined,
+      userId: obj.metadata?.user_id || obj.client_reference_id || undefined,
+      customerId: obj.customer ? String(obj.customer) : undefined,
+      subscriptionId: undefined,
+      status: status || 'succeeded',
+      targetPlan: 'free',
+      isCreditPack: true,
+      packCredits,
+    };
+  }
+
   const isUpgrade =
     eventType === 'checkout.session.completed' ||
     ((eventType === 'customer.subscription.created' ||
@@ -118,10 +198,14 @@ export function normalizeWebhookPayload(provider: 'lemonsqueezy' | 'stripe', pay
 
   if (!isUpgrade && !isDowngrade) return null;
 
-  const email =
-    obj.customer_email ||
-    obj.customer_details?.email ||
-    obj.receipt_email;
+  const proPlusPriceEnv = process.env.STRIPE_PRO_PLUS_PRICE_ID;
+  const subPriceId = obj.items?.data?.[0]?.price?.id || obj.lines?.data?.[0]?.price?.id || obj.plan?.id || '';
+  const subPriceNickname = obj.items?.data?.[0]?.price?.nickname || obj.lines?.data?.[0]?.price?.nickname || obj.plan?.nickname || '';
+  const isProPlus =
+    (proPlusPriceEnv && (String(subPriceId) === proPlusPriceEnv || String(obj.metadata?.price_id || '') === proPlusPriceEnv)) ||
+    isProPlusText(obj.metadata?.plan) ||
+    isProPlusText(subPriceNickname) ||
+    isProPlusText(subPriceId);
 
   return {
     provider: 'stripe',
@@ -132,7 +216,8 @@ export function normalizeWebhookPayload(provider: 'lemonsqueezy' | 'stripe', pay
     customerId: obj.customer ? String(obj.customer) : undefined,
     subscriptionId: obj.subscription ? String(obj.subscription) : (obj.id ? String(obj.id) : undefined),
     status: status || (isUpgrade ? 'active' : 'canceled'),
-    targetPlan: isUpgrade && !isDowngrade ? 'pro' : 'free',
+    targetPlan: isUpgrade && !isDowngrade ? (isProPlus ? 'pro_plus' : 'pro') : 'free',
+    isCreditPack: false,
   };
 }
 
@@ -208,7 +293,7 @@ billingRouter.post('/webhook', async (req, res) => {
         userRow = byCust.rows[0];
       }
 
-      if (userRow) {
+      if (userRow && !normalized.isCreditPack) {
         await client.query(
           `UPDATE users
            SET plan = $1,
@@ -234,10 +319,24 @@ billingRouter.post('/webhook', async (req, res) => {
       );
 
       await client.query('COMMIT');
+
+      if (userRow) {
+        if (normalized.isCreditPack) {
+          await creditLedgerService.grantCreditPack(userRow.id, normalized.eventId, normalized.packCredits || 500).catch((err) => {
+            console.error('[BILLING_WEBHOOK] grantCreditPack error:', err);
+          });
+        } else if (normalized.targetPlan === 'pro' || normalized.targetPlan === 'pro_plus') {
+          await creditLedgerService.ensureMonthlyPlanGrant(userRow.id, normalized.targetPlan).catch((err) => {
+            console.error('[BILLING_WEBHOOK] ensureMonthlyPlanGrant error:', err);
+          });
+        }
+      }
+
       res.status(200).json({
         received: true,
         updated: Boolean(userRow),
-        plan: normalized.targetPlan,
+        plan: normalized.isCreditPack ? undefined : normalized.targetPlan,
+        creditPack: normalized.isCreditPack ? (normalized.packCredits || 500) : undefined,
       });
     } catch (err) {
       await client.query('ROLLBACK');

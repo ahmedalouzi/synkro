@@ -11,6 +11,8 @@ export default async function runTests() {
   await backend.authService.signup(email, 'hash-password-123');
   await db.query('UPDATE users SET email_verified = TRUE WHERE email = $1', [email]);
   const session = await backend.authService.login(email, 'hash-password-123');
+  const { creditLedgerService } = await import('../src/models/credit-ledger');
+  await creditLedgerService.ensureMonthlyPlanGrant(session.userId, 'free');
 
   // Mock global fetch to route requests directly to our BackendAIGateway instance
   const originalFetch = global.fetch;

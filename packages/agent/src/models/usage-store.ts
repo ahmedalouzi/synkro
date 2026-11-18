@@ -6,9 +6,12 @@ export interface UsageRecord {
   modelTier: string;
   resolvedModel: string;
   inputTokens: number;
+  cachedTokens?: number;
   outputTokens: number;
+  thinkingTokens?: number;
   totalTokens: number;
   estimatedCost: number;
+  creditsUsed?: number;
   timestamp: number;
   status: 'success' | 'failed' | 'cancelled' | 'rejected';
   /** Defaults to 'chat'. */
@@ -20,14 +23,24 @@ export class ServerUsageStore {
     await db.query(
       `INSERT INTO usage_records (
         user_id, request_id, model_tier, resolved_model, 
-        input_tokens, output_tokens, total_tokens, 
-        estimated_cost, status, purpose, timestamp
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+        input_tokens, cached_tokens, output_tokens, thinking_tokens, total_tokens, 
+        estimated_cost, credits_used, status, purpose, timestamp
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
       ON CONFLICT (request_id) DO NOTHING`,
       [
-        record.userId, record.requestId, record.modelTier, record.resolvedModel,
-        record.inputTokens, record.outputTokens, record.totalTokens,
-        record.estimatedCost, record.status, record.purpose ?? 'chat'
+        record.userId,
+        record.requestId,
+        record.modelTier,
+        record.resolvedModel,
+        record.inputTokens,
+        record.cachedTokens ?? 0,
+        record.outputTokens,
+        record.thinkingTokens ?? 0,
+        record.totalTokens,
+        record.estimatedCost,
+        record.creditsUsed ?? 0,
+        record.status,
+        record.purpose ?? 'chat',
       ]
     );
   }
@@ -43,11 +56,15 @@ export class ServerUsageStore {
       modelTier: row.model_tier,
       resolvedModel: row.resolved_model,
       inputTokens: row.input_tokens,
+      cachedTokens: row.cached_tokens !== undefined ? Number(row.cached_tokens) : 0,
       outputTokens: row.output_tokens,
+      thinkingTokens: row.thinking_tokens !== undefined ? Number(row.thinking_tokens) : 0,
       totalTokens: row.total_tokens,
       estimatedCost: parseFloat(row.estimated_cost),
+      creditsUsed: row.credits_used !== undefined ? Number(row.credits_used) : 0,
       timestamp: new Date(row.timestamp).getTime(),
-      status: row.status as any
+      status: row.status as any,
+      purpose: row.purpose,
     }));
   }
 

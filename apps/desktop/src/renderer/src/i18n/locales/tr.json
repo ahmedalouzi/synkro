@@ -256,6 +256,10 @@
       "includedUsage": "Dahil Edilen Kullanım",
       "refreshesWeekly": "Haftalık yenilenir · sonraki sıfırlama {date}",
       "usageServerTracked": "Kullanım Atomvs sunucusu tarafından izlenir ve uygulanır.",
+      "creditsRemaining": "Kalan Krediler",
+      "creditsLeftValue": "{remaining} / {total} kredi kaldı",
+      "creditsRefreshes": "Aylık yenilenir · sonraki yenileme {date}",
+      "creditsDescription": "Bu faturalandırma döneminde AI istekleri için kalan krediler.",
       "tabCompletions": "Tab Tamamlamaları",
       "unlimitedOnPlan": "Planınızda sınırsız.",
       "resetsDate": "Sıfırlanma tarihi: {date}",
@@ -487,7 +491,9 @@
     "agentWorking": "Ajan çalışıyor…",
     "http500": "Sunucu hatası (HTTP 500)",
     "planBuildFix": "Her şeyi planlayın, oluşturun, düzeltin",
-    "emptyHint": "Dosya ve bağlam eklemek için @ · Komutlar için / · Ekranınızı göstermek için resim yapıştırın"
+    "emptyHint": "Dosya ve bağlam eklemek için @ · Komutlar için / · Ekranınızı göstermek için resim yapıştırın",
+    "usedCredits": "{count} kredi kullanıldı",
+    "usedCredit": "1 kredi kullanıldı"
   },
   "preview": {
     "title": "ÖNİZLEME",

@@ -256,6 +256,10 @@
       "includedUsage": "Included Usage",
       "refreshesWeekly": "Refreshes weekly · next reset {date}",
       "usageServerTracked": "Usage is tracked and enforced by the Atomvs server.",
+      "creditsRemaining": "Credits Remaining",
+      "creditsLeftValue": "{remaining} / {total} credits left",
+      "creditsRefreshes": "Refreshes monthly · next reset {date}",
+      "creditsDescription": "Credits remaining for AI requests this billing cycle.",
       "tabCompletions": "Tab Completions",
       "unlimitedOnPlan": "Unlimited on your plan.",
       "resetsDate": "Resets {date}",
@@ -487,7 +491,9 @@
     "agentWorking": "Agent is working…",
     "http500": "Server error (HTTP 500)",
     "planBuildFix": "Plan, build, fix anything",
-    "emptyHint": "@ to add files and context · / for commands · paste images to show the agent your screen"
+    "emptyHint": "@ to add files and context · / for commands · paste images to show the agent your screen",
+    "usedCredits": "Used {count} credits",
+    "usedCredit": "Used 1 credit"
   },
   "preview": {
     "title": "PREVIEW",

@@ -12,7 +12,7 @@ config({ path: path.join(__dirname, '../../../.env') });
 
 import express from 'express';
 import * as Sentry from '@sentry/node';
-import { BackendAIGateway, initDbSchema, startBuildWorker, loadSigningEncKey, db, scrubString } from '@peep/agent/server';
+import { BackendAIGateway, initDbSchema, startBuildWorker, loadSigningEncKey, db, scrubString, creditLedgerService, reconcileDailySpend } from '@peep/agent/server';
 import { fetchProductionSecrets } from './secrets';
 import { downloadTokenSecret } from './download-token';
 import { execSync } from 'node:child_process';
@@ -95,6 +95,35 @@ async function bootstrap() {
     
     // Start build queue polling
     startBuildWorker();
+
+    // Schedule periodic idempotent monthly credit grants (hourly check)
+    const monthlyGrantTimer = setInterval(() => {
+      creditLedgerService.runMonthlyCreditGrantJob()
+        .then((res) => {
+          if (res.granted > 0) {
+            console.log(`[CREDIT_JOB] Monthly grant job completed: granted=${res.granted}, processed=${res.processed}`);
+          }
+        })
+        .catch((err) => console.error('[CREDIT_JOB] Monthly credit grant job error:', err));
+    }, 60 * 60 * 1000);
+    monthlyGrantTimer.unref();
+
+    // Schedule daily AI spend reconciliation vs Google billing
+    const reconcileTimer = setInterval(() => {
+      const googleBillingUsd = process.env.SYNKRO_GOOGLE_BILLING_DAILY_USD
+        ? Number(process.env.SYNKRO_GOOGLE_BILLING_DAILY_USD)
+        : undefined;
+      reconcileDailySpend(new Date(), Number.isFinite(googleBillingUsd) ? googleBillingUsd : undefined)
+        .then((res) => {
+          if (res.alertTriggered) {
+            console.error('[RECONCILE_ALERT] Daily spend discrepancy exceeded 10%:', JSON.stringify(res));
+          } else {
+            console.log('[RECONCILE] Daily spend reconciliation OK:', JSON.stringify(res));
+          }
+        })
+        .catch((err) => console.error('[RECONCILE] Daily spend reconciliation error:', err));
+    }, 24 * 60 * 60 * 1000);
+    reconcileTimer.unref();
   } catch (dbErr: any) {
     console.error('[DATABASE_BOOT] Database initialization failed:', dbErr.message);
   }
@@ -354,6 +383,26 @@ async function bootstrap() {
     } catch (error: any) {
       console.error('[Stream Error]', error);
       res.status(500).json({ error: 'Internal Server Error' });
+    }
+  });
+
+  app.post('/v1/admin/reconcile', async (req, res) => {
+    const adminSecret = process.env.SYNKRO_ADMIN_SECRET;
+    if (!adminSecret || req.headers['x-admin-secret'] !== adminSecret) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    try {
+      const googleBillingUsd = req.body?.googleBillingUsd !== undefined
+        ? Number(req.body.googleBillingUsd)
+        : (process.env.SYNKRO_GOOGLE_BILLING_DAILY_USD ? Number(process.env.SYNKRO_GOOGLE_BILLING_DAILY_USD) : undefined);
+      const date = req.body?.date ? new Date(req.body.date) : new Date();
+      const result = await reconcileDailySpend(date, Number.isFinite(googleBillingUsd) ? googleBillingUsd : undefined);
+      if (result.alertTriggered) {
+        console.error('[RECONCILE_ALERT] Manual reconcile discrepancy exceeded 10%:', JSON.stringify(result));
+      }
+      return res.status(200).json(result);
+    } catch (err: any) {
+      return res.status(500).json({ error: err?.message || 'Reconcile failed' });
     }
   });
 

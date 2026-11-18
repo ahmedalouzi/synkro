@@ -26,7 +26,7 @@ export interface AgentCallbacks {
   onStatus: (message: string) => void;
   onDelta: (text: string) => void;
   onError: (message: string) => void;
-  onDone: () => void;
+  onDone: (summary?: { creditsUsed?: number }) => void;
   /** Optional. Receives structured timeline events for the Agent Execution Timeline UI. */
   onTimelineActivity?: (activity: AgentTimelineActivity) => void;
   /** Optional. Receives runtime phase transitions for Task 15 state machine visibility. */
@@ -224,7 +224,7 @@ async function callOpenAI(
   signal: AbortSignal,
   onDelta?: (text: string) => void,
   onStatus?: (text: string) => void,
-): Promise<ChatMessage> {
+): Promise<{ message: ChatMessage; creditsUsed: number }> {
   if (!config.gateway) {
     throw new Error('AIGateway is required to make calls');
   }
@@ -237,6 +237,7 @@ async function callOpenAI(
     let fullContent = '';
     const toolCalls: Array<{ id: string; name: string; arguments: string | Record<string, unknown> }> = [];
     let streamUsage: any;
+    let creditsUsed = 0;
 
     try {
       const stream = config.gateway.stream(
@@ -277,6 +278,9 @@ async function callOpenAI(
         if (event.usage) {
           streamUsage = event.usage;
         }
+        if (event.type === 'done' && event.cost?.credits !== undefined) {
+          creditsUsed = event.cost.credits;
+        }
       }
 
       // Token Tracking
@@ -295,20 +299,23 @@ async function callOpenAI(
 
       if (toolCalls.length > 0) {
         return {
-          role: 'assistant',
-          content: fullContent,
-          tool_calls: toolCalls.map((t) => ({
-            id: t.id,
-            type: 'function',
-            function: {
-              name: t.name,
-              arguments: typeof t.arguments === 'string' ? t.arguments : JSON.stringify(t.arguments),
-            },
-          })),
+          message: {
+            role: 'assistant',
+            content: fullContent,
+            tool_calls: toolCalls.map((t) => ({
+              id: t.id,
+              type: 'function',
+              function: {
+                name: t.name,
+                arguments: typeof t.arguments === 'string' ? t.arguments : JSON.stringify(t.arguments),
+              },
+            })),
+          },
+          creditsUsed,
         };
       }
 
-      return { role: 'assistant', content: fullContent || 'No response.' };
+      return { message: { role: 'assistant', content: fullContent || 'No response.' }, creditsUsed };
 
     } catch (error: any) {
       if (signal.aborted || error.message === 'Cancelled' || error.name === 'AbortError') {
@@ -413,15 +420,25 @@ export async function runAgentLoop(
     }
   }
 
-  // Inject Planner directive for complex requests
-  let activeContext = systemContext;
+  // Keep static systemContext intact as the cacheable prefix; attach per-turn planning directive to the latest user turn
+  const messagesWithTurnDirectives: ChatMessage[] = initialMessages.map((msg) => ({ ...msg }));
   if (isComplex) {
-    activeContext += `\n\n[PLANNING MODE ACTIVE] You are faced with a complex software engineering task. First, outline a clear step-by-step checklist of actions and files you will edit. Only then proceed.`;
+    const planningDirective = `\n\n[PLANNING MODE ACTIVE] You are faced with a complex software engineering task. First, outline a clear step-by-step checklist of actions and files you will edit. Only then proceed.`;
+    const lastUserIdx = [...messagesWithTurnDirectives].reverse().findIndex((m) => m.role === 'user');
+    if (lastUserIdx >= 0) {
+      const targetIdx = messagesWithTurnDirectives.length - 1 - lastUserIdx;
+      messagesWithTurnDirectives[targetIdx] = {
+        ...messagesWithTurnDirectives[targetIdx],
+        content: `${messagesWithTurnDirectives[targetIdx].content || ''}${planningDirective}`,
+      };
+    } else {
+      messagesWithTurnDirectives.push({ role: 'user', content: planningDirective.trim() });
+    }
   }
 
   let conversationHistory: ChatMessage[] = [
-    { role: 'system', content: activeContext },
-    ...initialMessages,
+    { role: 'system', content: systemContext },
+    ...messagesWithTurnDirectives,
   ];
 
   let effectiveBudget = 100000;
@@ -430,6 +447,7 @@ export async function runAgentLoop(
   }
 
   let accumulatedResponseText = '';
+  let totalCreditsUsed = 0;
   // Notify observer that LLM thinking begins.
   emitPhase('thinking');
 
@@ -450,13 +468,14 @@ export async function runAgentLoop(
       retainedMessages: conversationHistory.length 
     });
 
-    const assistantMessage = await callOpenAI(
+    const { message: assistantMessage, creditsUsed: stepCredits } = await callOpenAI(
       config,
       conversationHistory,
       signal,
       (delta) => callbacks.onDelta(delta),
       callbacks.onStatus
     );
+    totalCreditsUsed += stepCredits;
 
     if (assistantMessage.tool_calls && assistantMessage.tool_calls.length > 0) {
       // Text it wrote before the tools (the one-line plan) ends here: the final answer starts a new paragraph.
@@ -593,7 +612,7 @@ export async function runAgentLoop(
         timestamp: new Date().toISOString(),
       });
       emitPhase('done');
-      const durationMs = performance.now() - startTime; config.logger?.info('Agent run completed', { durationMs, runId }); callbacks.onDone();
+      const durationMs = performance.now() - startTime; config.logger?.info('Agent run completed', { durationMs, runId }); callbacks.onDone({ creditsUsed: totalCreditsUsed });
       return accumulatedResponseText;
     }
 
@@ -604,7 +623,7 @@ export async function runAgentLoop(
   // Notify observer: entering summarization phase.
   emitPhase('summarizing');
   let summaryContent = '';
-  await callOpenAI(
+  const { creditsUsed: summaryCredits } = await callOpenAI(
     config,
     [
       ...conversationHistory,
@@ -620,6 +639,7 @@ export async function runAgentLoop(
       callbacks.onDelta(delta);
     }
   );
+  totalCreditsUsed += summaryCredits;
 
   // Timeline: emit final 'completed' event for the whole run.
   dispatchTimeline({
@@ -632,6 +652,6 @@ export async function runAgentLoop(
   });
 
   callbacks.onPhaseChange?.('done');
-  const durationMs = performance.now() - startTime; config.logger?.info('Agent run completed', { durationMs, runId }); callbacks.onDone();
+  const durationMs = performance.now() - startTime; config.logger?.info('Agent run completed', { durationMs, runId }); callbacks.onDone({ creditsUsed: totalCreditsUsed });
   return summaryContent;
 }

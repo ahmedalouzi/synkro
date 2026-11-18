@@ -67,6 +67,8 @@ export default async function runTests() {
   await gateway.authService.signup(gatewayEmail, password);
   await db.query('UPDATE users SET email_verified = TRUE WHERE email = $1', [gatewayEmail]);
   const session3 = await gateway.authService.login(gatewayEmail, password);
+  const { creditLedgerService } = await import('../src/models/credit-ledger');
+  await creditLedgerService.ensureMonthlyPlanGrant(session3.userId, 'free');
   
   const headers = {
     'authorization': `Bearer ${session3.sessionToken}`,

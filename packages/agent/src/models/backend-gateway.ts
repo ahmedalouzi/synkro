@@ -295,8 +295,10 @@ import { AuthenticationRouter } from './auth-router';
 import { ServerModelRouter } from './server-router';
 import { ServerUsageStore } from './usage-store';
 import { ServerBudgetGuard } from './budget-guard';
-import { BurstLimiter, estimateRequestCost, getPlanPolicy, tokenCost, type RequestPurpose } from './usage-limits';
+import { BurstLimiter, estimateRequestCost, getPlanPolicy, type RequestPurpose } from './usage-limits';
 import { GoogleGeminiAdapter } from './google-adapter';
+import { creditLedgerService } from './credit-ledger';
+import { calculateModelCostUsd, costUsdToCredits } from './pricing';
 import type { AgentLogger } from '../orchestrator';
 
 export let Sentry: any = null;
@@ -322,6 +324,7 @@ export class BackendAIGateway {
   readonly usageStore = new ServerUsageStore();
   readonly budgetGuard = new ServerBudgetGuard();
   readonly burstLimiter = new BurstLimiter();
+  readonly creditLedgerService = creditLedgerService;
   private readonly logger: AgentLogger;
 
   getContextLimit(tier: CapabilityTier): number {
@@ -434,7 +437,8 @@ export class BackendAIGateway {
         if (!body?.code) {
           return { status: 400, headers: responseHeaders, body: { code: 'VALIDATION_ERROR', message: 'Verification code is required' } };
         }
-        const result = await this.authService.verifyEmailOtp(userIdOrEmail, body.code);
+        const deviceId = body?.deviceId || (headers['x-device-id'] as string) || (headers['X-Device-Id'] as string);
+        const result = await this.authService.verifyEmailOtp(userIdOrEmail, body.code, deviceId);
         return { status: 200, headers: responseHeaders, body: result };
       } catch (err: any) {
         return { status: 400, headers: responseHeaders, body: { code: 'VERIFICATION_FAILED', message: err.message } };
@@ -538,10 +542,29 @@ export class BackendAIGateway {
       let config: any;
       try {
         const routingStart = Date.now();
-        config = this.router.route(requestData.tier, session?.plan || 'free', requestData.manualModel);
+        config = this.router.route(requestData.tier, session?.plan || 'free', requestData.manualModel, {
+          outOfCreditsFallback: (requestData as any).outOfCreditsFallback === true,
+        });
         const routingDuration = Date.now() - routingStart;
 
         let adapter = this.adapters.get(config.providerId) || this.adapters.get('openai')!;
+
+        // Optional Context Caching for large system prompts when enabled
+        if (config.providerId === 'google' && !(requestData as any).cachedContent && process.env.SYNKRO_ENABLE_CONTEXT_CACHE === 'true' && typeof (adapter as any).getOrCreateContextCache === 'function') {
+          const sysContent = requestData.messages?.find((m: any) => m.role === 'system')?.content || '';
+          if (typeof sysContent === 'string' && sysContent.length >= 4096) {
+            try {
+              const cachedName = await (adapter as any).getOrCreateContextCache({
+                model: config.modelId,
+                systemPrompt: sysContent,
+              });
+              requestData = { ...requestData, cachedContent: cachedName } as any;
+            } catch (cacheErr: any) {
+              console.warn('[BackendAIGateway] Context cache creation failed, proceeding uncached:', cacheErr?.message);
+            }
+          }
+        }
+
         this.logRequest(requestId, 'generate', requestData);
         let result: AIResponse;
         
@@ -550,11 +573,14 @@ export class BackendAIGateway {
         try {
           result = await adapter.generate(requestData, { ...options, resolvedModelId: config.modelId, latencyOut });
         } catch (e: any) {
-          if (this.isRetryable(e) && config.fallback) {
-            console.log(`[BackendAIGateway] [${requestId}] Primary provider failed, failing over to fallback: ${config.fallback.providerId}`);
-            adapter = this.adapters.get(config.fallback.providerId) || this.adapters.get('openai')!;
-            result = await adapter.generate(requestData, { ...options, resolvedModelId: config.fallback.modelId, latencyOut });
-            responseHeaders['x-provider-fallback'] = config.fallback.providerId;
+          const fallbackTarget = (!process.env.OPENAI_API_KEY && config.fallback?.providerId === 'openai' && config.geminiFallback)
+            ? config.geminiFallback
+            : config.fallback;
+          if (this.isRetryable(e) && fallbackTarget) {
+            console.log(`[BackendAIGateway] [${requestId}] Primary provider failed, failing over to fallback: ${fallbackTarget.providerId}`);
+            adapter = this.adapters.get(fallbackTarget.providerId) || this.adapters.get('google')!;
+            result = await adapter.generate(requestData, { ...options, resolvedModelId: fallbackTarget.modelId, latencyOut });
+            responseHeaders['x-provider-fallback'] = fallbackTarget.providerId;
           } else {
             throw e;
           }
@@ -566,19 +592,45 @@ export class BackendAIGateway {
         responseHeaders['x-synkro-latency'] = `Transit: ${transitTime}ms | Auth: ${authDuration}ms | Route: ${routingDuration}ms | Resolve: ${latencyOut.listModelsDuration}ms | GeminiAPI: ${latencyOut.geminiCallDuration}ms | AdapterTotal: ${adapterDuration}ms | BackendTotal: ${serverDuration}ms`;
 
         const inputTokens = result.usage?.inputTokens || Math.ceil(JSON.stringify(requestData.messages).length / 4);
+        const cachedTokens = (result.usage as any)?.cachedTokens || 0;
         const outputTokens = result.usage?.outputTokens || Math.ceil((result.content?.length ?? 0) / 4);
+        const thinkingTokens = (result.usage as any)?.thinkingTokens || 0;
+        const totalTokens = result.usage?.totalTokens || (inputTokens + outputTokens + thinkingTokens);
+        const estimatedCost = result.cost?.cost !== undefined
+          ? result.cost.cost
+          : calculateModelCostUsd({
+              modelId: config.modelId,
+              costInputPerMillion: config.costInputPerMillion,
+              costOutputPerMillion: config.costOutputPerMillion,
+            }, { inputTokens, cachedTokens, outputTokens, thinkingTokens });
+        const creditsUsed = (result.cost as any)?.credits !== undefined
+          ? (result.cost as any).credits
+          : costUsdToCredits(estimatedCost, totalTokens);
+
         await this.usageStore.recordUsage({
           userId: session.userId,
           requestId,
           modelTier: requestData.tier,
           resolvedModel: config.modelId,
           inputTokens,
+          cachedTokens,
           outputTokens,
-          totalTokens: result.usage?.totalTokens || inputTokens + outputTokens,
-          estimatedCost: result.cost?.cost || tokenCost(config, inputTokens, outputTokens),
+          thinkingTokens,
+          totalTokens,
+          estimatedCost,
+          creditsUsed,
           status: 'success',
           purpose,
         });
+
+        await this.creditLedgerService.deductCredits(
+          session.userId,
+          creditsUsed,
+          requestId,
+          'ai_generate',
+          new Date(),
+          { isFallback: (requestData as any).outOfCreditsFallback === true }
+        ).catch(() => {});
 
         return { status: 200, headers: responseHeaders, body: result };
       } catch (e: any) {
@@ -621,10 +673,29 @@ export class BackendAIGateway {
       let config: any;
       try {
         const routingStart = Date.now();
-        config = this.router.route(requestData.tier, session?.plan || 'free', requestData.manualModel);
+        config = this.router.route(requestData.tier, session?.plan || 'free', requestData.manualModel, {
+          outOfCreditsFallback: (requestData as any).outOfCreditsFallback === true,
+        });
         const routingDuration = Date.now() - routingStart;
 
         let adapter = this.adapters.get(config.providerId) || this.adapters.get('openai')!;
+
+        // Optional Context Caching for large system prompts when enabled
+        if (config.providerId === 'google' && !(requestData as any).cachedContent && process.env.SYNKRO_ENABLE_CONTEXT_CACHE === 'true' && typeof (adapter as any).getOrCreateContextCache === 'function') {
+          const sysContent = requestData.messages?.find((m: any) => m.role === 'system')?.content || '';
+          if (typeof sysContent === 'string' && sysContent.length >= 4096) {
+            try {
+              const cachedName = await (adapter as any).getOrCreateContextCache({
+                model: config.modelId,
+                systemPrompt: sysContent,
+              });
+              requestData = { ...requestData, cachedContent: cachedName } as any;
+            } catch (cacheErr: any) {
+              console.warn('[BackendAIGateway] Context cache creation failed, proceeding uncached:', cacheErr?.message);
+            }
+          }
+        }
+
         this.logRequest(requestId, 'stream', requestData);
         let stream: any;
 
@@ -633,11 +704,14 @@ export class BackendAIGateway {
         try {
           stream = adapter.stream(requestData, { ...options, resolvedModelId: config.modelId, latencyOut });
         } catch (e: any) {
-          if (this.isRetryable(e) && config.fallback) {
-            console.log(`[BackendAIGateway] [${requestId}] Primary streaming failed, failing over to: ${config.fallback.providerId}`);
-            adapter = this.adapters.get(config.fallback.providerId) || this.adapters.get('openai')!;
-            stream = adapter.stream(requestData, { ...options, resolvedModelId: config.fallback.modelId, latencyOut });
-            responseHeaders['x-provider-fallback'] = config.fallback.providerId;
+          const fallbackTarget = (!process.env.OPENAI_API_KEY && config.fallback?.providerId === 'openai' && config.geminiFallback)
+            ? config.geminiFallback
+            : config.fallback;
+          if (this.isRetryable(e) && fallbackTarget) {
+            console.log(`[BackendAIGateway] [${requestId}] Primary streaming failed, failing over to: ${fallbackTarget.providerId}`);
+            adapter = this.adapters.get(fallbackTarget.providerId) || this.adapters.get('google')!;
+            stream = adapter.stream(requestData, { ...options, resolvedModelId: fallbackTarget.modelId, latencyOut });
+            responseHeaders['x-provider-fallback'] = fallbackTarget.providerId;
             // Materialize fallback stream start
             const testFallback = await stream[Symbol.asyncIterator]().next();
             const originalIterator = stream[Symbol.asyncIterator];
@@ -660,13 +734,15 @@ export class BackendAIGateway {
         const wrappedStream = {
           async *[Symbol.asyncIterator]() {
             let finalUsage: any = null;
+            let finalCost: any = null;
             let finalModelId: string | undefined = undefined;
             let finalStatus: 'success' | 'cancelled' | 'failed' = 'success';
             let accumulatedOutputChars = 0;
             try {
               for await (const chunk of originalStream) {
-                if (chunk.type === 'done' && chunk.usage) {
-                  finalUsage = chunk.usage;
+                if (chunk.type === 'done') {
+                  if (chunk.usage) finalUsage = chunk.usage;
+                  if (chunk.cost) finalCost = chunk.cost;
                 }
                 if (chunk.type === 'delta' || chunk.type === 'content') {
                   const text = chunk.content ?? chunk.delta ?? '';
@@ -684,11 +760,31 @@ export class BackendAIGateway {
               }
               throw err;
             } finally {
+              const actualOutputTokens = finalUsage?.outputTokens || finalUsage?.completion_tokens || 0;
+              const isZeroOutputFailed = finalStatus === 'failed' && actualOutputTokens === 0 && accumulatedOutputChars === 0;
+              const isZeroOutputNonSuccess = finalStatus !== 'success' && actualOutputTokens === 0 && accumulatedOutputChars === 0;
               const msgStr = JSON.stringify(requestData.messages || (requestData as any).prompt || '');
-              const fallbackInputTokens = Math.ceil(msgStr.length / 4);
-              const fallbackOutputTokens = accumulatedOutputChars > 0 ? Math.ceil(accumulatedOutputChars / 4) : 1;
+              const fallbackInputTokens = isZeroOutputFailed ? 0 : Math.ceil(msgStr.length / 4);
+              const fallbackOutputTokens = isZeroOutputFailed ? 0 : (accumulatedOutputChars > 0 ? Math.ceil(accumulatedOutputChars / 4) : 1);
               const iTokens = finalUsage?.inputTokens || finalUsage?.prompt_tokens || fallbackInputTokens;
-              const oTokens = finalUsage?.outputTokens || finalUsage?.completion_tokens || fallbackOutputTokens;
+              const cTokens = finalUsage?.cachedTokens || 0;
+              const oTokens = actualOutputTokens || fallbackOutputTokens;
+              const tTokens = finalUsage?.thinkingTokens || 0;
+              const totTokens = isZeroOutputFailed ? 0 : (finalUsage?.totalTokens || finalUsage?.total_tokens || (iTokens + oTokens + tTokens));
+              const estCost = isZeroOutputNonSuccess
+                ? 0
+                : (finalCost?.cost !== undefined
+                  ? finalCost.cost
+                  : calculateModelCostUsd({
+                      modelId: finalModelId || config.modelId,
+                      costInputPerMillion: config.costInputPerMillion,
+                      costOutputPerMillion: config.costOutputPerMillion,
+                    }, { inputTokens: iTokens, cachedTokens: cTokens, outputTokens: oTokens, thinkingTokens: tTokens }));
+              const credsUsed = isZeroOutputNonSuccess
+                ? 0
+                : (finalCost?.credits !== undefined
+                  ? finalCost.credits
+                  : costUsdToCredits(estCost, totTokens));
               
               await self.usageStore.recordUsage({
                 userId: session.userId,
@@ -696,9 +792,12 @@ export class BackendAIGateway {
                 modelTier: requestData.tier,
                 resolvedModel: finalModelId || config.modelId,
                 inputTokens: iTokens,
+                cachedTokens: cTokens,
                 outputTokens: oTokens,
-                totalTokens: finalUsage?.totalTokens || finalUsage?.total_tokens || (iTokens + oTokens),
-                estimatedCost: tokenCost(config, iTokens, oTokens),
+                thinkingTokens: tTokens,
+                totalTokens: totTokens,
+                estimatedCost: estCost,
+                creditsUsed: credsUsed,
                 status: options?.signal?.aborted ? 'cancelled' : finalStatus,
                 purpose,
               }).catch(async (usageErr: any) => {
@@ -706,6 +805,17 @@ export class BackendAIGateway {
                 await ensureSentryLoaded();
                 if (Sentry?.captureException) Sentry.captureException(usageErr, { tags: { requestId, path: '/v1/ai/stream' } });
               });
+
+              if (!isZeroOutputNonSuccess && credsUsed > 0) {
+                await self.creditLedgerService.deductCredits(
+                  session.userId,
+                  credsUsed,
+                  requestId,
+                  'ai_stream',
+                  new Date(),
+                  { isFallback: (requestData as any).outOfCreditsFallback === true }
+                ).catch(() => {});
+              }
             }
           }
         };
@@ -810,7 +920,7 @@ export class BackendAIGateway {
     }
     if (decision.action === 'fallback') {
       responseHeaders['x-synkro-usage-fallback'] = 'fast';
-      return { request: { ...requestData, tier: 'fast', manualModel: undefined }, purpose };
+      return { request: { ...requestData, tier: 'fast', manualModel: undefined, outOfCreditsFallback: true } as any, purpose };
     }
     return { request: requestData, purpose };
   }

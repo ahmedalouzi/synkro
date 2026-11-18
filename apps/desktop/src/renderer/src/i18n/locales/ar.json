@@ -256,6 +256,10 @@
       "includedUsage": "الاستخدام المشمول",
       "refreshesWeekly": "يتجدد أسبوعيًا · التجديد القادم في {date}",
       "usageServerTracked": "يتم تتبع الاستخدام وفرضه عبر خوادم Atomvs.",
+      "creditsRemaining": "الرصيد المتبقي",
+      "creditsLeftValue": "{remaining} / {total} رصيد متبقٍ",
+      "creditsRefreshes": "يتجدد شهريًا · موعد التجديد القادم {date}",
+      "creditsDescription": "الرصيد المتبقي لطلبات الذكاء الاصطناعي في دورة الفوترة الحالية.",
       "tabCompletions": "إكمالات Tab",
       "unlimitedOnPlan": "غير محدود في خطتك الحالية.",
       "resetsDate": "يتجدد في {date}",
@@ -487,7 +491,9 @@
     "agentWorking": "الوكيل يعمل…",
     "http500": "خطأ في الخادم (HTTP 500)",
     "planBuildFix": "خطط، ابنِ، وأصلح أي شيء",
-    "emptyHint": "@ لإضافة ملفات وسياق · / للأوامر · الصق الصور لتظهر شاشتك للوكيل"
+    "emptyHint": "@ لإضافة ملفات وسياق · / للأوامر · الصق الصور لتظهر شاشتك للوكيل",
+    "usedCredits": "استُخدم {count} رصيد",
+    "usedCredit": "استُخدم رصيد واحد"
   },
   "preview": {
     "title": "المعاينة",

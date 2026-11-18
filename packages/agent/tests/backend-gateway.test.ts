@@ -12,6 +12,8 @@ export default async function runTests() {
   await gateway.authService.signup(email, 'hash-password-123');
   await db.query('UPDATE users SET email_verified = TRUE WHERE email = $1', [email]);
   const session = await gateway.authService.login(email, 'hash-password-123');
+  const { creditLedgerService } = await import('../src/models/credit-ledger');
+  await creditLedgerService.ensureMonthlyPlanGrant(session.userId, 'free');
 
   // Test 1: Successful Auth & Generate routing
   const authHeaders = {

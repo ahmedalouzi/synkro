@@ -8,4 +8,6 @@ export * from './models/build-worker';
 export * from './models/artifact-store';
 export * from './models/zip-validator';
 export * from './models/signing-keys';
+export * from './models/pricing';
+export * from './models/credit-ledger';
 export * from './utils/sentry-scrubber';

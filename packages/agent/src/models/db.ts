@@ -51,6 +51,9 @@ export async function initDbSchema() {
     await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS billing_status VARCHAR(50) DEFAULT 'inactive';`);
     await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS plan_updated_at TIMESTAMPTZ DEFAULT NOW();`);
     await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT FALSE;`);
+    await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS credit_balance INT NOT NULL DEFAULT 0;`);
+    await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS welcome_credits_granted BOOLEAN NOT NULL DEFAULT FALSE;`);
+    await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS welcome_device_id VARCHAR(255);`);
     await client.query(`CREATE TABLE IF NOT EXISTS billing_webhook_events (event_id VARCHAR(255) PRIMARY KEY, provider VARCHAR(50) NOT NULL, event_type VARCHAR(100) NOT NULL, user_id UUID REFERENCES users(id) ON DELETE SET NULL, processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW());`);
 
     // Email verification OTP codes
@@ -121,6 +124,27 @@ export async function initDbSchema() {
     await client.query(`ALTER TABLE usage_records ADD COLUMN IF NOT EXISTS purpose VARCHAR(20) NOT NULL DEFAULT 'chat';`);
     // Cheap-model requests cost fractions of a cent; 5 decimal places rounded many of them to zero.
     await client.query(`ALTER TABLE usage_records ALTER COLUMN estimated_cost TYPE NUMERIC(12, 8);`);
+    await client.query(`ALTER TABLE usage_records ADD COLUMN IF NOT EXISTS cached_tokens INT NOT NULL DEFAULT 0;`);
+    await client.query(`ALTER TABLE usage_records ADD COLUMN IF NOT EXISTS thinking_tokens INT NOT NULL DEFAULT 0;`);
+    await client.query(`ALTER TABLE usage_records ADD COLUMN IF NOT EXISTS credits_used INT NOT NULL DEFAULT 0;`);
+
+    // Credit Ledger
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS credit_ledger (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        delta INT NOT NULL,
+        bucket VARCHAR(50) NOT NULL,
+        reason VARCHAR(100) NOT NULL,
+        request_id VARCHAR(255),
+        expires_at TIMESTAMPTZ,
+        remaining INT NOT NULL DEFAULT 0,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_credit_ledger_user_expires ON credit_ledger(user_id, expires_at);
+      CREATE INDEX IF NOT EXISTS idx_credit_ledger_user_created ON credit_ledger(user_id, created_at);
+      CREATE INDEX IF NOT EXISTS idx_credit_ledger_request_id ON credit_ledger(request_id);
+    `);
 
     // Global config (e.g., kill switch)
     await client.query(`
@@ -347,6 +371,15 @@ export async function initDbSchema() {
       EXCEPTION
         WHEN duplicate_object THEN null;
       END $$;
+
+      ALTER TABLE credit_ledger ENABLE ROW LEVEL SECURITY;
+
+      DO $$ BEGIN
+        CREATE POLICY credit_ledger_user_isolation ON credit_ledger
+          USING (user_id = NULLIF(current_setting('app.current_user_id', true), '')::UUID);
+      EXCEPTION
+        WHEN duplicate_object THEN null;
+      END $$;
     `);
 
     // Create Roles and Grants
@@ -363,6 +396,8 @@ export async function initDbSchema() {
       -- Owners can only read their keys (keystore download); keys are created by the worker.
       GRANT SELECT ON signing_keys TO api_user;
       GRANT SELECT, INSERT, UPDATE, DELETE ON chat_threads, chat_messages, chat_runs, email_verification_codes TO api_user;
+      GRANT SELECT, INSERT, UPDATE ON credit_ledger TO api_user;
+      GRANT SELECT, UPDATE ON users TO api_user;
 
       DO $$ BEGIN
         CREATE ROLE worker_user BYPASSRLS NOLOGIN;
@@ -372,6 +407,7 @@ export async function initDbSchema() {
       GRANT SELECT, INSERT ON signing_keys TO worker_user;
       GRANT UPDATE (package_name) ON signing_keys TO worker_user;
       GRANT SELECT ON users TO worker_user;
+      GRANT SELECT, INSERT, UPDATE ON credit_ledger TO worker_user;
 
       -- Allow the session login role to switch into api_user / worker_user.
       -- SESSION_USER is the actual login credential (e.g. 'testuser' in test,

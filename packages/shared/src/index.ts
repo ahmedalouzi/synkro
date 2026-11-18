@@ -254,6 +254,8 @@ export interface AgentMessage {
   createdAt: string;
   /** Agent run that produced this assistant message; links it to its timeline steps. */
   runId?: string;
+  /** Credits used by this turn/message */
+  creditsUsed?: number;
 }
 
 export interface ProposedEdit {
@@ -268,6 +270,7 @@ export interface AgentStreamEvent {
   type: 'status' | 'delta' | 'done' | 'error' | 'activity';
   content: string;
   threadId?: string;
+  creditsUsed?: number;
 }
 
 export interface AgentActivityEvent {
@@ -1245,6 +1248,11 @@ export interface IpcApi {
     monthlyCompletions?: number | null;
     completionsUsed?: number;
     completionsResetAt?: string;
+    /** Credits-based billing */
+    creditsRemaining?: number;
+    monthlyCredits?: number;
+    creditsUsedThisMonth?: number;
+    creditsResetAt?: string;
   } | null>;
   onPublishStatus: (callback: (status: any) => void) => () => void;
   onPublishLog: (callback: (line: string) => void) => () => void;
@@ -1288,11 +1296,14 @@ export interface AIUsage {
   inputTokens: number;
   outputTokens: number;
   totalTokens: number;
+  cachedTokens?: number;
+  thinkingTokens?: number;
 }
 
 export interface CostEstimate {
   cost: number;
   currency: string;
+  credits?: number;
 }
 
 export interface AIError {

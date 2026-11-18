@@ -83,8 +83,14 @@ const buildRateLimiter = async (req: express.Request, res: express.Response, nex
     }
 
     const count = parseInt(result.rows[0].count, 10);
-    if (count >= 10) {
-      res.status(429).json({ error: 'Usage Limit Exceeded: You can only build 10 times per day.' });
+    const plan = String((req as any).user?.plan || 'free').toLowerCase();
+    const maxBuilds = plan === 'free' ? 3 : 10;
+    if (count >= maxBuilds) {
+      res.status(429).json({
+        error: plan === 'free'
+          ? 'Usage Limit Exceeded: Free tier is limited to 3 builds per day. Upgrade to Pro for 10 builds/day.'
+          : 'Usage Limit Exceeded: You can only build 10 times per day.',
+      });
       return;
     }
 

@@ -15,6 +15,10 @@ export interface UserAccount {
   budgetTokens?: number;
   usage?: number;
   limit?: number;
+  creditsRemaining?: number;
+  monthlyCredits?: number;
+  creditsUsedThisMonth?: number;
+  creditsResetAt?: string;
 }
 
 interface AuthStore {

@@ -77,6 +77,11 @@ export default async function runP314E2ETests() {
 
   // Ensure default test user is on pro plan and clean any old test records
   await db.query(`UPDATE users SET plan = 'pro', email_verified = TRUE WHERE email = 'user@example.com'`);
+  const { creditLedgerService } = await import('../src/models/credit-ledger');
+  const defUserRes = await db.query(`SELECT id FROM users WHERE email = 'user@example.com'`);
+  if (defUserRes.rows[0]?.id) {
+    await creditLedgerService.ensureMonthlyPlanGrant(defUserRes.rows[0].id, 'pro');
+  }
 
   // ── BLOCK 1: SCENARIOS ───────────────────────────────────────────
   await gate('[S1] Restaurant Reservation — full lifecycle', 'Restaurant Reservation', async () => {
@@ -279,6 +284,7 @@ export default async function runP314E2ETests() {
       "INSERT INTO users (id, email, password_hash) VALUES ($1, $2, $3) ON CONFLICT (id) DO NOTHING",
       [testUserUuid, 'budget-3-user@example.com', 'scrypt:mock-hash']
     );
+    await creditLedgerService.ensureMonthlyPlanGrant(testUserUuid, 'free');
     await store.recordUsage({userId:testUserUuid, requestId:id, modelTier:'fast', resolvedModel:'m', inputTokens:0, outputTokens:0, totalTokens:0, estimatedCost:9999.99, status:'cancelled'});
     await guard.checkBudget(testUserUuid, 'free', 0.001); // Must not throw
   });

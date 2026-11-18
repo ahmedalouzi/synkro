@@ -33,7 +33,7 @@ interface ChatState {
   appendToStreamingMessage: (delta: string) => void;
   startStreaming: (messageId: string) => void;
   setStreamStatus: (status: string) => void;
-  finishStreaming: () => void;
+  finishStreaming: (creditsUsed?: number) => void;
   /** The reply still typing out after its stream ended (its caret stays until then). */
   typingMessageId: string | null;
   setStreaming: (streaming: boolean) => void;
@@ -241,8 +241,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   setStreamStatus: (streamStatus) => set({ streamStatus }),
-  finishStreaming: () => {
-    set({ isStreaming: false, streamStatus: '', streamingMessageId: null });
+  finishStreaming: (creditsUsed?: number) => {
+    set((state) => {
+      const streamingId = state.streamingMessageId;
+      return {
+        isStreaming: false,
+        streamStatus: '',
+        streamingMessageId: null,
+        messages: streamingId && creditsUsed !== undefined
+          ? state.messages.map((m) => (m.id === streamingId ? { ...m, creditsUsed } : m))
+          : state.messages,
+      };
+    });
     // The text already received keeps typing out; the caret goes when it is all shown.
     const current = typewriter;
     if (!current) { set({ typingMessageId: null }); return; }
