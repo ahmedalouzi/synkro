@@ -331,6 +331,10 @@
 }
 
 .cx-step__failed { color: #f87171; }
+.cx-step--blocked { flex-wrap: wrap; row-gap: 2px; }
+.cx-step--blocked .cx-step__verb { color: #fbbf24; }
+/* Why it was blocked, one line (the full reason is in the tooltip). */
+.cx-step__blocked { flex: 1 1 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--text-muted); }
 
 .cx-thinking { font-size: 12.5px; }
 

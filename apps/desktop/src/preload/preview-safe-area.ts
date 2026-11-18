@@ -1,4 +1,5 @@
 import { webFrame } from 'electron';
+import { tabBarLayoutIssues } from '@peep/shared';
 
 /**
  * Safe-area insets for the app in the Preview pane.
@@ -16,8 +17,9 @@ import { webFrame } from 'electron';
  *        { type: 'atomvs:status-bar', declared: 'light' | 'dark' | null, source: string | null }
  *          (the status-bar icon tone the app declares, and where: e.g. 'expo-status-bar style=auto'), and
  *        { type: 'atomvs:screen-changed' } (the host re-samples the rendered status-bar and home-indicator strips)
- *        { type: 'atomvs:runtime', errors, rendered, textChars, overlay } (the app's runtime errors, and whether
- *          it shows anything; the host relays it to the agent's get_preview_logs)
+ *        { type: 'atomvs:runtime', errors, rendered, textChars, overlay, layout } (the app's runtime errors, whether
+ *          it shows anything, and layout problems such as a bottom tab bar under the home indicator; the host relays
+ *          it to the agent's get_preview_logs)
  * Nothing is exposed to the page: no contextBridge API, no ipcRenderer.
  */
 
@@ -44,7 +46,9 @@ export function isSafeAreaMessage(data: unknown): data is { type: 'atomvs:safe-a
  * Runs in the page's own world (it has to patch the page's CSSOM). Self-contained: it is serialised with
  * Function.prototype.toString, so it can only use its parameters and browser globals.
  */
-function pageShim(rewrite: (css: string) => string, isInsets: (data: unknown) => boolean): void {
+function pageShim(
+  rewrite: (css: string) => string, isInsets: (data: unknown) => boolean, tabBarIssues: (m: unknown) => unknown[],
+): void {
   if ((window as any).__atomvsSafeArea) return;
   Object.defineProperty(window, '__atomvsSafeArea', { value: true });
   const ENV = /\b(?:env|constant)\(\s*safe-area-inset-/;
@@ -237,6 +241,26 @@ function pageShim(rewrite: (css: string) => string, isInsets: (data: unknown) =>
     return consoleError.apply(this, args);
   };
   const OVERLAY = /(Uncaught Error|Render Error|Syntax Error|Unable to resolve module|Failed to compile)/;
+  // Bottom tab bars ([role=tablist] in the lower part of the screen, as React Navigation renders them on the web):
+  // where their tabs end against the bottom inset, and whether their labels got the height their text needs.
+  const measureTabBars = () => {
+    const h = window.innerHeight;
+    const insetBottom = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--atomvs-safe-area-inset-bottom')) || 0;
+    const bars = [];
+    for (const el of Array.from(document.querySelectorAll('[role="tablist"]')).slice(0, 4)) {
+      const r = el.getBoundingClientRect();
+      if (r.height <= 0 || r.width <= 0 || r.top < h * 0.6 || r.bottom < h - 140) continue;
+      const items = Array.from(el.children).map((c) => c.getBoundingClientRect())
+        .filter((c) => c.width > 0 && c.height > 0).map((c) => ({ top: c.top, bottom: c.bottom }));
+      const labels: Array<{ height: number; scrollHeight: number }> = [];
+      for (const t of Array.from(el.querySelectorAll('*')).slice(0, 200)) {
+        if (t.childElementCount !== 0 || !(t.textContent || '').trim()) continue;
+        labels.push({ height: t.getBoundingClientRect().height, scrollHeight: (t as HTMLElement).scrollHeight });
+      }
+      bars.push({ top: r.top, bottom: r.bottom, items, labels });
+    }
+    return { innerHeight: h, insetBottom, bars };
+  };
   let lastRuntime = '';
   const reportRuntime = () => {
     if (!document.body) return;
@@ -249,6 +273,7 @@ function pageShim(rewrite: (css: string) => string, isInsets: (data: unknown) =>
       rendered: root.childElementCount > 0 && (text.length > 0 || media > 0),
       textChars: text.length,
       overlay: OVERLAY.test(text) ? text.slice(0, 1500) : '',
+      layout: (() => { try { return tabBarIssues(measureTabBars()); } catch { return []; } })(),
     };
     const key = JSON.stringify(state);
     if (key !== lastRuntime) {
@@ -294,5 +319,7 @@ function isPreviewFrame(): boolean {
 /** Called by the preload in sub-frames. Exposes nothing; only injects the shim into preview frames. */
 export function installPreviewSafeArea(): void {
   if (!isPreviewFrame()) return;
-  void webFrame.executeJavaScript(`(${pageShim.toString()})(${rewriteSafeAreaEnv.toString()}, ${isSafeAreaMessage.toString()});`);
+  void webFrame.executeJavaScript(
+    `(${pageShim.toString()})(${rewriteSafeAreaEnv.toString()}, ${isSafeAreaMessage.toString()}, ${tabBarLayoutIssues.toString()});`,
+  );
 }
