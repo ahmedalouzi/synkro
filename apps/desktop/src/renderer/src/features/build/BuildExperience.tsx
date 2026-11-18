@@ -5,7 +5,7 @@ import { useBuildStore } from '../../stores/build-store';
 import { buildApi } from '../../services/build-api';
 import { useI18n } from '../../i18n';
 import { SpaceQrPopup } from './SpaceQrPopup';
-import { BUILD_STAGES, buildStage, estimateProgress, failureKind, type BuildStage } from './build-progress';
+import { BUILD_STAGES, buildNotices, buildStage, estimateProgress, failureKind, type BuildStage } from './build-progress';
 
 /**
  * The Cloud Build experience. Pressing Build APK opens a full-screen page over the IDE in the space/atom style of
@@ -266,6 +266,9 @@ export function BuildExperience() {
   }
 
   const kind = view === 'failed' ? failureKind(build.errorLog) : null;
+  const notes = buildNotices(build.errorLog).map((n) => (
+    <p key={n} id={`build-note-${n}`} className="bx-note" role="note">{t(`buildFlow.notice.${n}`)}</p>
+  ));
 
   return createPortal(
     <div
@@ -303,6 +306,7 @@ export function BuildExperience() {
               })}
             </ol>
             <p className="bx-hint">{t('buildFlow.hint')}</p>
+            {notes}
             <div className="bx-actions">
               <button ref={mainBtnRef} id="build-continue-btn" type="button" className="bx-btn bx-btn--secondary" onClick={() => setMode('pill')}>
                 {t('buildFlow.continueWorking')}
@@ -342,6 +346,7 @@ export function BuildExperience() {
             </div>
             <h2 id="bx-title" className="bx-title">{t('buildFlow.failedTitle')}</h2>
             <p className="bx-explain">{t(`buildFlow.failed.${kind}`)}</p>
+            {notes}
             <div className="bx-actions">
               <button ref={mainBtnRef} id="build-view-details" type="button" className="bx-btn" onClick={() => setShowDetails((v) => !v)} aria-expanded={showDetails}>
                 {showDetails ? t('buildFlow.hideDetails') : t('buildFlow.viewDetails')}

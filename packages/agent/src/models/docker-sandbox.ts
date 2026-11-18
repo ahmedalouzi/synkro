@@ -388,12 +388,51 @@ export function flutterOrg(projectId: string | undefined): string {
   return `com.atomvs.p${hex}`;
 }
 
+/**
+ * `flutter_android <org>`: makes sure the sandbox copy has an android/ project today's Flutter can build.
+ * - Missing: `flutter create` adds it, without touching lib/ or pubspec.yaml.
+ * - Present and current: kept as is, with its own applicationId.
+ * - Present but refused or uncompilable: moved aside to $TMPDIR (never back into the user's project), generated
+ *   again, and the log gets "[SYSTEM] android/ was ..., regenerated it".
+ *
+ * Refused or uncompilable means one of:
+ * - v1 embedding, checked the way Flutter 3.44 does (flutter_tools project.dart computeEmbeddingVersion): the
+ *   manifest is missing, its <application> is io.flutter.app.FlutterApplication, or it has no
+ *   <meta-data android:name="flutterEmbedding" android:value="2">;
+ * - code using the deleted io.flutter.app.FlutterActivity / FlutterFragmentActivity, which Flutter's check misses and
+ *   Kotlin/Java then fails on;
+ * - the Flutter Gradle plugin applied the old way (apply from: .../flutter.gradle or app_plugin_loader.gradle), which
+ *   those files now refuse with an exception;
+ * - incomplete: no settings.gradle(.kts) or no app/build.gradle(.kts).
+ *
+ * A missing gradlew alone is fine: Flutter's own android/.gitignore leaves it out and `flutter build` adds it.
+ * Exported for tests.
+ */
+export const FLUTTER_ANDROID_FN = [
+  'flutter_android() {',
+  '_fm=android/app/src/main/AndroidManifest.xml; _why=;',
+  'if [ ! -d android ]; then flutter create --platforms=android --org "$1" .; return $?; fi;',
+  'if [ ! -f "$_fm" ]; then _why="outdated (v1 embedding: no app/src/main/AndroidManifest.xml)";',
+  'elif [ ! -f android/settings.gradle ] && [ ! -f android/settings.gradle.kts ]; then _why="incomplete (no settings.gradle)";',
+  'elif [ ! -f android/app/build.gradle ] && [ ! -f android/app/build.gradle.kts ]; then _why="incomplete (no app/build.gradle)";',
+  // One manifest tag per line, so an attribute check stays inside its tag.
+  "else _tags=$(tr '\\n\\r\\t' '   ' < \"$_fm\" | tr '<' '\\n');",
+  'if printf "%s\\n" "$_tags" | grep -qE "^application[[:space:]].*android:name=[\\"\']io\\.flutter\\.app\\.FlutterApplication[\\"\']"',
+  '|| ! printf "%s\\n" "$_tags" | grep -E "^meta-data[[:space:]].*android:name=[\\"\']flutterEmbedding[\\"\']" | grep -qE "android:value=[\\"\']2[\\"\']"',
+  "|| grep -rqE 'io\\.flutter\\.app\\.(FlutterActivity|FlutterFragmentActivity)([^A-Za-z]|$)' android/app/src; then _why=\"outdated (v1 embedding)\";",
+  "elif grep -qsE 'flutter_tools/gradle/(flutter|app_plugin_loader)\\.gradle' android/settings.gradle android/settings.gradle.kts android/app/build.gradle android/app/build.gradle.kts;",
+  'then _why="outdated (old Flutter Gradle plugin setup)"; fi; fi;',
+  '[ -z "$_why" ] && return 0;',
+  'echo "[SYSTEM] android/ was $_why, regenerated it";',
+  '_old="${TMPDIR:-/tmp}/android-outdated"; rm -rf "$_old" && mv android "$_old"',
+  '&& flutter create --platforms=android --org "$1" .; };',
+].join(' ');
+
 /** Exported for tests. */
 export function getBuildCommand(framework: BuildFramework, projectId?: string): string {
   if (framework === 'flutter') {
-    // If the project lacks an android/ folder (e.g. web-only repo), generate it safely
-    // without overwriting existing lib/ or pubspec.yaml. An existing android/ keeps its own applicationId.
-    return `${STEP_FN} ${CACHE_REPORT_FN} cd /build && ( [ -d android ] || flutter create --platforms=android --org ${flutterOrg(projectId)} . )`
+    // Generates android/ when it is missing, outdated (v1 embedding) or incomplete; see FLUTTER_ANDROID_FN.
+    return `${STEP_FN} ${CACHE_REPORT_FN} ${FLUTTER_ANDROID_FN} cd /build && flutter_android ${flutterOrg(projectId)}`
       + ' && step_done "flutter create"'
       + ' && flutter build apk --release --target-platform android-arm64'
       + ' && step_done "gradle (flutter build apk)"'
