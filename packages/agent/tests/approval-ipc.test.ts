@@ -21,7 +21,9 @@ export default async function run() {
   }
   const requireDesktop = createRequire(path.join(desktop, 'package.json'));
   const esbuild = createRequire(requireDesktop.resolve('vite'))('esbuild') as typeof import('esbuild');
-  const electron = requireDesktop('electron') as unknown as string;
+  // The binary itself (electron/path.txt), not require('electron'): another test may have stubbed that module.
+  const electronDir = path.dirname(requireDesktop.resolve('electron/package.json'));
+  const electron = path.join(electronDir, 'dist', fs.readFileSync(path.join(electronDir, 'path.txt'), 'utf8').trim());
   const out = fs.mkdtempSync(path.join(os.tmpdir(), 'approval-ipc-'));
   const fixtures = path.join(root, 'packages/agent/tests/fixtures/approval-ipc');
   try {
