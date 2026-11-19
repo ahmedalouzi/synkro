@@ -79,6 +79,11 @@ export class CheckpointService {
     this.current = null;
   }
 
+  /** Whether files changed now are captured (an agent message with a checkpoint is running). */
+  get recording(): boolean {
+    return this.current !== null;
+  }
+
   /** Saves a file's original content the first time the agent is about to change it. */
   async capture(path: string): Promise<void> {
     const cp = this.current;

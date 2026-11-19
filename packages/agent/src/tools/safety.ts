@@ -1,10 +1,13 @@
 /**
- * Command Safety Layer
+ * Command Safety Layer: one decision for every command the agent runs, used by both permission layers (the agent's
+ * run_command and TerminalService).
  *
- * Classifies terminal commands as:
- * - SAFE: auto-execute without confirmation (normal dev commands)
- * - DANGEROUS: require explicit user confirmation
- * - BLOCKED: never allow
+ * - safe: runs without asking. Only a whole command that is a known, harmless mobile-dev tool (SAFE_COMMANDS),
+ *   with no shell operators (& | ; > < ` $( ), so nothing can be chained after it.
+ * - dangerous: the user is asked first (the approval card). `alwaysAllowKey` says whether "Always allow in this
+ *   project" may be offered: never for destructive commands, stopping processes, system-wide changes, shells and
+ *   interpreters (they can run anything), or a line with shell operators.
+ * - blocked: never runs, and no card is shown (e.g. stopping processes by name).
  */
 
 export type SafetyLevel = 'safe' | 'dangerous' | 'blocked';
@@ -12,100 +15,208 @@ export type SafetyLevel = 'safe' | 'dangerous' | 'blocked';
 export interface CommandSafetyResult {
   level: SafetyLevel;
   reason?: string;
+  /**
+   * For a dangerous command: the program and subcommand that "Always allow in this project" remembers (e.g.
+   * "flutter pub run", "git checkout"), or null when it must be asked every time.
+   */
+  alwaysAllowKey?: string | null;
 }
 
-/** Patterns that are always blocked — never execute */
+/** Programs that, when run, wipe a disk or stop the machine: never. Matched where a command starts. */
+const BLOCKED_PROGRAMS = /^(shutdown|reboot|halt|poweroff|mkfs(\.\w+)?|format|diskpart|bcdedit)$/i;
 const BLOCKED_PATTERNS = [
-  /rm\s+-rf\s+\//, // rm -rf on root
-  /format\s+[a-z]:/i, // Windows disk format
-  /mkfs\./,
-  /dd\s+if=/,
-  /shutdown/i,
-  /reboot/i,
-  /halt/i,
+  /\brm\s+-[a-z]*r[a-z]*f?[a-z]*\s+\/(\s|$|\*)/i, // rm -rf /
+  /\bdd\s+if=/,
 ];
 
-/** Patterns that require explicit user confirmation */
-const DANGEROUS_PATTERNS = [
-  /rm\s+-rf/i,
-  /del\s+\/[sq]/i,          // Windows: del /s or /q
-  /rmdir\s+\/s/i,            // Windows: rmdir /s
-  /git\s+push\s+.*--force/i,
-  /git\s+reset\s+--hard/i,
-  /git\s+clean\s+-fd/i,
-  /DROP\s+TABLE/i,
-  /DROP\s+DATABASE/i,
-  /truncate/i,
-  /sudo\s+rm/i,
-  /sudo\s+chmod/i,
-  /sudo\s+chown/i,
-  /\/etc\//,                  // any write to /etc
-  /passwd/i,
-  /curl.*\|\s*(sh|bash)/i,   // curl pipe to shell
-  /wget.*\|\s*(sh|bash)/i,
-  /chmod\s+777/,
+/** Asked every time, never "always allow": they destroy work or change the system. */
+const DESTRUCTIVE_PATTERNS = [
+  /\brm\s+-[a-z]*[rf]/i,
+  /\b(del|erase)\s+.*\/[sq]\b/i,
+  /\b(rmdir|rd)\s+.*\/s\b/i,
+  /\bremove-item\b/i,
+  /\bgit\s+push\b/i,
+  /\bgit\s+reset\s+--hard\b/i,
+  /\bgit\s+clean\b/i,
+  /\bgit\s+(checkout|restore)\s+(--\s|\.|-f\b)/i,
+  /\bgit\s+branch\s+.*-[dD]\b/i,
+  /\bgit\s+stash\s+(drop|clear)\b/i,
+  /\bgit\s+rebase\b/i,
+  /\bDROP\s+(TABLE|DATABASE)\b/i,
+  /\btruncate\b/i,
+  /\bsudo\b/i,
+  /\bchmod\b/i,
+  /\bchown\b/i,
+  /\/etc\//,
+  /\bpasswd\b/i,
+  /\b(curl|wget|iwr|invoke-webrequest)\b.*\|\s*(sh|bash|iex|invoke-expression)\b/i,
+  /\b(reg|setx|netsh|sc|icacls|takeown|bcdedit|schtasks)(\.exe)?\s/i,
+  /\b(npm|pnpm|yarn)\s+(publish|unpublish|login|logout|adduser)\b/i,
+  /\s(-g|--global|--location[= ]global)\b/i,
+  /\s--force\b/i,
+  /--legacy-peer-deps\b/i,
 ];
 
-/** Safe dev commands — always auto-execute */
-const SAFE_PREFIXES = [
-  'flutter pub get',
-  'flutter pub upgrade',
-  'flutter analyze',
-  'flutter test',
-  'flutter build',
-  'flutter run',
-  'flutter clean',
-  'flutter create',
-  'flutter doctor',
-  'dart pub get',
-  'dart analyze',
-  'dart test',
-  'dart format',
-  'npm install',
-  'npm run',
-  'npm test',
-  'npm build',
-  'npx',
-  'pnpm install',
-  'pnpm run',
-  'pnpm test',
-  'pnpm build',
-  'pnpm typecheck',
-  'pnpm add',
-  'pnpm remove',
-  'yarn install',
-  'yarn run',
-  'yarn add',
-  'yarn remove',
-  'git status',
-  'git log',
-  'git diff',
-  'git add',
-  'git commit',
-  'git fetch',
-  'git pull',
-  'git branch',
-  'git checkout',
-  'git stash',
-  'git merge',
-  'cat ',
-  'ls ',
-  'dir ',
-  'echo ',
-  'pwd',
-  'mkdir',
-  'touch',
-  'cp ',
-  'mv ',
-  'node ',
-  'python ',
-  'pip install',
-  'gem install',
-  'pod install',
-  'adb ',
-  'emulator ',
-  'xcrun ',
+/** Shells and interpreters: whatever they are given can do anything, so they are asked every time. */
+const INTERPRETERS = /^(node|nodejs|python\d*|py|ruby|perl|php|bash|sh|zsh|cmd|powershell|pwsh|wsl|deno|bun|osascript|npx|pnpx|bunx|dlx)$/i;
+
+/** & | ; > < ` $( or a newline: the line is more than one plain command. */
+const SHELL_OPERATORS = /[&|;<>`\r\n]|\$\(/;
+
+/** The program (without path, quotes or .exe/.cmd/.bat) and its arguments. */
+function words(command: string): { program: string; args: string[] } {
+  const parts = command.trim().split(/\s+/);
+  const program = (parts[0] ?? '').replace(/["']/g, '').split(/[\\/]/).pop()!.toLowerCase().replace(/\.(exe|cmd|bat|ps1)$/, '');
+  return { program, args: parts.slice(1) };
+}
+
+/** First argument that is not a flag. */
+function subcommand(args: string[]): string | undefined {
+  return args.find((a) => !a.startsWith('-'));
+}
+
+export interface CommandContext {
+  /** package.json "scripts" of the project, to judge `npm run x` / `npm test` / `pnpm x` by what x runs. */
+  scripts?: Record<string, string>;
+}
+
+const PACKAGE_MANAGERS = /^(npm|pnpm|yarn)$/;
+// Subcommands that only install or remove packages of this project (flags like -g / --force are destructive above).
+const INSTALL_SUBCOMMANDS = /^(install|i|ci|add|remove|uninstall|un|rm|r|update|up|upgrade)$/;
+const READ_SUBCOMMANDS = /^(ls|list|outdated|view|info|why|explain|doctor|-v|--version)$/;
+// A package manager running a project script: npm run x, npm test, npm start, pnpm x, yarn x.
+const SCRIPT_SUBCOMMANDS = /^(run|run-script|test|t|start)$/;
+
+/**
+ * Harmless commands of mobile development: run without asking. Each rule gets the program and arguments of a
+ * command with no shell operators. Exported for tests (and shown to the user as the list).
+ */
+export const SAFE_COMMANDS: { label: string; test: (program: string, args: string[], ctx: CommandContext) => boolean }[] = [
+  {
+    label: 'flutter pub get/add/remove/upgrade/outdated/deps, analyze, test, build, run, clean, create, doctor, devices, gen-l10n, --version',
+    test: (p, a) => p === 'flutter' && (
+      (a[0] === 'pub' && /^(get|add|remove|upgrade|outdated|deps)$/.test(a[1] ?? ''))
+      || /^(analyze|test|build|run|clean|create|doctor|devices|gen-l10n|--version|-v|precache)$/.test(a[0] ?? '')),
+  },
+  {
+    label: 'dart pub get/add/remove/upgrade/outdated/deps, analyze, test, format, fix, --version',
+    test: (p, a) => p === 'dart' && (
+      (a[0] === 'pub' && /^(get|add|remove|upgrade|outdated|deps)$/.test(a[1] ?? ''))
+      || /^(analyze|test|format|fix|--version)$/.test(a[0] ?? '')),
+  },
+  {
+    label: 'npm / pnpm / yarn: install, ci, add, remove, update (not -g, --force, --legacy-peer-deps), ls, outdated, view',
+    test: (p, a) => PACKAGE_MANAGERS.test(p) && (a.length === 0 ? p !== 'npm' : INSTALL_SUBCOMMANDS.test(a[0]) || READ_SUBCOMMANDS.test(a[0])),
+  },
+  {
+    label: 'npm run / npm test / npm start / pnpm x / yarn x: when the package.json script itself is on this list',
+    test: (p, a, ctx) => {
+      if (!PACKAGE_MANAGERS.test(p) || !ctx.scripts) return false;
+      const sub = a[0] ?? '';
+      const name = SCRIPT_SUBCOMMANDS.test(sub) ? (sub === 'run' || sub === 'run-script' ? a[1] : sub === 't' ? 'test' : sub) : p !== 'npm' ? sub : undefined;
+      const body = name ? ctx.scripts[name] : undefined;
+      // The script's own command, judged without scripts (no recursion).
+      return !!body && classifyCommand(body).level === 'safe';
+    },
+  },
+  {
+    label: 'npx expo install/start/doctor/config/export/prebuild/run:android/run:ios, npx expo-doctor, npx tsc/eslint/prettier/jest',
+    test: (p, a) => /^(npx|pnpx)$/.test(p) && (
+      (a[0] === 'expo' && /^(install|start|doctor|config|export|prebuild|run:android|run:ios|customize|--version)$/.test(a[1] ?? ''))
+      || /^(expo-doctor|tsc|eslint|prettier|jest|vitest)$/.test(a[0] ?? '')),
+  },
+  {
+    label: 'expo start/install/run:android/run:ios, react-native start/run-android/run-ios/info, tsc, eslint, prettier, jest (as package.json scripts run them)',
+    test: (p, a) => (p === 'expo' && /^(start|install|doctor|export|prebuild|run:android|run:ios)$/.test(a[0] ?? ''))
+      || (p === 'react-native' && /^(start|run-android|run-ios|info|doctor)$/.test(a[0] ?? ''))
+      || /^(tsc|eslint|prettier|jest|vitest|expo-doctor)$/.test(p),
+  },
+  {
+    label: 'git status, log, diff, show, add, commit, fetch, branch (list/create), stash (save/list/show)',
+    test: (p, a) => p === 'git' && /^(status|log|diff|show|add|commit|fetch|branch|stash)$/.test(a[0] ?? '')
+      && !(a[0] === 'stash' && /^(drop|clear|pop|apply)$/.test(a[1] ?? ''))
+      && !(a[0] === 'branch' && a.some((x) => /^-[a-zA-Z]*[dDmM]/.test(x) || x === '--delete' || x === '--move')),
+  },
+  {
+    label: 'ls, dir, pwd, echo, cat, type, mkdir, where, which, tree: only with paths inside the project',
+    test: (p, a) => /^(ls|dir|pwd|echo|cat|type|mkdir|md|where|which|tree)$/.test(p) && a.every((x) => staysInProject(x, p)),
+  },
+  {
+    label: 'adb devices / logcat, emulator -list-avds, xcrun simctl list, pod install',
+    test: (p, a) => (p === 'adb' && /^(devices|logcat|version)$/.test(a[0] ?? ''))
+      || (p === 'emulator' && a[0] === '-list-avds')
+      || (p === 'xcrun' && a[0] === 'simctl' && a[1] === 'list')
+      || (p === 'pod' && a[0] === 'install'),
+  },
 ];
+
+/**
+ * An argument of a read-only command that cannot reach outside the project folder (commands run in it): a flag, or a
+ * relative path without "..". Absolute paths (C:\, \\server, /), the home folder (~) and variables (%USERPROFILE%,
+ * $HOME, $env:X) can point anywhere, e.g. `type C:\Users\x\.ssh\id_rsa`: those ask. Exported for tests.
+ */
+export function staysInProject(arg: string, program = ''): boolean {
+  const a = arg.replace(/^["']|["']$/g, '');
+  // A flag (-la, --all; for dir / tree / where also /s /b /a:h); its value may still be a path: --file=../x.
+  if (/^-{1,2}[\w-]+(=.*)?$/.test(a) || (/^(dir|tree|where)$/.test(program) && /^\/[a-z?](:[\w-]*)?$/i.test(a))) {
+    const value = a.includes('=') ? a.slice(a.indexOf('=') + 1) : '';
+    return !value || staysInProject(value, program);
+  }
+  if (/^[a-z]:/i.test(a) || /^[\\/]/.test(a) || a.startsWith('~')) return false;
+  if (/[%$]/.test(a)) return false;
+  return !a.split(/[\\/]+/).includes('..');
+}
+
+/**
+ * The new packages a command adds to the project (npm/pnpm/yarn add or install <name>, flutter/dart pub add <name>,
+ * npx expo install <name>), as written, e.g. ["axios@1.7", "http"]. These run without a card; the chat step lists
+ * them ("Added package: axios") so the user sees what came in. Exported for tests.
+ */
+export function packagesAdded(command: string): string[] {
+  if (!command.trim() || SHELL_OPERATORS.test(command)) return [];
+  const { program, args } = words(command);
+  const names = (list: string[]) => list.filter((a) => a && !a.startsWith('-')).map((a) => a.replace(/^["']|["']$/g, ''));
+  if (PACKAGE_MANAGERS.test(program) && /^(install|i|add)$/.test(args[0] ?? '')) return names(args.slice(1));
+  if (/^(flutter|dart)$/.test(program) && args[0] === 'pub' && args[1] === 'add') return names(args.slice(2));
+  if (/^(npx|pnpx)$/.test(program) && args[0] === 'expo' && args[1] === 'install') return names(args.slice(2));
+  return [];
+}
+
+/** Whether `command` is on the safe list (and has no shell operators). Exported for tests. */
+export function isSafeCommand(command: string, ctx: CommandContext = {}): boolean {
+  if (!command.trim() || SHELL_OPERATORS.test(command)) return false;
+  const { program, args } = words(command);
+  return SAFE_COMMANDS.some((rule) => rule.test(program, args, ctx));
+}
+
+/**
+ * What "Always allow in this project" remembers for a dangerous command, or null when it must be asked every time.
+ * Exported for tests.
+ */
+export function alwaysAllowKeyOf(command: string): string | null {
+  if (!command.trim() || SHELL_OPERATORS.test(command)) return null;
+  if (DESTRUCTIVE_PATTERNS.some((p) => p.test(command)) || findProcessKill(command)) return null;
+  const { program, args } = words(command);
+  if (!program || INTERPRETERS.test(program)) return null;
+  // cp, mv, ...: the program. git checkout, adb install, gradlew assembleDebug: with its subcommand.
+  if (!TOOLS_WITH_SUBCOMMANDS.test(program)) return program;
+  const sub = subcommand(args);
+  // flutter pub run, dart run build_runner, npm run build: the tool name after "pub" / "run" is part of what is allowed.
+  const third = sub && /^(pub|run|run-script|exec)$/.test(sub) ? subcommand(args.slice(args.indexOf(sub) + 1)) : undefined;
+  return [program, sub, third].filter(Boolean).join(' ');
+}
+
+const TOOLS_WITH_SUBCOMMANDS = /^(flutter|dart|npm|pnpm|yarn|git|adb|gradlew|gradle|xcrun|pod|expo|eas|react-native|firebase|docker|emulator|avdmanager|sdkmanager|keytool|bundle|fastlane|java|cargo|go|dotnet)$/;
+
+/** The package.json script a package-manager command runs (npm run x, npm test, pnpm x), if any. */
+function scriptOf(command: string, scripts: Record<string, string> | undefined): { name: string; body: string } | null {
+  if (!scripts || SHELL_OPERATORS.test(command)) return null;
+  const { program: p, args: a } = words(command);
+  if (!PACKAGE_MANAGERS.test(p)) return null;
+  const sub = a[0] ?? '';
+  const name = SCRIPT_SUBCOMMANDS.test(sub) ? (sub === 'run' || sub === 'run-script' ? a[1] : sub === 't' ? 'test' : sub) : p !== 'npm' ? sub : undefined;
+  return name && typeof scripts[name] === 'string' ? { name, body: scripts[name] } : null;
+}
 
 /** A command that stops processes: by name (any process with that name on the PC) and/or by PID. */
 export interface ProcessKill {
@@ -203,51 +314,61 @@ export function processKillPolicy(command: string, ownPids: ReadonlySet<number> 
   return { allowed: true };
 }
 
-export interface ClassifyOptions {
+export interface ClassifyOptions extends CommandContext {
   /** PIDs of processes Atomvs started (preview, dev servers, agent commands): the only ones a command may stop. */
   ownPids?: ReadonlySet<number>;
+  /** "Always allow in this project" keys the user chose (see alwaysAllowKeyOf). */
+  alwaysAllowed?: ReadonlySet<string>;
 }
 
 export function classifyCommand(command: string, options: ClassifyOptions = {}): CommandSafetyResult {
-  const normalized = command.trim().toLowerCase();
-
-  // Stopping processes: never by name, by PID only Atomvs's own (and then with the user's confirmation).
+  // Stopping processes: never by name, by PID only Atomvs's own (and then with the user's confirmation, every time).
   const kill = processKillPolicy(command, options.ownPids);
   if (!kill.allowed) return { level: 'blocked', reason: kill.reason };
   if (findProcessKill(command)) {
-    return { level: 'dangerous', reason: 'This command stops a process Atomvs started and requires your confirmation.' };
+    return { level: 'dangerous', reason: 'This command stops a process Atomvs started.', alwaysAllowKey: null };
   }
 
-  // Check blocked first
+  // Never: wiping a disk or stopping the machine, wherever in the line.
+  for (const part of command.split(SEGMENT_SPLIT)) {
+    const { program } = words(part.replace(WRAPPER, ''));
+    if (BLOCKED_PROGRAMS.test(program)) {
+      return { level: 'blocked', reason: `"${program}" can wipe a disk or stop the computer, so it is never run.` };
+    }
+  }
   for (const pattern of BLOCKED_PATTERNS) {
     if (pattern.test(command)) {
-      return {
-        level: 'blocked',
-        reason: `This command matches a blocked pattern and will never be executed: \`${pattern}\``,
-      };
+      return { level: 'blocked', reason: 'This command could wipe the disk, so it is never run.' };
     }
   }
 
-  // Check dangerous
-  for (const pattern of DANGEROUS_PATTERNS) {
-    if (pattern.test(command)) {
-      return {
-        level: 'dangerous',
-        reason: `This command requires your explicit confirmation before execution.`,
-      };
+  if (DESTRUCTIVE_PATTERNS.some((pattern) => pattern.test(command))) {
+    return { level: 'dangerous', reason: 'This command can delete work or change your system.', alwaysAllowKey: null };
+  }
+
+  // npm run x / pnpm x: also what the script runs. A script that stops processes by name is blocked like the command.
+  const script = scriptOf(command, options.scripts);
+  if (script) {
+    const inner = classifyCommand(script.body, { ownPids: options.ownPids });
+    if (inner.level === 'blocked') return { level: 'blocked', reason: `The "${script.name}" script runs: ${script.body}. ${inner.reason}` };
+    if (inner.level === 'dangerous' && inner.alwaysAllowKey === null) {
+      return { level: 'dangerous', reason: `The "${script.name}" script runs: ${script.body}. ${inner.reason}`, alwaysAllowKey: null };
     }
   }
 
-  // Check safe prefixes
-  for (const prefix of SAFE_PREFIXES) {
-    if (normalized.startsWith(prefix.toLowerCase())) {
-      return { level: 'safe' };
-    }
-  }
+  if (isSafeCommand(command, options)) return { level: 'safe' };
 
-  // Unknown commands are treated as dangerous (require confirmation)
+  const alwaysAllowKey = alwaysAllowKeyOf(command);
+  if (alwaysAllowKey && options.alwaysAllowed?.has(alwaysAllowKey)) {
+    return { level: 'safe', reason: `"${alwaysAllowKey}" is always allowed in this project.` };
+  }
   return {
     level: 'dangerous',
-    reason: `This command is not in the known-safe list and requires your confirmation before execution.`,
+    reason: SHELL_OPERATORS.test(command)
+      ? 'This line runs more than one command (& | ; > or similar).'
+      : alwaysAllowKey
+        ? 'This command is not on the list of everyday development commands.'
+        : 'This runs a shell or a script interpreter, which can do anything.',
+    alwaysAllowKey,
   };
 }

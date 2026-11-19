@@ -379,3 +379,11 @@
   background: var(--preview-app-bg, #000);
   display: block;
 }
+
+/* A problem with the Flutter installation (SDK inside OneDrive, startup lock): explanation, path, Settings / Retry. */
+.preview-env-problem { max-width: 360px; margin: 0 auto; padding: 24px 16px; text-align: center; }
+.preview-env-problem p { font-size: 12px; line-height: 1.55; color: var(--text-secondary); margin: 0 0 8px; }
+.preview-env-problem__path { display: block; margin: 4px 0 10px; padding: 6px 10px; border-radius: 4px; font-size: 10.5px; word-break: break-all; text-align: start; background: rgba(255, 255, 255, 0.05); color: var(--text-primary); }
+.preview-env-problem .preview-env-problem__note { font-size: 11px; color: var(--text-muted); }
+.preview-env-problem__actions { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-top: 6px; }
+.preview-retry-btn--primary { background: var(--gold); color: #000; border-color: var(--gold); font-weight: 600; }
