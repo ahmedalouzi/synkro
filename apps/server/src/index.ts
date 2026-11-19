@@ -19,6 +19,7 @@ import { execSync } from 'node:child_process';
 import { buildRouter, shortLinkDownloadRouter } from './build-router';
 import { threadsRouter } from './threads-router';
 import { billingRouter } from './billing-router';
+import { oauthRouter } from './oauth-router';
 import { requestLogLine, authLogLine } from './log-redact';
 
 async function bootstrap() {
@@ -73,6 +74,10 @@ async function bootstrap() {
   if (secrets.STRIPE_WEBHOOK_SECRET) process.env.STRIPE_WEBHOOK_SECRET = secrets.STRIPE_WEBHOOK_SECRET;
   if (secrets.SYNKRO_SIGNING_ENC_KEY) process.env.SYNKRO_SIGNING_ENC_KEY = secrets.SYNKRO_SIGNING_ENC_KEY;
   if (secrets.DOWNLOAD_TOKEN_SECRET) process.env.DOWNLOAD_TOKEN_SECRET = secrets.DOWNLOAD_TOKEN_SECRET;
+  if (secrets.GOOGLE_OAUTH_CLIENT_ID) process.env.GOOGLE_OAUTH_CLIENT_ID = secrets.GOOGLE_OAUTH_CLIENT_ID;
+  if (secrets.GOOGLE_OAUTH_CLIENT_SECRET) process.env.GOOGLE_OAUTH_CLIENT_SECRET = secrets.GOOGLE_OAUTH_CLIENT_SECRET;
+  if (secrets.GITHUB_OAUTH_CLIENT_ID) process.env.GITHUB_OAUTH_CLIENT_ID = secrets.GITHUB_OAUTH_CLIENT_ID;
+  if (secrets.GITHUB_OAUTH_CLIENT_SECRET) process.env.GITHUB_OAUTH_CLIENT_SECRET = secrets.GITHUB_OAUTH_CLIENT_SECRET;
 
   // Every Cloud Build is signed with a key stored encrypted under SYNKRO_SIGNING_ENC_KEY: without it no build
   // can be signed, so production does not start. Same for DOWNLOAD_TOKEN_SECRET, which signs the APK download
@@ -234,6 +239,9 @@ async function bootstrap() {
   app.use('/v1/threads', threadsRouter);
   app.use('/v1/billing', billingRouter);
   app.use('/api/billing', billingRouter);
+
+  // Attach OAuth Router
+  app.use('/v1/auth/oauth', oauthRouter);
 
   // Signup Endpoint
   app.post('/v1/auth/signup', async (req, res) => {

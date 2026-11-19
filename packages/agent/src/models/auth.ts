@@ -315,6 +315,20 @@ export class AuthService implements IAuthProvider {
     }
   }
 
+  /**
+   * Creates a session for an authenticated OAuth user using the identical session token
+   * entropy, refresh token hashing, and expiration rules as email/password login.
+   */
+  async createOAuthSession(userId: string, email: string, client?: any): Promise<UserSession> {
+    const runner = client || db;
+    const session = await this.createSessionInternal(runner, userId, email);
+    return {
+      ...session,
+      emailVerified: true,
+      verificationRequired: false,
+    };
+  }
+
   private async createSessionInternal(client: any, userId: string, email: string): Promise<UserSession> {
     const sessionToken = crypto.randomBytes(32).toString('hex');
     const refreshToken = crypto.randomBytes(32).toString('hex');

@@ -99,6 +99,7 @@ async function main() {
     'credits-pricing.test.ts',
     'email-verification.test.ts',
     'failover.test.ts',
+    'oauth-login.test.ts',
     'p312-settings-gateway.test.ts',
     'p313-security-audit.test.ts',
     'p314-e2e-validation.test.ts',

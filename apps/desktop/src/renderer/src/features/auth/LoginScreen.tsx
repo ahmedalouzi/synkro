@@ -108,7 +108,7 @@ const ArrowIcon = () => (
 
 export function LoginScreen() {
   const { t } = useI18n();
-  const { login, pendingVerificationEmail, verifyEmail, resendVerification, cancelVerification } = useAuthStore();
+  const { login, loginWithOAuth, cancelOAuth, pendingVerificationEmail, verifyEmail, resendVerification, cancelVerification } = useAuthStore();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -117,6 +117,7 @@ export function LoginScreen() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
+  const [oauthBusy, setOauthBusy] = useState<'Google' | 'GitHub' | null>(null);
   const [otp, setOtp] = useState<string[]>(['', '', '', '', '', '']);
   const [cooldown, setCooldown] = useState(60);
   const otpInputRefs = useRef<(HTMLInputElement | null)[]>([]);
@@ -174,6 +175,11 @@ export function LoginScreen() {
     setMode(next);
     setError('');
     setNotice('');
+    if (oauthBusy) {
+      void cancelOAuth();
+      setOauthBusy(null);
+      setBusy(false);
+    }
   };
 
   const handleOtpChange = (index: number, val: string) => {
@@ -255,10 +261,29 @@ export function LoginScreen() {
     setNotice('');
   };
 
-  // Placeholders until the server supports OAuth sign-in.
-  const handleOAuth = (provider: 'Google' | 'GitHub') => {
+  const handleOAuth = async (provider: 'Google' | 'GitHub') => {
     setError('');
-    setNotice(t('login.oauthComingSoon', { provider }));
+    setNotice('');
+    setOauthBusy(provider);
+    setBusy(true);
+
+    try {
+      const res = await loginWithOAuth(provider.toLowerCase() as 'google' | 'github');
+      if (!res.success) {
+        setError(res.error || t('login.authFailed'));
+      }
+    } catch (err: any) {
+      setError(err.message || t('login.authFailed'));
+    } finally {
+      setOauthBusy(null);
+      setBusy(false);
+    }
+  };
+
+  const handleCancelOAuth = async () => {
+    await cancelOAuth();
+    setOauthBusy(null);
+    setBusy(false);
   };
 
   // Spotlight that follows the pointer across the card.
@@ -460,15 +485,34 @@ export function LoginScreen() {
                 </div>
 
                 <div className="lx-oauth">
-                  <button type="button" className="lx-oauth-btn" onClick={() => handleOAuth('Google')} disabled={busy}>
-                    <GoogleIcon />
-                    Google
+                  <button
+                    type="button"
+                    className={`lx-oauth-btn ${oauthBusy === 'Google' ? 'is-loading' : ''}`}
+                    onClick={() => void handleOAuth('Google')}
+                    disabled={busy}
+                  >
+                    {oauthBusy === 'Google' ? <span className="lx-spinner" aria-hidden="true" /> : <GoogleIcon />}
+                    {oauthBusy === 'Google' ? t('login.signingIn') : 'Google'}
                   </button>
-                  <button type="button" className="lx-oauth-btn" onClick={() => handleOAuth('GitHub')} disabled={busy}>
-                    <GitHubIcon />
-                    GitHub
+                  <button
+                    type="button"
+                    className={`lx-oauth-btn ${oauthBusy === 'GitHub' ? 'is-loading' : ''}`}
+                    onClick={() => void handleOAuth('GitHub')}
+                    disabled={busy}
+                  >
+                    {oauthBusy === 'GitHub' ? <span className="lx-spinner" aria-hidden="true" /> : <GitHubIcon />}
+                    {oauthBusy === 'GitHub' ? t('login.signingIn') : 'GitHub'}
                   </button>
                 </div>
+
+                {oauthBusy && (
+                  <div className="lx-oauth-waiting" role="status">
+                    <span>{t('login.waitingForProvider', { provider: oauthBusy })}</span>
+                    <button type="button" className="lx-oauth-cancel" onClick={() => void handleCancelOAuth()}>
+                      {t('login.cancel')}
+                    </button>
+                  </div>
+                )}
 
                 <div className="lx-divider">
                   <span>{t('login.orContinueWithEmail')}</span>

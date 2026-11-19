@@ -745,6 +745,8 @@ export interface SshTarget {
   identityFile?: string;
 }
 
+export type OAuthProvider = 'google' | 'github';
+
 export const IPC_CHANNELS = {
   WORKSPACE_OPEN_FOLDER: 'workspace:openFolder',
   WORKSPACE_GET_RECENT: 'workspace:getRecent',
@@ -865,6 +867,8 @@ export const IPC_CHANNELS = {
   AUTH_GET_ACCOUNT: 'auth:getAccount',
   AUTH_VERIFY_EMAIL: 'auth:verifyEmail',
   AUTH_RESEND_VERIFICATION: 'auth:resendVerification',
+  AUTH_OAUTH_START: 'auth:oauthStart',
+  AUTH_OAUTH_CANCEL: 'auth:oauthCancel',
   EXTENSIONS_INSTALLED: 'extensions:installed',
   EXTENSIONS_INSTALL: 'extensions:install',
   EXTENSIONS_UNINSTALL: 'extensions:uninstall',
@@ -1228,6 +1232,8 @@ export interface IpcApi {
   authLogout: () => Promise<void>;
   authVerifyEmail: (code: string) => Promise<{ success: boolean; error?: string; emailVerified?: boolean }>;
   authResendVerification: () => Promise<{ success: boolean; error?: string }>;
+  authStartOAuth: (provider: OAuthProvider) => Promise<{ success: boolean; error?: string }>;
+  authCancelOAuth: () => Promise<{ success: boolean }>;
   authGetAccount: () => Promise<{
     email: string;
     tier?: string;

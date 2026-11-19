@@ -101,6 +101,45 @@ export async function initDbSchema() {
         window_start TIMESTAMP NOT NULL
       );
     `);
+
+    // OAuth Identities & Flow state (additive)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS oauth_identities (
+        id UUID PRIMARY KEY,
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        provider VARCHAR(50) NOT NULL,
+        provider_user_id VARCHAR(255) NOT NULL,
+        email VARCHAR(255) NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        CONSTRAINT uq_oauth_provider_user UNIQUE(provider, provider_user_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_oauth_identities_user ON oauth_identities(user_id);
+      CREATE INDEX IF NOT EXISTS idx_oauth_identities_email ON oauth_identities(email);
+    `);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS oauth_states (
+        state VARCHAR(255) PRIMARY KEY,
+        provider VARCHAR(50) NOT NULL,
+        code_verifier VARCHAR(255) NOT NULL,
+        client_return_url TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        expires_at TIMESTAMPTZ NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_oauth_states_expires ON oauth_states(expires_at);
+    `);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS oauth_exchange_codes (
+        code VARCHAR(255) PRIMARY KEY,
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        session_token VARCHAR(255) NOT NULL,
+        refresh_token VARCHAR(255) NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        expires_at TIMESTAMPTZ NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_oauth_exchange_codes_expires ON oauth_exchange_codes(expires_at);
+    `);
     
     // Usage accounting
     await client.query(`
@@ -380,6 +419,15 @@ export async function initDbSchema() {
       EXCEPTION
         WHEN duplicate_object THEN null;
       END $$;
+
+      ALTER TABLE oauth_identities ENABLE ROW LEVEL SECURITY;
+
+      DO $$ BEGIN
+        CREATE POLICY oauth_identities_user_isolation ON oauth_identities
+          USING (user_id = NULLIF(current_setting('app.current_user_id', true), '')::UUID);
+      EXCEPTION
+        WHEN duplicate_object THEN null;
+      END $$;
     `);
 
     // Create Roles and Grants
@@ -395,7 +443,7 @@ export async function initDbSchema() {
       GRANT UPDATE (status, updated_at) ON build_jobs TO api_user;
       -- Owners can only read their keys (keystore download); keys are created by the worker.
       GRANT SELECT ON signing_keys TO api_user;
-      GRANT SELECT, INSERT, UPDATE, DELETE ON chat_threads, chat_messages, chat_runs, email_verification_codes TO api_user;
+      GRANT SELECT, INSERT, UPDATE, DELETE ON chat_threads, chat_messages, chat_runs, email_verification_codes, oauth_identities TO api_user;
       GRANT SELECT, INSERT, UPDATE ON credit_ledger TO api_user;
       GRANT SELECT, UPDATE ON users TO api_user;
 

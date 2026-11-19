@@ -27,7 +27,10 @@
     "resendCodeIn": "Kodu tekrar gönder ({seconds} sn)",
     "useDifferentEmail": "Farklı bir e-posta kullan",
     "codeSentNotice": "Yeni bir doğrulama kodu gönderildi.",
-    "invalidCodeLength": "Lütfen 6 hanenin tümünü girin."
+    "invalidCodeLength": "Lütfen 6 hanenin tümünü girin.",
+    "signingIn": "Giriş yapılıyor…",
+    "waitingForProvider": "Tarayıcınızda {provider} bekleniyor…",
+    "cancel": "İptal"
   },
   "onboarding": {
     "welcomeTitle": "Atomvs'e Hoş Geldiniz",

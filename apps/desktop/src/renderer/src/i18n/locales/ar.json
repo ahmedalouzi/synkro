@@ -27,7 +27,10 @@
     "resendCodeIn": "إعادة إرسال الرمز خلال {seconds} ثانية",
     "useDifferentEmail": "استخدام بريد إلكتروني آخر",
     "codeSentNotice": "تم إرسال رمز تحقق جديد.",
-    "invalidCodeLength": "يرجى إدخال جميع الأرقام الستة."
+    "invalidCodeLength": "يرجى إدخال جميع الأرقام الستة.",
+    "signingIn": "جارٍ تسجيل الدخول…",
+    "waitingForProvider": "بانتظار {provider} في متصفحك…",
+    "cancel": "إلغاء"
   },
   "onboarding": {
     "welcomeTitle": "مرحبًا بك في Atomvs",

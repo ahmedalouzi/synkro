@@ -1,6 +1,6 @@
 import * as Sentry from '@sentry/electron/renderer';
 import { create } from 'zustand';
-import type { Settings } from '@peep/shared';
+import type { OAuthProvider, Settings } from '@peep/shared';
 
 export type AuthState = 'BOOTING' | 'AUTHENTICATING' | 'LOGIN' | 'AUTHENTICATED_HOME' | 'WORKSPACE';
 
@@ -31,6 +31,8 @@ interface AuthStore {
   setPendingVerificationEmail: (email: string | null) => void;
   checkSession: () => Promise<void>;
   login: (email: string, password: string, mode: 'signin' | 'signup') => Promise<{ success: boolean; error?: string; verificationRequired?: boolean }>;
+  loginWithOAuth: (provider: OAuthProvider) => Promise<{ success: boolean; error?: string }>;
+  cancelOAuth: () => Promise<void>;
   verifyEmail: (code: string) => Promise<{ success: boolean; error?: string }>;
   resendVerification: () => Promise<{ success: boolean; error?: string }>;
   cancelVerification: () => Promise<void>;
@@ -107,6 +109,29 @@ export const useAuthStore = create<AuthStore>((set) => ({
       return { success: false, error: res.error || 'Authentication failed' };
     } catch (err: any) {
       return { success: false, error: err.message || 'Authentication failed' };
+    }
+  },
+
+  loginWithOAuth: async (provider: OAuthProvider) => {
+    try {
+      const res = await window.peep.authStartOAuth(provider);
+      if (res.success) {
+        const account = await window.peep.authGetAccount();
+        const settings = await window.peep.getSettings();
+        set({ user: account, settings, pendingVerificationEmail: null, authState: 'AUTHENTICATED_HOME' });
+        return { success: true };
+      }
+      return { success: false, error: res.error || 'Authentication failed' };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Authentication failed' };
+    }
+  },
+
+  cancelOAuth: async () => {
+    try {
+      await window.peep.authCancelOAuth();
+    } catch {
+      // ignore
     }
   },
 

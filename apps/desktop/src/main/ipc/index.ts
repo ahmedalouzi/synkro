@@ -34,6 +34,7 @@ import { ExtensionService } from '../services/extension-service';
 import { ClaudeIdeServer } from '../services/claude-ide-server';
 import { PublishService } from '../services/publish-service';
 import { DeviceService } from '../services/device-service';
+import { OAuthService } from '../services/oauth-service';
 
 
 let db: DatabaseService | null = null;
@@ -43,6 +44,7 @@ let settingsWindow: BrowserWindow | null = null;
 let agentService: AgentService | null = null;
 let publishService: PublishService | null = null;
 let cloudBuildService: CloudBuildService | null = null;
+let oauthService: OAuthService | null = null;
 
 const previewManager = new PreviewManager();
 const fileWatcher = new FileWatcherService();
@@ -202,6 +204,7 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
   db = new DatabaseService();
   await db.init();
   cloudBuildService = new CloudBuildService(db);
+  oauthService = new OAuthService(db, () => mainWindow);
 
   await telemetryService.init();
   if (telemetryService.isEnabled()) {
@@ -1243,6 +1246,18 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
     }
   });
 
+  ipcMain.handle(IPC_CHANNELS.AUTH_OAUTH_START, async (_event, provider: 'google' | 'github') => {
+    if (!oauthService) {
+      return { success: false, error: 'OAuth service not initialized' };
+    }
+    return oauthService.startOAuth(provider);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.AUTH_OAUTH_CANCEL, async () => {
+    oauthService?.cancelOAuth();
+    return { success: true };
+  });
+
   ipcMain.handle(IPC_CHANNELS.AUTH_LOGOUT, async () => {
     const settings = db!.getSettingsRaw();
     const gatewayUrl = resolveGatewayUrl(settings.gatewayUrl);
@@ -1436,6 +1451,7 @@ export function cleanupServices(): void {
   previewManager.stop();
   agentService?.cancel();
   publishService?.cancel();
+  oauthService?.cancelOAuth();
   terminalService.destroyAll();
   claudeIdeServer.stop();
 }

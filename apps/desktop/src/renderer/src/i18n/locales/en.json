@@ -27,7 +27,10 @@
     "resendCodeIn": "Resend code in {seconds}s",
     "useDifferentEmail": "Use a different email",
     "codeSentNotice": "A new verification code has been sent.",
-    "invalidCodeLength": "Please enter all 6 digits."
+    "invalidCodeLength": "Please enter all 6 digits.",
+    "signingIn": "Signing in…",
+    "waitingForProvider": "Waiting for {provider} in your browser…",
+    "cancel": "Cancel"
   },
   "onboarding": {
     "welcomeTitle": "Welcome to Atomvs",
