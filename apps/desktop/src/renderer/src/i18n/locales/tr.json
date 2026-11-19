@@ -129,6 +129,9 @@
       "dependencies": "Projedeki bazı paketler birbiriyle uyumlu değil, bu yüzden yüklenemedi.",
       "timeout": "Derleme izin verilen süreden uzun sürdü ve durduruldu."
     },
+    "notice": {
+      "androidRegenerated": "Projenizdeki android/ klasörü Flutter'ın eski bir sürümü için hazırlanmış, bu yüzden bu derleme yeni oluşturulmuş bir klasör kullanıyor. Dosyalarınız değişmedi. Oraya elle eklediğiniz Android ayarları (izinler, simgeler) bu derlemede yok."
+    },
     "viewDetails": "Ayrıntıları göster",
     "hideDetails": "Ayrıntıları gizle",
     "copy": "Kopyala",

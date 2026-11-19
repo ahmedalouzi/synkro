@@ -78,6 +78,8 @@ const LEGACY_ACTIVITY_HTML = /<details class="agent-activity-dropdown"[\s\S]*?<\
 function stepLabel(a: AgentTimelineActivity): { verb: string; target: string } {
   const done = a.status !== 'in_progress';
   const target = a.file ? fileName(a.file) : a.command ?? '';
+  // Refused by a safety rule or not confirmed: it did not run, so never "Ran" / "Deleted".
+  if (a.status === 'blocked') return { verb: 'Blocked', target };
   switch (a.type) {
     case 'reading': return { verb: done ? 'Read' : 'Reading', target };
     case 'editing': return { verb: done ? 'Edited' : 'Editing', target };
@@ -529,6 +531,7 @@ export function ChatPane({ onOpenSettings: _onOpenSettings }: ChatPaneProps) {
               <span className="cx-step__verb">{verb}</span>
               {target && <span className="cx-step__target">{target}</span>}
               {a.status === 'failed' && <span className="cx-step__failed">failed</span>}
+              {a.status === 'blocked' && <span className="cx-step__blocked">{a.message.replace(/^Blocked: /, '')}</span>}
             </div>
           );
         })}

@@ -174,7 +174,7 @@ bind-mounted there by the setup script, section 14). Without it, builds work as 
 - [ ] A build log starts with `[SYSTEM] Using the shared Gradle dependency cache (read-only).` and ends with the
       `[STEP]` times and `Disk used`.
 
-## Gradle build cache in the RN image (DEC-10)
+## Gradle build cache in the RN image (DEC-11)
 
 `synkro/rn-sandbox:1` contains Gradle's build cache and transforms from one release build of the Atomvs Expo template
 (Dockerfile step 4), made at image build time with the same settings as real builds. Builds read it

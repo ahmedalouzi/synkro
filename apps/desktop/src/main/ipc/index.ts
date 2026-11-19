@@ -10,6 +10,7 @@ import { InlineCompletionService } from '../services/inline-completion-service';
 import { DatabaseService } from '../services/db';
 import { WorkspaceManager } from '../services/workspace-manager';
 import { ProcessManager } from '../services/process-manager';
+import { ProcessRegistry } from '../services/process-registry';
 import { FlutterService } from '../services/flutter-service';
 import { PreviewManager } from '../services/preview-manager';
 import { FileWatcherService } from '../services/file-watcher';
@@ -46,6 +47,13 @@ const previewManager = new PreviewManager();
 const fileWatcher = new FileWatcherService();
 const gitService = new GitService();
 const terminalService = new TerminalService();
+
+let registry: ProcessRegistry | null = null;
+/** The processes Atomvs started (preview, dev servers), kept in the app's data folder. */
+export function processRegistry(): ProcessRegistry {
+  registry ??= new ProcessRegistry(path.join(app.getPath('userData'), 'atomvs-processes.json'));
+  return registry;
+}
 const telemetryService = new TelemetryService();
 let autoUpdateService: AutoUpdateService | null = null;
 let rnService: ReactNativeService | null = null;
@@ -206,6 +214,8 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
 
   const workspace = new WorkspaceManager(db);
   const processManager = new ProcessManager();
+  processManager.setRegistry(processRegistry());
+  terminalService.setOwnedPidsProvider(() => processManager.pids());
   const settings = db.getSettingsRaw();
   processManager.setFlutterSdkPath(settings.flutterSdkPath);
   terminalService.setFlutterSdkPath(settings.flutterSdkPath);
@@ -222,6 +232,7 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
   agentService = new AgentService(db, workspace, platformRegistry, terminalService);
   agentService.setMainWindow(mainWindow);
   agentService.setPreviewManager(previewManager);
+  agentService.setOwnedPidsProvider(() => [...processManager.pids(), ...terminalService.pids()]);
   const projectService = new ProjectService(platformRegistry, workspace);
   const deviceService = new DeviceService();
 

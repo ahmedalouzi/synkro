@@ -129,6 +129,9 @@
       "dependencies": "Some packages in the project don't fit together, so they couldn't be installed.",
       "timeout": "The build took longer than allowed and was stopped."
     },
+    "notice": {
+      "androidRegenerated": "Your project's android/ folder was made for an older version of Flutter, so this build uses a freshly generated one. Your files weren't changed. Android settings you added there by hand (permissions, icons) are not in this build."
+    },
     "viewDetails": "View details",
     "hideDetails": "Hide details",
     "copy": "Copy",

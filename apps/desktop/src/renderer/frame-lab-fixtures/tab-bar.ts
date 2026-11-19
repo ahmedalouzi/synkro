@@ -9,9 +9,10 @@
  * 3. The tab bar: 49 pt of tabs plus the bottom inset as padding (React Navigation's default), icons and labels.
  * 4. Reports where the tab bar and its labels ended up ({ type: 'fixture:report' } to the frame lab).
  */
+import { tabBarLayoutIssues } from '@peep/shared';
 import { isSafeAreaMessage, pageShim, rewriteSafeAreaEnv } from '../../preload/preview-safe-area-page';
 
-pageShim(rewriteSafeAreaEnv, isSafeAreaMessage);
+pageShim(rewriteSafeAreaEnv, isSafeAreaMessage, tabBarLayoutIssues as (m: unknown) => unknown[]);
 
 const TAB_HEIGHT = 49;
 const TABS: [string, string][] = [['⌂', 'Ana Sayfa'], ['★', 'Etkinlikler'], ['✉', 'Duyurular'], ['●', 'Profil']];

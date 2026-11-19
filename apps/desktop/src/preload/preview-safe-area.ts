@@ -1,4 +1,5 @@
 import { webFrame } from 'electron';
+import { tabBarLayoutIssues } from '@peep/shared';
 import { isSafeAreaMessage, pageShim, rewriteSafeAreaEnv } from './preview-safe-area-page';
 
 export { isSafeAreaMessage, rewriteSafeAreaEnv };
@@ -19,8 +20,9 @@ export { isSafeAreaMessage, rewriteSafeAreaEnv };
  *        { type: 'atomvs:status-bar', declared: 'light' | 'dark' | null, source: string | null }
  *          (the status-bar icon tone the app declares, and where: e.g. 'expo-status-bar style=auto'), and
  *        { type: 'atomvs:screen-changed' } (the host re-samples the rendered status-bar and home-indicator strips)
- *        { type: 'atomvs:runtime', errors, rendered, textChars, overlay } (the app's runtime errors, and whether
- *          it shows anything; the host relays it to the agent's get_preview_logs)
+ *        { type: 'atomvs:runtime', errors, rendered, textChars, overlay, layout } (the app's runtime errors, whether
+ *          it shows anything, and layout problems such as a bottom tab bar under the home indicator; the host relays
+ *          it to the agent's get_preview_logs)
  * Nothing is exposed to the page: no contextBridge API, no ipcRenderer.
  */
 
@@ -38,5 +40,7 @@ function isPreviewFrame(): boolean {
 /** Called by the preload in sub-frames. Exposes nothing; only injects the shim into preview frames. */
 export function installPreviewSafeArea(): void {
   if (!isPreviewFrame()) return;
-  void webFrame.executeJavaScript(`(${pageShim.toString()})(${rewriteSafeAreaEnv.toString()}, ${isSafeAreaMessage.toString()});`);
+  void webFrame.executeJavaScript(
+    `(${pageShim.toString()})(${rewriteSafeAreaEnv.toString()}, ${isSafeAreaMessage.toString()}, ${tabBarLayoutIssues.toString()});`,
+  );
 }
