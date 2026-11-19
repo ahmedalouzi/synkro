@@ -38,6 +38,9 @@
 }
 
 .diff-card {
+  /* A flex item of the scrolling list: keep its size and let the list scroll. With overflow: hidden its minimum
+     height was 0, so 15 files shrank to ~27 px each (grey lines, the diff clipped away). */
+  flex-shrink: 0;
   border: 1px solid var(--border);
   border-radius: 8px;
   overflow: hidden;
@@ -85,6 +88,8 @@
 }
 
 .diff-card__patch {
+  /* A long file scrolls inside its card instead of pushing the other files far down. */
+  max-height: 420px;
   margin: 0;
   padding: 10px 12px 14px;
   overflow: auto;
