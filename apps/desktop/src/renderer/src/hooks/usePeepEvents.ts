@@ -1,3 +1,4 @@
+import { useApprovalStore } from '../stores/approval-store';
 import { useEffect } from 'react';
 import { usePreviewStore, useDiagnosticsStore } from '../stores/preview-store';
 import { useChatStore } from '../stores/chat-store';
@@ -66,6 +67,12 @@ export function usePeepEvents(): void {
       if (useComposerStore.getState().isOpen) return;
       useChatStore.getState().upsertTimelineActivity(activity);
     });
+
+    // The agent's approval requests (run a command, delete a file): cards in the chat until answered.
+    const approvals = useApprovalStore.getState();
+    void window.peep.getPendingApprovals().then((pending) => approvals.setAll(pending)).catch(() => {});
+    const unsubApproval = window.peep.onApprovalRequest((request) => useApprovalStore.getState().add(request));
+    const unsubApprovalResolved = window.peep.onApprovalResolved(({ id }) => useApprovalStore.getState().remove(id));
 
     const unsubEdits = window.peep.onProposedEdits((edits, threadId) => {
       // Edits from another chat's run don't belong in this one (same rule as the timeline above).
@@ -186,6 +193,8 @@ export function usePeepEvents(): void {
       unsubAgent();
       unsubEdits();
       unsubTimeline();
+      unsubApproval();
+      unsubApprovalResolved();
       unsubOpenFile();
       unsubFileChanged();
       unsubTree();

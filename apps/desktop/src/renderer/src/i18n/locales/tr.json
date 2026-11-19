@@ -455,6 +455,21 @@
     "update.checkForUpdates": "Güncellemeleri Denetle...",
     "workbench.action.showAboutDialog": "Hakkında"
   },
+  "approval": {
+    "commandTitle": "Ajan bir komut çalıştırmak istiyor",
+    "deleteTitle": "Ajan bir dosyayı silmek istiyor",
+    "deleteReason": "Neden: {reason}",
+    "deleteNoReason": "Neden belirtilmedi.",
+    "deleteReversible": "Kontrol noktasını geri yükleyerek geri getirebilirsiniz.",
+    "deleteNotReversible": "Bu silme Atomvs içinden geri alınamaz.",
+    "allowOnce": "Bir kez izin ver",
+    "allowDelete": "Sil",
+    "always": "Bu projede \"{key}\" için hep izin ver",
+    "alwaysHint": "Atomvs bu projede \"{key}\" komutlarını sormadan çalıştıracak.",
+    "reject": "Reddet",
+    "waiting": "Onayınız bekleniyor",
+    "addedPackage": "Paket eklendi: {name}"
+  },
   "chat": {
     "askAnything": "Herhangi bir şey sorun, bahsetmek için @, işlemler için / kullanın.",
     "inputPlaceholder": "Planla, inşa et, bağlam için @",
