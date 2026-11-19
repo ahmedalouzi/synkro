@@ -11,10 +11,132 @@
   box-shadow: 0 0 0 1px #2a2a2c, 0 18px 50px rgba(0, 0, 0, 0.55);
 }
 
+/* ── iPhones: the metal band (the body) around the black glass ─────────────────────────────────
+   Everything derives from one colour, --pf-metal (the finish, devices.ts), with color-mix:
+   - across the band's thickness, a rounded profile: dark outer edge → bright crest → mid tone → inner edge;
+   - around the perimeter, faint environment reflections (a conic gradient), lighter at the top left;
+   - a thin specular highlight along the top edge, a hairline outline, and soft layered shadows for the dark IDE:
+     contact + ambient, plus a faint purple/blue rim light from the scene.
+   All static (no animated filters or blur), vector, crisp at any zoom. */
+.pf-body--metal {
+  --pf-metal: #bdb7ad;
+  --pf-band: 5px;
+  --pf-m-hi: color-mix(in oklab, var(--pf-metal), #fff3e2 68%);
+  --pf-m-fall: color-mix(in oklab, var(--pf-metal), black 48%);
+  --pf-m-deep: color-mix(in oklab, var(--pf-metal), black 80%);
+  --pf-m-lit: color-mix(in oklab, var(--pf-metal), #fff3e2 30%);
+  --pf-m-lo: color-mix(in oklab, var(--pf-metal), black 22%);
+  --pf-m-edge: color-mix(in oklab, var(--pf-metal), black 45%);
+  --pf-spec: rgba(255, 255, 255, 0.5);
+  --pf-rim: rgba(132, 118, 255, 0.10);
+  /* The band itself: concentric rings (--pf-rings, from bandRings() in PhoneFrame.tsx) that follow the rounded
+     corners exactly; the dark centre is covered by the glass. */
+  background: var(--pf-m-deep);
+  box-shadow:
+    inset 0 0.75px 0 0 var(--pf-spec),            /* specular line along the top edge */
+    var(--pf-rings, inset 0 0 0 var(--pf-band) var(--pf-metal)),
+    0 0 0 0.5px rgba(0, 0, 0, 0.25),              /* hairline against any background */
+    0 0 0 1px var(--pf-rim),                      /* rim light from the scene */
+    0 1px 1.5px rgba(0, 0, 0, 0.55),              /* contact shadow */
+    0 8px 18px -6px rgba(0, 0, 0, 0.55),
+    0 30px 60px -18px rgba(0, 0, 0, 0.75),        /* ambient shadow */
+    0 0 48px -8px rgba(110, 96, 255, 0.10);       /* faint scene glow */
+}
+
+/* Light from above and faint environment reflections around the perimeter, over the band, under the glass. */
+.pf-body--metal::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0) 10%,
+      rgba(0, 0, 0, 0) 88%, rgba(0, 0, 0, 0.12) 100%),
+    conic-gradient(from 225deg at 50% 50%,
+      rgba(255, 255, 255, 0.10) 0deg, rgba(255, 255, 255, 0) 40deg,
+      rgba(0, 0, 0, 0.06) 95deg, rgba(0, 0, 0, 0) 140deg,
+      rgba(255, 255, 255, 0.06) 185deg, rgba(255, 255, 255, 0) 230deg,
+      rgba(0, 0, 0, 0.08) 285deg, rgba(0, 0, 0, 0) 330deg, rgba(255, 255, 255, 0.10) 360deg);
+}
+
+/* Dark finishes: a softer, cooler specular; the outline still separates them from the dark IDE. */
+.pf-body--dark-metal {
+  --pf-m-hi: color-mix(in oklab, var(--pf-metal), white 38%);
+  --pf-m-lit: color-mix(in oklab, var(--pf-metal), white 18%);
+  --pf-m-edge: color-mix(in oklab, var(--pf-metal), black 55%);
+  --pf-spec: rgba(255, 255, 255, 0.5);
+  --pf-rim: rgba(140, 128, 255, 0.24);
+}
+
+.pf-glass {
+  position: absolute;
+  background: #000;
+  /* As measured on the Simulator's frame: the band falls off into a dark edge, then a faint grey 1 px glass edge;
+     ~4 pt further in, an even fainter line where the display panel starts. */
+  box-shadow:
+    0 0 0 0.75px color-mix(in oklab, var(--pf-metal, #888), black 82%),   /* the band's dark inner edge */
+    inset 0 0 0 0.75px rgba(255, 255, 255, 0.17),                         /* 1 px edge of the cover glass */
+    inset 0 0 0 4px #000,
+    inset 0 0 0 4.75px rgba(255, 255, 255, 0.05);                         /* display border under the glass */
+}
+
+/* Earpiece slit along the top, between glass and band (a dark line breaking the band's bright inner edge). */
+.pf-receiver {
+  position: absolute;
+  top: -1.25px;
+  left: 31%;
+  right: 31%;
+  height: 2px;
+  border-radius: 1px;
+  background: #000;
+  box-shadow: 0 0.5px 0 rgba(255, 255, 255, 0.06);
+}
+
+/* Cover glass over the screen: a very faint diagonal reflection from the top left, and a 1 px inner edge.
+   Low opacity, so app content stays fully readable; never takes the pointer. */
+.pf-glare {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(118deg,
+    rgba(255, 255, 255, 0.03) 0%, rgba(255, 255, 255, 0.01) 20%, rgba(255, 255, 255, 0) 34%);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.035);
+}
+.pf-glare--landscape {
+  background: linear-gradient(208deg,
+    rgba(255, 255, 255, 0.03) 0%, rgba(255, 255, 255, 0.01) 20%, rgba(255, 255, 255, 0) 34%);
+}
+
 /* ── Side buttons ────────────────────────────────────────────────── */
 .pf-btn {
   position: absolute;
   background: linear-gradient(180deg, #2a2a2c 0%, #1e1e20 30%, #1a1a1c 50%, #1e1e20 70%, #2a2a2c 100%);
+}
+
+/* iPhones: slim buttons in the band's metal, each with its own highlight (lit top and outer face) and shadow
+   (cast onto the band). */
+.pf-body--metal .pf-btn {
+  width: 2.25px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.35) 0%, rgba(255, 255, 255, 0) 30%, rgba(0, 0, 0, 0) 70%, rgba(0, 0, 0, 0.25) 100%),
+    linear-gradient(90deg, var(--pf-metal) 0%, var(--pf-m-hi) 40%, var(--pf-m-hi) 70%, var(--pf-m-lit) 100%);
+}
+.pf-body--metal .pf-btn--mute,
+.pf-body--metal .pf-btn--vol-up,
+.pf-body--metal .pf-btn--vol-down {
+  left: -2.25px;
+  border-radius: 1.25px 0 0 1.25px;
+  box-shadow: -0.5px 0 1px rgba(0, 0, 0, 0.45), inset 0 0.5px 0 rgba(255, 255, 255, 0.5);
+}
+.pf-body--metal .pf-btn--power {
+  right: -2.25px;
+  border-radius: 0 1.25px 1.25px 0;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.35) 0%, rgba(255, 255, 255, 0) 30%, rgba(0, 0, 0, 0) 70%, rgba(0, 0, 0, 0.25) 100%),
+    linear-gradient(270deg, var(--pf-metal) 0%, var(--pf-m-hi) 40%, var(--pf-m-hi) 70%, var(--pf-m-lit) 100%);
+  box-shadow: 0.5px 0 1px rgba(0, 0, 0, 0.45), inset 0 0.5px 0 rgba(255, 255, 255, 0.5);
 }
 
 .pf-btn--mute,
@@ -104,12 +226,13 @@
 /* ── Dynamic Island ── */
 .pf-dynamic-island {
   position: absolute;
-  border-radius: 20px;
+  border-radius: 19px;
   background: #000;
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  padding-right: 22px;
+  /* Front camera ~17 pt from the island's right end (measured, iPhone 17 Pro). */
+  padding-right: 11.5px;
   box-sizing: border-box;
 }
 
@@ -161,13 +284,18 @@
   box-sizing: border-box;
 }
 
+/* iOS time: 17 pt SF Semibold. Inter (bundled, PhoneFrame.tsx) on every machine, so it looks the same everywhere;
+   Inter's digits are taller, wider and heavier than SF's, so 16.5 px, weight 500 and -0.45 px tracking match the
+   Simulator's "09:41" (47 × 13 px at 1.09 px/pt, and its ink coverage, measured); tabular digits. With
+   line-height 1, Inter's digits are centred on the line box (cap centre at 0.500em), so the flex row centres them
+   on the island's centre line. */
 .pf-status-time {
   display: flex;
   justify-content: center;
-  font-family: "SF Pro Text", "SF Pro Display", -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
-  font-size: 17px;
-  font-weight: 600;
-  letter-spacing: -0.41px;
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  font-size: 16.5px;
+  font-weight: 500;
+  letter-spacing: -0.45px;
   line-height: 1;
   font-feature-settings: "tnum" 1;
   -webkit-font-smoothing: antialiased;
@@ -191,6 +319,13 @@
   align-items: center;
   gap: 6px;
 }
+
+/* iOS: cellular, Wi-Fi and battery as one 77-78 pt group: 6 pt after the cellular glyph, 7.5 pt before the battery. */
+.pf-status-icons--ios {
+  gap: 0;
+}
+.pf-status-icons--ios > :nth-child(2) { margin-left: 6px; }
+.pf-status-icons--ios > :nth-child(3) { margin-left: 7.5px; }
 
 .pf-status--classic .pf-glyph {
   transform: scale(0.8);
