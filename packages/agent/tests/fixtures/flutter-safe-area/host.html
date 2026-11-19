@@ -1,0 +1,24 @@
+<!doctype html>
+<html>
+  <head><meta charset="utf-8" /><title>Flutter safe-area host (test only)</title></head>
+  <body style="margin:0;background:#111">
+    <!-- Test harness only: plays the Preview pane's part (usePreviewSafeArea) for one device. -->
+    <iframe id="app" style="border:0;display:block"></iframe>
+    <script>
+      const q = new URLSearchParams(location.search);
+      const insets = JSON.parse(q.get('insets'));
+      const frame = document.getElementById('app');
+      frame.style.width = q.get('w') + 'px';
+      frame.style.height = q.get('h') + 'px';
+      const send = () => frame.contentWindow.postMessage({ type: 'atomvs:safe-area', insets }, '*');
+      window.addEventListener('message', (event) => {
+        if (event.source !== frame.contentWindow) return;
+        if (event.data && event.data.type === 'atomvs:safe-area-request') send();
+        if (event.data && event.data.type === 'fixture:flutter') window.__report = event.data;
+        if (event.data && event.data.type === 'atomvs:runtime') window.__runtime = event.data;
+      });
+      frame.addEventListener('load', send);
+      frame.src = q.get('src');
+    </script>
+  </body>
+</html>

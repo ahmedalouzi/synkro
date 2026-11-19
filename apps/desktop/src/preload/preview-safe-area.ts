@@ -1,5 +1,5 @@
 import { webFrame } from 'electron';
-import { tabBarLayoutIssues } from '@peep/shared';
+import { flutterLayoutIssues, tabBarLayoutIssues } from '@peep/shared';
 import { isSafeAreaMessage, pageShim, rewriteSafeAreaEnv } from './preview-safe-area-page';
 
 export { isSafeAreaMessage, rewriteSafeAreaEnv };
@@ -41,6 +41,6 @@ function isPreviewFrame(): boolean {
 export function installPreviewSafeArea(): void {
   if (!isPreviewFrame()) return;
   void webFrame.executeJavaScript(
-    `(${pageShim.toString()})(${rewriteSafeAreaEnv.toString()}, ${isSafeAreaMessage.toString()}, ${tabBarLayoutIssues.toString()});`,
+    `(${pageShim.toString()})(${rewriteSafeAreaEnv.toString()}, ${isSafeAreaMessage.toString()}, ${tabBarLayoutIssues.toString()}, ${flutterLayoutIssues.toString()});`,
   );
 }

@@ -1,0 +1,14 @@
+name: safe_area_fixture
+description: Test fixture for the Atomvs preview (dev/test only).
+publish_to: 'none'
+version: 1.0.0
+
+environment:
+  sdk: ^3.5.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true

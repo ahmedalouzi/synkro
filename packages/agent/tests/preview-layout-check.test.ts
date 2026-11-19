@@ -65,7 +65,8 @@ export default async function run() {
     .map((f) => fs.readFileSync(path.join(root, 'apps/desktop/src/preload', f), 'utf8')).join('\n');
   assert.match(shim, /\$\{tabBarLayoutIssues\.toString\(\)\}/, 'the check is injected with the shim');
   assert.match(shim, /querySelectorAll\('\[role="tablist"\]'\)/, 'React Navigation tab bars ([role=tablist])');
-  assert.match(shim, /layout: \(\(\) => \{ try \{ return tabBarIssues\(measureTabBars\(\)\)/, 'reported with the runtime state, never throwing');
+  assert.match(shim, /layout: \(\(\) => \{\s*try \{[\s\S]*?return \[\.\.\.tabBarIssues\(measureTabBars\(\)\), \.\.\.flutter\]\.slice\(0, 5\);\s*\} catch \{ return \[\]; \}/,
+    'reported with the runtime state, never throwing');
 
   console.log('  [layout] The agent is told how to build tab bars that respect the safe area...');
   assert.match(FLUTTER_SYSTEM_PROMPT, /\*\*SAFE AREAS \(React Native \/ Expo\)\*\*/);

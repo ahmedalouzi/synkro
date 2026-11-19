@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path';
 import { FLUTTER_STARTUP_LOCK_LINE, flutterEnvironmentMessage, syncedFolderOf, type Diagnostic, type MobileEnvironment } from '@peep/shared';
 import { getTemplate, parseFlutterAnalyze } from '@peep/flutter-adapter';
 import type { ProcessManager } from './process-manager';
+import { writePreviewEntry } from './flutter-preview-entry';
 import { FrameworkProvider, type ProviderPreviewSession } from './providers/base-provider';
 
 export function isFlutterSdkNotFoundError(msg: string): boolean {
@@ -184,18 +185,20 @@ void main() {
     onLog?: (line: string) => void
   ): Promise<{ url: string; processId: number; logs: string[] }> {
     const flutterRoot = await this.findFlutterRoot(projectRoot);
+    // Through the preview entrypoint: the app gets the phone's safe-area insets (see flutter-preview-entry.ts).
+    const target = await writePreviewEntry(flutterRoot);
     const sdkPath = this.resolveSdkPath();
     const folder = sdkPath ? syncedFolderOf(sdkPath, process.env) : null;
     if (folder) onLog?.(`[Atomvs] ${flutterEnvironmentMessage({ kind: 'sdk-in-synced-folder', folder, sdkPath: sdkPath! })}\n`);
     try {
-      return await this.runWebPreview(flutterRoot, port, sdkPath, folder, onLog);
+      return await this.runWebPreview(flutterRoot, port, sdkPath, folder, onLog, target);
     } catch (error) {
       if (!(error instanceof LockedSdkFileError)) throw error;
       // A sync client or antivirus held a file for a moment (e.g. .pub-preload-cache on the first run): once more.
       onLog?.(`[Atomvs] Flutter could not delete a folder in its SDK (${error.path}); retrying once in ${this.timings.retryMs / 1000} s...\n`);
       await new Promise((resolve) => setTimeout(resolve, this.timings.retryMs));
       try {
-        return await this.runWebPreview(flutterRoot, port, sdkPath, folder, onLog);
+        return await this.runWebPreview(flutterRoot, port, sdkPath, folder, onLog, target);
       } catch (again) {
         if (!(again instanceof LockedSdkFileError)) throw again;
         const lockedIn = folder ?? syncedFolderOf(again.path, process.env);
@@ -210,10 +213,11 @@ void main() {
   /** One `flutter run -d web-server`. Rejects with LockedSdkFileError when Flutter could not delete a folder in its SDK. */
   private runWebPreview(
     flutterRoot: string, port: number, sdkPath: string | null, folder: string | null, onLog?: (line: string) => void,
+    target: string | null = null,
   ): Promise<{ url: string; processId: number; logs: string[] }> {
     const info = this.processManager.spawn(
       this.getFlutterBin(),
-      ['run', '-d', 'web-server', '--web-port', String(port), '--web-hostname', '127.0.0.1'],
+      ['run', '-d', 'web-server', '--web-port', String(port), '--web-hostname', '127.0.0.1', ...(target ? ['-t', target] : [])],
       flutterRoot,
     );
 
