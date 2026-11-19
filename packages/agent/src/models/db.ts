@@ -39,7 +39,8 @@ export async function initDbSchema() {
         id UUID PRIMARY KEY,
         email VARCHAR(255) UNIQUE NOT NULL,
         password_hash VARCHAR(255) NOT NULL,
-        plan VARCHAR(50) DEFAULT 'free'
+        plan VARCHAR(50) DEFAULT 'free',
+        email_verified BOOLEAN DEFAULT FALSE
       );
     `);
     
@@ -49,7 +50,29 @@ export async function initDbSchema() {
     await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS billing_subscription_id VARCHAR(255);`);
     await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS billing_status VARCHAR(50) DEFAULT 'inactive';`);
     await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS plan_updated_at TIMESTAMPTZ DEFAULT NOW();`);
+    await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT FALSE;`);
+    await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS credit_balance INT NOT NULL DEFAULT 0;`);
+    await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS welcome_credits_granted BOOLEAN NOT NULL DEFAULT FALSE;`);
+    await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS welcome_device_id VARCHAR(255);`);
     await client.query(`CREATE TABLE IF NOT EXISTS billing_webhook_events (event_id VARCHAR(255) PRIMARY KEY, provider VARCHAR(50) NOT NULL, event_type VARCHAR(100) NOT NULL, user_id UUID REFERENCES users(id) ON DELETE SET NULL, processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW());`);
+
+    // Email verification OTP codes
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS email_verification_codes (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        email VARCHAR(255) NOT NULL,
+        code_hash VARCHAR(255) NOT NULL,
+        attempts INT NOT NULL DEFAULT 0,
+        max_attempts INT NOT NULL DEFAULT 5,
+        expires_at TIMESTAMPTZ NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        used_at TIMESTAMPTZ
+      );
+      CREATE INDEX IF NOT EXISTS idx_email_verification_codes_user ON email_verification_codes(user_id);
+      CREATE INDEX IF NOT EXISTS idx_email_verification_codes_email ON email_verification_codes(email);
+      CREATE INDEX IF NOT EXISTS idx_email_verification_codes_expires ON email_verification_codes(expires_at);
+    `);
     
     await client.query(`
       CREATE TABLE IF NOT EXISTS sessions (
@@ -78,6 +101,45 @@ export async function initDbSchema() {
         window_start TIMESTAMP NOT NULL
       );
     `);
+
+    // OAuth Identities & Flow state (additive)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS oauth_identities (
+        id UUID PRIMARY KEY,
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        provider VARCHAR(50) NOT NULL,
+        provider_user_id VARCHAR(255) NOT NULL,
+        email VARCHAR(255) NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        CONSTRAINT uq_oauth_provider_user UNIQUE(provider, provider_user_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_oauth_identities_user ON oauth_identities(user_id);
+      CREATE INDEX IF NOT EXISTS idx_oauth_identities_email ON oauth_identities(email);
+    `);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS oauth_states (
+        state VARCHAR(255) PRIMARY KEY,
+        provider VARCHAR(50) NOT NULL,
+        code_verifier VARCHAR(255) NOT NULL,
+        client_return_url TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        expires_at TIMESTAMPTZ NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_oauth_states_expires ON oauth_states(expires_at);
+    `);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS oauth_exchange_codes (
+        code VARCHAR(255) PRIMARY KEY,
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        session_token VARCHAR(255) NOT NULL,
+        refresh_token VARCHAR(255) NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        expires_at TIMESTAMPTZ NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_oauth_exchange_codes_expires ON oauth_exchange_codes(expires_at);
+    `);
     
     // Usage accounting
     await client.query(`
@@ -101,6 +163,27 @@ export async function initDbSchema() {
     await client.query(`ALTER TABLE usage_records ADD COLUMN IF NOT EXISTS purpose VARCHAR(20) NOT NULL DEFAULT 'chat';`);
     // Cheap-model requests cost fractions of a cent; 5 decimal places rounded many of them to zero.
     await client.query(`ALTER TABLE usage_records ALTER COLUMN estimated_cost TYPE NUMERIC(12, 8);`);
+    await client.query(`ALTER TABLE usage_records ADD COLUMN IF NOT EXISTS cached_tokens INT NOT NULL DEFAULT 0;`);
+    await client.query(`ALTER TABLE usage_records ADD COLUMN IF NOT EXISTS thinking_tokens INT NOT NULL DEFAULT 0;`);
+    await client.query(`ALTER TABLE usage_records ADD COLUMN IF NOT EXISTS credits_used INT NOT NULL DEFAULT 0;`);
+
+    // Credit Ledger
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS credit_ledger (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        delta INT NOT NULL,
+        bucket VARCHAR(50) NOT NULL,
+        reason VARCHAR(100) NOT NULL,
+        request_id VARCHAR(255),
+        expires_at TIMESTAMPTZ,
+        remaining INT NOT NULL DEFAULT 0,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_credit_ledger_user_expires ON credit_ledger(user_id, expires_at);
+      CREATE INDEX IF NOT EXISTS idx_credit_ledger_user_created ON credit_ledger(user_id, created_at);
+      CREATE INDEX IF NOT EXISTS idx_credit_ledger_request_id ON credit_ledger(request_id);
+    `);
 
     // Global config (e.g., kill switch)
     await client.query(`
@@ -120,9 +203,9 @@ export async function initDbSchema() {
     // Insert mock user for dev bypass
     if (process.env.SYNKRO_SEED_DEV_USER === 'true') {
       await client.query(`
-        INSERT INTO users (id, email, password_hash, plan)
-        VALUES ('00000000-0000-0000-0000-000000000000', 'dev@synkro.com', 'mock_hash', 'pro')
-        ON CONFLICT (id) DO NOTHING;
+        INSERT INTO users (id, email, password_hash, plan, email_verified)
+        VALUES ('00000000-0000-0000-0000-000000000000', 'dev@synkro.com', 'mock_hash', 'pro', TRUE)
+        ON CONFLICT (id) DO UPDATE SET email_verified = TRUE;
       `);
     }
 
@@ -318,6 +401,33 @@ export async function initDbSchema() {
       EXCEPTION
         WHEN duplicate_object THEN null;
       END $$;
+
+      ALTER TABLE email_verification_codes ENABLE ROW LEVEL SECURITY;
+
+      DO $$ BEGIN
+        CREATE POLICY email_verification_codes_user_isolation ON email_verification_codes
+          USING (user_id = NULLIF(current_setting('app.current_user_id', true), '')::UUID);
+      EXCEPTION
+        WHEN duplicate_object THEN null;
+      END $$;
+
+      ALTER TABLE credit_ledger ENABLE ROW LEVEL SECURITY;
+
+      DO $$ BEGIN
+        CREATE POLICY credit_ledger_user_isolation ON credit_ledger
+          USING (user_id = NULLIF(current_setting('app.current_user_id', true), '')::UUID);
+      EXCEPTION
+        WHEN duplicate_object THEN null;
+      END $$;
+
+      ALTER TABLE oauth_identities ENABLE ROW LEVEL SECURITY;
+
+      DO $$ BEGIN
+        CREATE POLICY oauth_identities_user_isolation ON oauth_identities
+          USING (user_id = NULLIF(current_setting('app.current_user_id', true), '')::UUID);
+      EXCEPTION
+        WHEN duplicate_object THEN null;
+      END $$;
     `);
 
     // Create Roles and Grants
@@ -333,7 +443,9 @@ export async function initDbSchema() {
       GRANT UPDATE (status, updated_at) ON build_jobs TO api_user;
       -- Owners can only read their keys (keystore download); keys are created by the worker.
       GRANT SELECT ON signing_keys TO api_user;
-      GRANT SELECT, INSERT, UPDATE, DELETE ON chat_threads, chat_messages, chat_runs TO api_user;
+      GRANT SELECT, INSERT, UPDATE, DELETE ON chat_threads, chat_messages, chat_runs, email_verification_codes, oauth_identities TO api_user;
+      GRANT SELECT, INSERT, UPDATE ON credit_ledger TO api_user;
+      GRANT SELECT, UPDATE ON users TO api_user;
 
       DO $$ BEGIN
         CREATE ROLE worker_user BYPASSRLS NOLOGIN;
@@ -343,6 +455,7 @@ export async function initDbSchema() {
       GRANT SELECT, INSERT ON signing_keys TO worker_user;
       GRANT UPDATE (package_name) ON signing_keys TO worker_user;
       GRANT SELECT ON users TO worker_user;
+      GRANT SELECT, INSERT, UPDATE ON credit_ledger TO worker_user;
 
       -- Allow the session login role to switch into api_user / worker_user.
       -- SESSION_USER is the actual login credential (e.g. 'testuser' in test,

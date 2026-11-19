@@ -76,7 +76,12 @@ export default async function runP314E2ETests() {
   console.log('  Running P3.14 Full E2E Validation tests...');
 
   // Ensure default test user is on pro plan and clean any old test records
-  await db.query(`UPDATE users SET plan = 'pro' WHERE email = 'user@example.com'`);
+  await db.query(`UPDATE users SET plan = 'pro', email_verified = TRUE WHERE email = 'user@example.com'`);
+  const { creditLedgerService } = await import('../src/models/credit-ledger');
+  const defUserRes = await db.query(`SELECT id FROM users WHERE email = 'user@example.com'`);
+  if (defUserRes.rows[0]?.id) {
+    await creditLedgerService.ensureMonthlyPlanGrant(defUserRes.rows[0].id, 'pro');
+  }
 
   // ── BLOCK 1: SCENARIOS ───────────────────────────────────────────
   await gate('[S1] Restaurant Reservation — full lifecycle', 'Restaurant Reservation', async () => {
@@ -93,7 +98,8 @@ export default async function runP314E2ETests() {
     const b = await mkBackend();
     const r = await runScenario(b, {id:'saas', prompt:'Build a SaaS analytics dashboard with metrics.', tier:'reasoning'});
     assert(r.usageRecord.modelTier==='reasoning', 'Tier must be reasoning');
-    assert(r.usageRecord.resolvedModel==='gpt-4o', 'Expected gpt-4o, got ' + r.usageRecord.resolvedModel);
+    const expectedReasoningModel = process.env.OPENAI_API_KEY ? 'gpt-4o' : 'gemini-3.6-flash';
+    assert(r.usageRecord.resolvedModel===expectedReasoningModel, `Expected ${expectedReasoningModel}, got ` + r.usageRecord.resolvedModel);
   });
 
   await gate('[S3] Fitness Tracker — premium tier', 'Fitness Tracker', async () => {
@@ -168,16 +174,19 @@ export default async function runP314E2ETests() {
   });
 
   // ── BLOCK 3: SERVER ROUTING ─────────────────────────────────────
-  await gate('[ROUTER-1] fast -> google/gemini-3.6-flash with openai fallback', undefined, async () => {
+  await gate('[ROUTER-1] fast -> google/gemini-3.6-flash with configured fallback', undefined, async () => {
     const r = new ServerModelRouter().route('fast');
     assert(r.providerId==='google', 'Expected google, got ' + r.providerId);
     assert(r.modelId==='gemini-3.6-flash', 'Expected gemini-3.6-flash, got ' + r.modelId);
-    assert(r.fallback?.providerId==='openai', 'fast must fallback to openai');
+    const expectedFallbackProvider = process.env.OPENAI_API_KEY ? 'openai' : 'google';
+    assert(r.fallback?.providerId===expectedFallbackProvider, `fast must fallback to ${expectedFallbackProvider}, got ` + r.fallback?.providerId);
   });
-  await gate('[ROUTER-2] reasoning -> openai/gpt-4o', undefined, async () => {
+  await gate('[ROUTER-2] reasoning -> openai/gpt-4o (or google/gemini-3.6-flash without OPENAI_API_KEY)', undefined, async () => {
     const r = new ServerModelRouter().route('reasoning');
-    assert(r.providerId==='openai', 'Expected openai, got ' + r.providerId);
-    assert(r.modelId==='gpt-4o', 'Expected gpt-4o, got ' + r.modelId);
+    const expectedProvider = process.env.OPENAI_API_KEY ? 'openai' : 'google';
+    const expectedModel = process.env.OPENAI_API_KEY ? 'gpt-4o' : 'gemini-3.6-flash';
+    assert(r.providerId===expectedProvider, `Expected ${expectedProvider}, got ` + r.providerId);
+    assert(r.modelId===expectedModel, `Expected ${expectedModel}, got ` + r.modelId);
   });
   await gate('[ROUTER-3] premium -> google/gemini-3.1-pro', undefined, async () => {
     const r = new ServerModelRouter().route('premium');
@@ -279,6 +288,7 @@ export default async function runP314E2ETests() {
       "INSERT INTO users (id, email, password_hash) VALUES ($1, $2, $3) ON CONFLICT (id) DO NOTHING",
       [testUserUuid, 'budget-3-user@example.com', 'scrypt:mock-hash']
     );
+    await creditLedgerService.ensureMonthlyPlanGrant(testUserUuid, 'free');
     await store.recordUsage({userId:testUserUuid, requestId:id, modelTier:'fast', resolvedModel:'m', inputTokens:0, outputTokens:0, totalTokens:0, estimatedCost:9999.99, status:'cancelled'});
     await guard.checkBudget(testUserUuid, 'free', 0.001); // Must not throw
   });
@@ -352,7 +362,12 @@ export default async function runP314E2ETests() {
   await gate('[FAILOVER-1] 502 retryable error triggers failover', undefined, async () => {
     const b = await mkBackend();
     const err = Object.assign(new Error('502 upstream'), {status:502});
-    (b as any).adapters.set('google', {id:'google', generate:async()=>{throw err;}, stream:async function*(){throw err;}});
+    let googleCalls = 0;
+    (b as any).adapters.set('google', {
+      id:'google',
+      generate:async()=>{ if (googleCalls++ === 0) throw err; return { text: 'gemini-fallback-ok', usage: { inputTokens: 10, outputTokens: 10, totalTokens: 20 } }; },
+      stream:async function*(){ if (googleCalls++ === 0) throw err; yield { type: 'text', content: 'gemini-fallback-ok' }; yield { type: 'done' }; }
+    });
     const s = await b.authService.login('user@example.com', 'hash-password-123');
     const res = await b.handleRequest('POST', '/v1/ai/generate', {'authorization': 'Bearer ' + s.sessionToken, 'x-request-id': 'fo1'}, {tier:'fast', prompt:'failover'});
     assert(res.status===200, 'Failover must succeed, got ' + res.status + ': ' + JSON.stringify(res.body));
@@ -369,7 +384,12 @@ export default async function runP314E2ETests() {
   await gate('[FAILOVER-3] Correlation ID preserved across failover', undefined, async () => {
     const b = await mkBackend();
     const err = Object.assign(new Error('502'), {status:502});
-    (b as any).adapters.set('google', {id:'google', generate:async()=>{throw err;}, stream:async function*(){throw err;}});
+    let googleCalls = 0;
+    (b as any).adapters.set('google', {
+      id:'google',
+      generate:async()=>{ if (googleCalls++ === 0) throw err; return { text: 'gemini-fallback-ok', usage: { inputTokens: 10, outputTokens: 10, totalTokens: 20 } }; },
+      stream:async function*(){ if (googleCalls++ === 0) throw err; yield { type: 'text', content: 'gemini-fallback-ok' }; yield { type: 'done' }; }
+    });
     const s = await b.authService.login('user@example.com', 'hash-password-123');
     const corrId = 'corr-id-e2e-789';
     const res = await b.handleRequest('POST', '/v1/ai/generate', {'authorization': 'Bearer ' + s.sessionToken, 'x-request-id': corrId}, {tier:'fast', prompt:'corr'});

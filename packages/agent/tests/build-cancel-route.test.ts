@@ -29,6 +29,7 @@ export default async function run() {
   const suffix = crypto.randomBytes(4).toString('hex');
   const owner = await auth.signup(`cancel-owner-${suffix}@example.com`, 'cancel-test-password-1');
   const other = await auth.signup(`cancel-other-${suffix}@example.com`, 'cancel-test-password-2');
+  await pool.query('UPDATE users SET email_verified = TRUE WHERE id = ANY($1::uuid[])', [[owner.userId, other.userId]]);
   const cancel = (jobId: string, token?: string) =>
     fetch(`${base}/${jobId}/cancel`, { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {} });
   const insertJob = async (status: string) => (await pool.query(

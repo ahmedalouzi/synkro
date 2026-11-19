@@ -347,6 +347,7 @@ export class AgentService {
     // Answer in the language of the user's latest message; the interface language is only a fallback.
     const localeInstruction = replyLanguageInstruction(options.message, options.locale || settings.locale);
       console.log(`[E2E_VERIFICATION] 5. Building System Prompt...`);
+      // Static cacheable prefix: system instructions + stable project structure/manifests
       const systemContext =
         (options.scaffoldMode ? `${SCAFFOLD_SYSTEM_ADDENDUM}\n\n` : '') +
         `\n[ACTIVE PROJECT ROOT]\n${projectPath ? (await this.registry.detect(projectPath)).projectRoot : 'None'}\n` +
@@ -359,21 +360,41 @@ export class AgentService {
         rulesContext +
         buildAgentContext({
           projectPath: options.projectPath,
-        treeSummary,
-        pubspec: pubspec ?? packageJson,
-        mainDart: mainDart ?? appEntry,
-        openFilePath: options.openFilePath,
-        openFileContent: options.openFileContent,
-        selectedCode: options.selectedCode,
-        diagnostics: options.diagnostics?.map((d) => ({
-          file: d.file,
-          line: d.line,
-          message: d.message,
-          severity: d.severity,
-        })),
-        userMessage: options.message,
-        previewError: options.previewError,
-      });
+          treeSummary,
+          pubspec: pubspec ?? packageJson,
+          mainDart: mainDart ?? appEntry,
+          userMessage: '',
+        });
+
+    // Dynamic per-turn context (open file, selection, diagnostics, preview errors) kept out of system prompt so prefix caching hits across turns
+    const dynamicTurnParts: string[] = [];
+    if (options.openFilePath && options.openFileContent) {
+      const truncated = options.openFileContent.length > 4000
+        ? `${options.openFileContent.slice(0, 4000)}\n... [truncated]`
+        : options.openFileContent;
+      dynamicTurnParts.push(`Currently open file: ${options.openFilePath}\n\`\`\`\n${truncated}\n\`\`\``);
+    }
+    if (options.selectedCode && options.selectedCode.filePath) {
+      const truncatedSel = options.selectedCode.text.length > 2000
+        ? `${options.selectedCode.text.slice(0, 2000)}\n... [truncated]`
+        : options.selectedCode.text;
+      dynamicTurnParts.push(
+        `Selected Code (File: ${options.selectedCode.filePath}, Lines: ${options.selectedCode.startLine}-${options.selectedCode.endLine}):\n\`\`\`\n${truncatedSel}\n\`\`\``
+      );
+    }
+    if (options.diagnostics && options.diagnostics.length > 0) {
+      const diagLines = options.diagnostics
+        .slice(0, 12)
+        .map((d) => `- [${d.severity}] ${d.file}:${d.line} — ${d.message}`)
+        .join('\n');
+      dynamicTurnParts.push(`Recent diagnostics:\n${diagLines}`);
+    }
+    if (options.previewError) {
+      dynamicTurnParts.push(`Active Preview/Build Compilation Error:\n\`\`\`\n${options.previewError}\n\`\`\``);
+    }
+    const dynamicTurnContext = dynamicTurnParts.length > 0
+      ? `\n\n[CURRENT TURN CONTEXT]\n${dynamicTurnParts.join('\n\n')}`
+      : '';
 
     console.log(`[E2E_VERIFICATION] 5. System Prompt Built (Size: ${systemContext.length} chars)`);
 
@@ -392,7 +413,7 @@ export class AgentService {
       : '';
     messages.push({
       role: 'user',
-      content: options.message + mentionContext,
+      content: options.message + mentionContext + dynamicTurnContext,
       ...(options.images?.length ? { images: options.images } : {}),
     });
 
@@ -1138,9 +1159,9 @@ export class AgentService {
                 : (typeof message === 'object' && message !== null ? ((message as Record<string, any>).message || (message as Record<string, any>).code || JSON.stringify(message)) : String(message));
               this.emitStream({ type: 'error', content: errStr }, options.threadId);
             },
-            onDone: () => {
-               console.log(`[E2E_VERIFICATION] 8. Final stream completed.`);
-               this.emitStream({ type: 'done', content: '' }, options.threadId)
+            onDone: (summary?: { creditsUsed?: number }) => {
+               console.log(`[E2E_VERIFICATION] 8. Final stream completed. Credits used: ${summary?.creditsUsed ?? 0}`);
+               this.emitStream({ type: 'done', content: '', creditsUsed: summary?.creditsUsed }, options.threadId);
             },
             onPhaseChange: (phase: AgentPhase) => sm.transition(phase),
             onTimelineActivity: (activity) => {

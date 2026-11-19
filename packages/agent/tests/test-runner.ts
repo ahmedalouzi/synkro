@@ -67,6 +67,13 @@ async function main() {
     } catch (e) {
       // Ignored if already registered
     }
+    const { db } = await import('../src/models/db');
+    await db.query(`UPDATE users SET email_verified = TRUE WHERE email = 'user@example.com'`);
+    const uSeed = await db.query(`SELECT id, plan FROM users WHERE email = 'user@example.com'`);
+    if (uSeed.rows[0]?.id) {
+      const { creditLedgerService } = await import('../src/models/credit-ledger');
+      await creditLedgerService.ensureMonthlyPlanGrant(uSeed.rows[0].id, uSeed.rows[0].plan || 'free');
+    }
   } catch (dbErr: any) {
     dbOffline = true;
     if (process.env.CI === 'true') {
@@ -89,7 +96,10 @@ async function main() {
     'build-queue-route.test.ts',
     'build-hardening.test.ts',
     'cancellation.test.ts',
+    'credits-pricing.test.ts',
+    'email-verification.test.ts',
     'failover.test.ts',
+    'oauth-login.test.ts',
     'p312-settings-gateway.test.ts',
     'p313-security-audit.test.ts',
     'p314-e2e-validation.test.ts',

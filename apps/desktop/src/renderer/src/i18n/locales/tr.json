@@ -18,7 +18,19 @@
     "orContinueWithEmail": "veya e-posta ile devam edin",
     "privateBeta": "Özel beta",
     "authFailed": "Kimlik doğrulama başarısız oldu",
-    "oauthComingSoon": "{provider} ile giriş çok yakında. Şimdilik e-postanızı kullanın."
+    "oauthComingSoon": "{provider} ile giriş çok yakında. Şimdilik e-postanızı kullanın.",
+    "verifyEmailTitle": "E-postanızı doğrulayın",
+    "verifyEmailSubtitle": "{email} adresine 6 haneli bir kod gönderdik",
+    "verifyEmailCodeLabel": "6 Haneli Kod",
+    "verifyEmailSubmit": "Doğrula ve devam et",
+    "resendCode": "Kodu tekrar gönder",
+    "resendCodeIn": "Kodu tekrar gönder ({seconds} sn)",
+    "useDifferentEmail": "Farklı bir e-posta kullan",
+    "codeSentNotice": "Yeni bir doğrulama kodu gönderildi.",
+    "invalidCodeLength": "Lütfen 6 hanenin tümünü girin.",
+    "signingIn": "Giriş yapılıyor…",
+    "waitingForProvider": "Tarayıcınızda {provider} bekleniyor…",
+    "cancel": "İptal"
   },
   "onboarding": {
     "welcomeTitle": "Atomvs'e Hoş Geldiniz",
@@ -247,6 +259,10 @@
       "includedUsage": "Dahil Edilen Kullanım",
       "refreshesWeekly": "Haftalık yenilenir · sonraki sıfırlama {date}",
       "usageServerTracked": "Kullanım Atomvs sunucusu tarafından izlenir ve uygulanır.",
+      "creditsRemaining": "Kalan Krediler",
+      "creditsLeftValue": "{remaining} / {total} kredi kaldı",
+      "creditsRefreshes": "Aylık yenilenir · sonraki yenileme {date}",
+      "creditsDescription": "Bu faturalandırma döneminde AI istekleri için kalan krediler.",
       "tabCompletions": "Tab Tamamlamaları",
       "unlimitedOnPlan": "Planınızda sınırsız.",
       "resetsDate": "Sıfırlanma tarihi: {date}",
@@ -478,7 +494,9 @@
     "agentWorking": "Ajan çalışıyor…",
     "http500": "Sunucu hatası (HTTP 500)",
     "planBuildFix": "Her şeyi planlayın, oluşturun, düzeltin",
-    "emptyHint": "Dosya ve bağlam eklemek için @ · Komutlar için / · Ekranınızı göstermek için resim yapıştırın"
+    "emptyHint": "Dosya ve bağlam eklemek için @ · Komutlar için / · Ekranınızı göstermek için resim yapıştırın",
+    "usedCredits": "{count} kredi kullanıldı",
+    "usedCredit": "1 kredi kullanıldı"
   },
   "preview": {
     "title": "ÖNİZLEME",

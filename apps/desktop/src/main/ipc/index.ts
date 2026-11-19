@@ -34,6 +34,7 @@ import { ExtensionService } from '../services/extension-service';
 import { ClaudeIdeServer } from '../services/claude-ide-server';
 import { PublishService } from '../services/publish-service';
 import { DeviceService } from '../services/device-service';
+import { OAuthService } from '../services/oauth-service';
 
 
 let db: DatabaseService | null = null;
@@ -43,6 +44,7 @@ let settingsWindow: BrowserWindow | null = null;
 let agentService: AgentService | null = null;
 let publishService: PublishService | null = null;
 let cloudBuildService: CloudBuildService | null = null;
+let oauthService: OAuthService | null = null;
 
 const previewManager = new PreviewManager();
 const fileWatcher = new FileWatcherService();
@@ -202,6 +204,7 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
   db = new DatabaseService();
   await db.init();
   cloudBuildService = new CloudBuildService(db);
+  oauthService = new OAuthService(db, () => mainWindow);
 
   await telemetryService.init();
   if (telemetryService.isEnabled()) {
@@ -1153,7 +1156,11 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
         sessionToken: data.sessionToken,
         refreshToken: data.refreshToken
       });
-      return { success: true };
+      return {
+        success: true,
+        emailVerified: data.emailVerified,
+        verificationRequired: data.verificationRequired
+      };
     } catch (err: any) {
       console.error('[AUTH_SIGN_IN] Fetch failed:', {
         message: err.message,
@@ -1181,7 +1188,11 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
         sessionToken: data.sessionToken,
         refreshToken: data.refreshToken
       });
-      return { success: true };
+      return {
+        success: true,
+        emailVerified: data.emailVerified,
+        verificationRequired: data.verificationRequired
+      };
     } catch (err: any) {
       console.error('[AUTH_SIGN_UP] Fetch failed:', {
         message: err.message,
@@ -1191,6 +1202,60 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
       });
       return { success: false, error: err.message };
     }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.AUTH_VERIFY_EMAIL, async (_event, code: string) => {
+    const settings = db!.getSettingsRaw();
+    const gatewayUrl = resolveGatewayUrl(settings.gatewayUrl);
+    try {
+      const res = await fetch(`${gatewayUrl}/v1/auth/verify-email`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(settings.sessionToken ? { 'Authorization': `Bearer ${settings.sessionToken}` } : {})
+        },
+        body: JSON.stringify({ code })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Email verification failed');
+      return { success: true, emailVerified: true };
+    } catch (err: any) {
+      console.error('[AUTH_VERIFY_EMAIL] Failed:', err.message);
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.AUTH_RESEND_VERIFICATION, async () => {
+    const settings = db!.getSettingsRaw();
+    const gatewayUrl = resolveGatewayUrl(settings.gatewayUrl);
+    try {
+      const res = await fetch(`${gatewayUrl}/v1/auth/resend-verification`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(settings.sessionToken ? { 'Authorization': `Bearer ${settings.sessionToken}` } : {})
+        },
+        body: JSON.stringify({})
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Failed to resend verification code');
+      return { success: true };
+    } catch (err: any) {
+      console.error('[AUTH_RESEND_VERIFICATION] Failed:', err.message);
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.AUTH_OAUTH_START, async (_event, provider: 'google' | 'github') => {
+    if (!oauthService) {
+      return { success: false, error: 'OAuth service not initialized' };
+    }
+    return oauthService.startOAuth(provider);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.AUTH_OAUTH_CANCEL, async () => {
+    oauthService?.cancelOAuth();
+    return { success: true };
   });
 
   ipcMain.handle(IPC_CHANNELS.AUTH_LOGOUT, async () => {
@@ -1386,6 +1451,7 @@ export function cleanupServices(): void {
   previewManager.stop();
   agentService?.cancel();
   publishService?.cancel();
+  oauthService?.cancelOAuth();
   terminalService.destroyAll();
   claudeIdeServer.stop();
 }

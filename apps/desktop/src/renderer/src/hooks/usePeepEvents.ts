@@ -65,7 +65,7 @@ export function usePeepEvents(): void {
         } else if (event.type === 'delta') {
           appendDelta(event.content);
         } else if (event.type === 'done') {
-          finishStreaming();
+          finishStreaming(event.creditsUsed);
         } else if (event.type === 'error') {
           appendDelta(`\n\n⚠️ ${event.content}`);
           finishStreaming();

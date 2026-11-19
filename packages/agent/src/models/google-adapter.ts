@@ -3,8 +3,12 @@ import type {
   AIResponse,
   AIStreamEvent,
 } from '@peep/shared';
+import { createHash } from 'node:crypto';
 import type { ProviderAdapter } from './types';
 import { classifyProviderError } from './error-classifier';
+import { calculateModelCostUsd, costUsdToCredits } from './pricing';
+
+const contextCacheRegistry = new Map<string, { resourceName: string; expireTimeMs: number }>();
 
 export class GoogleGeminiAdapter implements ProviderAdapter {
   readonly id = 'google';
@@ -19,6 +23,76 @@ export class GoogleGeminiAdapter implements ProviderAdapter {
 
   getContextLimit(_tier: import('@peep/shared').CapabilityTier): number {
     return 1000000; // Gemini Flash limit
+  }
+
+  /**
+   * Explicit helper for Gemini Context Caching.
+   * Callers can invoke this to create a cached content resource on Google's API,
+   * which can then be passed to requests as `cachedContent`.
+   */
+  async createContextCache(options: {
+    model: string;
+    contents: any[];
+    systemInstruction?: any;
+    ttlSeconds?: number;
+  }): Promise<{ name: string; expireTime: string }> {
+    if (!this.apiKey) throw new Error('GOOGLE_API_KEY is not configured');
+    const url = `https://generativelanguage.googleapis.com/v1beta/cachedContents?key=${this.apiKey}`;
+    const ttlSeconds = options.ttlSeconds || 3600;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: `models/${options.model}`,
+        contents: options.contents,
+        systemInstruction: options.systemInstruction,
+        ttl: `${ttlSeconds}s`,
+      }),
+    });
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`Failed to create context cache: ${res.status} - ${errText}`);
+    }
+    return await res.json();
+  }
+
+  /**
+   * Resolves or creates a cached content resource keyed by sha256(model + systemPrompt + projectContext).
+   * Reuses the resource name across repeated turns in the same session.
+   */
+  async getOrCreateContextCache(options: {
+    model: string;
+    systemPrompt: string;
+    projectContext?: string;
+    ttlSeconds?: number;
+  }): Promise<string> {
+    const ttlSeconds = options.ttlSeconds || 300;
+    const keySource = `${options.model}:${options.systemPrompt}:${options.projectContext || ''}`;
+    const hash = createHash('sha256').update(keySource).digest('hex');
+    const now = Date.now();
+
+    const cached = contextCacheRegistry.get(hash);
+    if (cached && cached.expireTimeMs > now + 10_000) {
+      return cached.resourceName;
+    }
+
+    const contents = options.projectContext
+      ? [{ role: 'user', parts: [{ text: options.projectContext }] }]
+      : [];
+    const systemInstruction = options.systemPrompt
+      ? { parts: [{ text: options.systemPrompt }] }
+      : undefined;
+
+    const res = await this.createContextCache({
+      model: options.model,
+      contents,
+      systemInstruction,
+      ttlSeconds,
+    });
+
+    const expireTimeMs = res.expireTime ? new Date(res.expireTime).getTime() : (now + ttlSeconds * 1000);
+    contextCacheRegistry.set(hash, { resourceName: res.name, expireTimeMs });
+    return res.name;
   }
 
   private getAvailableModels(): Promise<string[]> {
@@ -41,7 +115,7 @@ export class GoogleGeminiAdapter implements ProviderAdapter {
             'gemini-3.6-flash',
             'gemini-3.1-pro-preview',
             'gemini-2.5-flash',
-            'gemini-2.0-flash',
+            'gemini-3.5-flash-lite',
           ];
         }
       })();
@@ -214,7 +288,7 @@ export class GoogleGeminiAdapter implements ProviderAdapter {
   async generate(request: AIRequest, options?: { signal?: AbortSignal; resolvedModelId?: string; latencyOut?: any }): Promise<AIResponse> {
     if (!this.apiKey) throw new Error('GOOGLE_API_KEY is not configured');
     
-    const rawModel = options?.resolvedModelId || 'gemini-1.5-flash';
+    const rawModel = options?.resolvedModelId || 'gemini-3.6-flash';
     const listStart = Date.now();
     const modelId = await this.resolveModelId(rawModel);
     const listEnd = Date.now();
@@ -229,6 +303,9 @@ export class GoogleGeminiAdapter implements ProviderAdapter {
     const payload: any = { contents };
     if (systemInstruction) payload.systemInstruction = systemInstruction;
     if (tools) payload.tools = tools;
+    if ((request as any).cachedContent) {
+      payload.cachedContent = (request as any).cachedContent;
+    }
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${this.apiKey}`;
     console.log(`[GoogleGeminiAdapter] [generate] Sending POST request to: https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent`);
@@ -279,6 +356,31 @@ export class GoogleGeminiAdapter implements ProviderAdapter {
     if (toolCalls.length > 0) {
       result.toolCalls = toolCalls;
     }
+
+    // Extract real Gemini usageMetadata & calculate credit cost
+    const usageMeta = data?.usageMetadata;
+    const inputTokens = usageMeta?.promptTokenCount ?? Math.ceil(JSON.stringify(request.messages).length / 4);
+    const cachedTokens = usageMeta?.cachedContentTokenCount ?? 0;
+    const outputTokens = usageMeta?.candidatesTokenCount ?? Math.ceil((result.content?.length ?? 0) / 4);
+    const thinkingTokens = usageMeta?.thoughtsTokenCount ?? 0;
+    const totalTokens = usageMeta?.totalTokenCount ?? (inputTokens + outputTokens + thinkingTokens);
+
+    const costUsd = calculateModelCostUsd(modelId, { inputTokens, cachedTokens, outputTokens, thinkingTokens });
+    const credits = costUsdToCredits(costUsd, totalTokens);
+
+    result.usage = {
+      inputTokens,
+      outputTokens,
+      totalTokens,
+      cachedTokens,
+      thinkingTokens,
+    } as any;
+
+    result.cost = {
+      cost: costUsd,
+      currency: 'USD',
+      credits,
+    } as any;
     
     return result;
   }
@@ -286,7 +388,7 @@ export class GoogleGeminiAdapter implements ProviderAdapter {
   async *stream(request: AIRequest, options?: { signal?: AbortSignal; resolvedModelId?: string; latencyOut?: any }): AsyncIterable<AIStreamEvent> {
     if (!this.apiKey) throw new Error('GOOGLE_API_KEY is not configured');
     
-    const rawModel = options?.resolvedModelId || 'gemini-1.5-flash';
+    const rawModel = options?.resolvedModelId || 'gemini-3.6-flash';
     const listStart = Date.now();
     const modelId = await this.resolveModelId(rawModel);
     const listEnd = Date.now();
@@ -301,6 +403,9 @@ export class GoogleGeminiAdapter implements ProviderAdapter {
     const payload: any = { contents };
     if (systemInstruction) payload.systemInstruction = systemInstruction;
     if (tools) payload.tools = tools;
+    if ((request as any).cachedContent) {
+      payload.cachedContent = (request as any).cachedContent;
+    }
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:streamGenerateContent?alt=sse&key=${this.apiKey}`;
     console.log(`[GoogleGeminiAdapter] [stream] Sending POST stream request to: https://generativelanguage.googleapis.com/v1beta/models/${modelId}:streamGenerateContent`);
@@ -333,6 +438,8 @@ export class GoogleGeminiAdapter implements ProviderAdapter {
     const reader = response.body.getReader();
     const decoder = new TextDecoder('utf-8');
     let buffer = '';
+    let lastUsageMetadata: any = null;
+    let accumulatedContentLength = 0;
 
     while (true) {
       if (options?.signal?.aborted) throw new Error('Aborted');
@@ -351,10 +458,15 @@ export class GoogleGeminiAdapter implements ProviderAdapter {
           
           let data;
           try { data = JSON.parse(dataStr); } catch { continue; }
+
+          if (data?.usageMetadata) {
+            lastUsageMetadata = data.usageMetadata;
+          }
           
           const parts = data?.candidates?.[0]?.content?.parts || [];
           for (const part of parts) {
             if (part?.text) {
+              accumulatedContentLength += part.text.length;
               yield { type: 'delta', content: part.text };
             }
             if (part?.functionCall) {
@@ -373,6 +485,30 @@ export class GoogleGeminiAdapter implements ProviderAdapter {
         }
       }
     }
-    yield { type: 'done' };
+
+    const inputTokens = lastUsageMetadata?.promptTokenCount ?? Math.ceil(JSON.stringify(request.messages).length / 4);
+    const cachedTokens = lastUsageMetadata?.cachedContentTokenCount ?? 0;
+    const outputTokens = lastUsageMetadata?.candidatesTokenCount ?? Math.ceil(accumulatedContentLength / 4);
+    const thinkingTokens = lastUsageMetadata?.thoughtsTokenCount ?? 0;
+    const totalTokens = lastUsageMetadata?.totalTokenCount ?? (inputTokens + outputTokens + thinkingTokens);
+
+    const costUsd = calculateModelCostUsd(modelId, { inputTokens, cachedTokens, outputTokens, thinkingTokens });
+    const credits = costUsdToCredits(costUsd, totalTokens);
+
+    yield {
+      type: 'done',
+      usage: {
+        inputTokens,
+        outputTokens,
+        totalTokens,
+        cachedTokens,
+        thinkingTokens,
+      } as any,
+      cost: {
+        cost: costUsd,
+        currency: 'USD',
+        credits,
+      } as any,
+    };
   }
 }

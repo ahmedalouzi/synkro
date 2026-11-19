@@ -340,6 +340,11 @@ export function SettingsModal({ open, onClose, initialSection, standalone }: Set
   const poolLimit = account?.weeklyPoolUsd ?? account?.limit ?? account?.budgetCost ?? 0;
   const poolUsed = account?.weeklyUsedUsd ?? account?.usage ?? account?.usedCost ?? 0;
   const poolPct = poolLimit > 0 ? Math.min(100, (poolUsed / poolLimit) * 100) : 0;
+  const creditsRemaining = account?.creditsRemaining;
+  const monthlyCredits = account?.monthlyCredits;
+  const creditsPct = creditsRemaining !== undefined && monthlyCredits && monthlyCredits > 0
+    ? Math.min(100, Math.max(0, (creditsRemaining / monthlyCredits) * 100))
+    : 0;
   const visibleSections: SectionId[] = query ? (Object.keys(SECTION_LABELS) as SectionId[]) : [section];
 
   /* ── Sections ── */
@@ -456,13 +461,27 @@ export function SettingsModal({ open, onClose, initialSection, standalone }: Set
               <span className="sx-badge">{plan.toUpperCase()}</span>
             </Row>
             <Row
-              title={t('settings.usage.includedUsage')}
-              description={account?.weekResetsAt ? t('settings.usage.refreshesWeekly', { date: formatDate(account.weekResetsAt) }) : t('settings.usage.usageServerTracked')}
+              title={creditsRemaining !== undefined ? t('settings.usage.creditsRemaining') : t('settings.usage.includedUsage')}
+              description={creditsRemaining !== undefined
+                ? (account?.creditsResetAt ? t('settings.usage.creditsRefreshes', { date: formatDate(account.creditsResetAt) }) : t('settings.usage.creditsDescription'))
+                : (account?.weekResetsAt ? t('settings.usage.refreshesWeekly', { date: formatDate(account.weekResetsAt) }) : t('settings.usage.usageServerTracked'))}
               query={query}
             >
               <div className="sx-meter">
-                <div className="sx-meter__text">${poolUsed.toFixed(2)} / ${poolLimit.toFixed(2)}</div>
-                <div className="sx-meter__bar"><div className={`sx-meter__fill ${poolPct > 90 ? 'sx-meter__fill--warn' : ''}`} style={{ width: `${poolPct}%` }} /></div>
+                <div className="sx-meter__text">
+                  {creditsRemaining !== undefined && monthlyCredits !== undefined
+                    ? t('settings.usage.creditsLeftValue', {
+                        remaining: creditsRemaining.toLocaleString(),
+                        total: monthlyCredits.toLocaleString(),
+                      })
+                    : `$${poolUsed.toFixed(2)} / $${poolLimit.toFixed(2)}`}
+                </div>
+                <div className="sx-meter__bar">
+                  <div
+                    className={`sx-meter__fill ${creditsRemaining !== undefined ? (creditsPct < 10 ? 'sx-meter__fill--warn' : '') : (poolPct > 90 ? 'sx-meter__fill--warn' : '')}`}
+                    style={{ width: `${creditsRemaining !== undefined ? creditsPct : poolPct}%` }}
+                  />
+                </div>
               </div>
             </Row>
             <Row

@@ -28,6 +28,7 @@ export default async function run() {
   const suffix = crypto.randomBytes(4).toString('hex');
   const me = await auth.signup(`queue-me-${suffix}@example.com`, 'queue-test-password-1');
   const other = await auth.signup(`queue-other-${suffix}@example.com`, 'queue-test-password-2');
+  await pool.query('UPDATE users SET email_verified = TRUE WHERE id = ANY($1::uuid[])', [[me.userId, other.userId]]);
   const insert = async (userId: string, status: string, framework: string, extra = '') => (await pool.query(
     `INSERT INTO build_jobs (user_id, project_id, status, framework, source_path${extra ? ', build_duration_ms, completed_at' : ''})
      VALUES ($1, $2, $3, $4, 'x.zip'${extra}) RETURNING id`,

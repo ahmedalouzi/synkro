@@ -18,7 +18,19 @@
     "orContinueWithEmail": "or continue with email",
     "privateBeta": "Private beta",
     "authFailed": "Authentication failed",
-    "oauthComingSoon": "Sign in with {provider} is coming soon. Use your email for now."
+    "oauthComingSoon": "Sign in with {provider} is coming soon. Use your email for now.",
+    "verifyEmailTitle": "Verify your email",
+    "verifyEmailSubtitle": "We sent a 6-digit code to {email}",
+    "verifyEmailCodeLabel": "6-Digit Code",
+    "verifyEmailSubmit": "Verify & continue",
+    "resendCode": "Resend code",
+    "resendCodeIn": "Resend code in {seconds}s",
+    "useDifferentEmail": "Use a different email",
+    "codeSentNotice": "A new verification code has been sent.",
+    "invalidCodeLength": "Please enter all 6 digits.",
+    "signingIn": "Signing in…",
+    "waitingForProvider": "Waiting for {provider} in your browser…",
+    "cancel": "Cancel"
   },
   "onboarding": {
     "welcomeTitle": "Welcome to Atomvs",
@@ -247,6 +259,10 @@
       "includedUsage": "Included Usage",
       "refreshesWeekly": "Refreshes weekly · next reset {date}",
       "usageServerTracked": "Usage is tracked and enforced by the Atomvs server.",
+      "creditsRemaining": "Credits Remaining",
+      "creditsLeftValue": "{remaining} / {total} credits left",
+      "creditsRefreshes": "Refreshes monthly · next reset {date}",
+      "creditsDescription": "Credits remaining for AI requests this billing cycle.",
       "tabCompletions": "Tab Completions",
       "unlimitedOnPlan": "Unlimited on your plan.",
       "resetsDate": "Resets {date}",
@@ -478,7 +494,9 @@
     "agentWorking": "Agent is working…",
     "http500": "Server error (HTTP 500)",
     "planBuildFix": "Plan, build, fix anything",
-    "emptyHint": "@ to add files and context · / for commands · paste images to show the agent your screen"
+    "emptyHint": "@ to add files and context · / for commands · paste images to show the agent your screen",
+    "usedCredits": "Used {count} credits",
+    "usedCredit": "Used 1 credit"
   },
   "preview": {
     "title": "PREVIEW",

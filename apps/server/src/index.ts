@@ -12,13 +12,14 @@ config({ path: path.join(__dirname, '../../../.env') });
 
 import express from 'express';
 import * as Sentry from '@sentry/node';
-import { BackendAIGateway, initDbSchema, startBuildWorker, loadSigningEncKey, db, scrubString } from '@peep/agent/server';
+import { BackendAIGateway, initDbSchema, startBuildWorker, loadSigningEncKey, db, scrubString, creditLedgerService, reconcileDailySpend } from '@peep/agent/server';
 import { fetchProductionSecrets } from './secrets';
 import { downloadTokenSecret } from './download-token';
 import { execSync } from 'node:child_process';
 import { buildRouter, shortLinkDownloadRouter } from './build-router';
 import { threadsRouter } from './threads-router';
 import { billingRouter } from './billing-router';
+import { oauthRouter } from './oauth-router';
 import { requestLogLine, authLogLine } from './log-redact';
 
 async function bootstrap() {
@@ -73,6 +74,10 @@ async function bootstrap() {
   if (secrets.STRIPE_WEBHOOK_SECRET) process.env.STRIPE_WEBHOOK_SECRET = secrets.STRIPE_WEBHOOK_SECRET;
   if (secrets.SYNKRO_SIGNING_ENC_KEY) process.env.SYNKRO_SIGNING_ENC_KEY = secrets.SYNKRO_SIGNING_ENC_KEY;
   if (secrets.DOWNLOAD_TOKEN_SECRET) process.env.DOWNLOAD_TOKEN_SECRET = secrets.DOWNLOAD_TOKEN_SECRET;
+  if (secrets.GOOGLE_OAUTH_CLIENT_ID) process.env.GOOGLE_OAUTH_CLIENT_ID = secrets.GOOGLE_OAUTH_CLIENT_ID;
+  if (secrets.GOOGLE_OAUTH_CLIENT_SECRET) process.env.GOOGLE_OAUTH_CLIENT_SECRET = secrets.GOOGLE_OAUTH_CLIENT_SECRET;
+  if (secrets.GITHUB_OAUTH_CLIENT_ID) process.env.GITHUB_OAUTH_CLIENT_ID = secrets.GITHUB_OAUTH_CLIENT_ID;
+  if (secrets.GITHUB_OAUTH_CLIENT_SECRET) process.env.GITHUB_OAUTH_CLIENT_SECRET = secrets.GITHUB_OAUTH_CLIENT_SECRET;
 
   // Every Cloud Build is signed with a key stored encrypted under SYNKRO_SIGNING_ENC_KEY: without it no build
   // can be signed, so production does not start. Same for DOWNLOAD_TOKEN_SECRET, which signs the APK download
@@ -95,6 +100,35 @@ async function bootstrap() {
     
     // Start build queue polling
     startBuildWorker();
+
+    // Schedule periodic idempotent monthly credit grants (hourly check)
+    const monthlyGrantTimer = setInterval(() => {
+      creditLedgerService.runMonthlyCreditGrantJob()
+        .then((res) => {
+          if (res.granted > 0) {
+            console.log(`[CREDIT_JOB] Monthly grant job completed: granted=${res.granted}, processed=${res.processed}`);
+          }
+        })
+        .catch((err) => console.error('[CREDIT_JOB] Monthly credit grant job error:', err));
+    }, 60 * 60 * 1000);
+    monthlyGrantTimer.unref();
+
+    // Schedule daily AI spend reconciliation vs Google billing
+    const reconcileTimer = setInterval(() => {
+      const googleBillingUsd = process.env.SYNKRO_GOOGLE_BILLING_DAILY_USD
+        ? Number(process.env.SYNKRO_GOOGLE_BILLING_DAILY_USD)
+        : undefined;
+      reconcileDailySpend(new Date(), Number.isFinite(googleBillingUsd) ? googleBillingUsd : undefined)
+        .then((res) => {
+          if (res.alertTriggered) {
+            console.error('[RECONCILE_ALERT] Daily spend discrepancy exceeded 10%:', JSON.stringify(res));
+          } else {
+            console.log('[RECONCILE] Daily spend reconciliation OK:', JSON.stringify(res));
+          }
+        })
+        .catch((err) => console.error('[RECONCILE] Daily spend reconciliation error:', err));
+    }, 24 * 60 * 60 * 1000);
+    reconcileTimer.unref();
   } catch (dbErr: any) {
     console.error('[DATABASE_BOOT] Database initialization failed:', dbErr.message);
   }
@@ -206,6 +240,9 @@ async function bootstrap() {
   app.use('/v1/billing', billingRouter);
   app.use('/api/billing', billingRouter);
 
+  // Attach OAuth Router
+  app.use('/v1/auth/oauth', oauthRouter);
+
   // Signup Endpoint
   app.post('/v1/auth/signup', async (req, res) => {
     try {
@@ -226,6 +263,30 @@ async function bootstrap() {
       res.status(response.status).json(response.body);
     } catch (err: any) {
       console.error('[Signin Route Error]', err);
+      res.status(500).json({ error: 'Internal Server Error' });
+    }
+  });
+
+  // Verify Email Endpoint
+  app.post(['/v1/auth/verify-email', '/v1/auth/verify-otp'], async (req, res) => {
+    try {
+      const headers = req.headers as Record<string, string>;
+      const response = await gateway.handleRequest('POST', '/v1/auth/verify-email', headers, req.body);
+      res.status(response.status).json(response.body);
+    } catch (err: any) {
+      console.error('[Verify Email Route Error]', err);
+      res.status(500).json({ error: 'Internal Server Error' });
+    }
+  });
+
+  // Resend Verification Code Endpoint
+  app.post(['/v1/auth/resend-verification', '/v1/auth/send-verification-code'], async (req, res) => {
+    try {
+      const headers = req.headers as Record<string, string>;
+      const response = await gateway.handleRequest('POST', '/v1/auth/resend-verification', headers, req.body);
+      res.status(response.status).json(response.body);
+    } catch (err: any) {
+      console.error('[Resend Verification Route Error]', err);
       res.status(500).json({ error: 'Internal Server Error' });
     }
   });
@@ -330,6 +391,26 @@ async function bootstrap() {
     } catch (error: any) {
       console.error('[Stream Error]', error);
       res.status(500).json({ error: 'Internal Server Error' });
+    }
+  });
+
+  app.post('/v1/admin/reconcile', async (req, res) => {
+    const adminSecret = process.env.SYNKRO_ADMIN_SECRET;
+    if (!adminSecret || req.headers['x-admin-secret'] !== adminSecret) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    try {
+      const googleBillingUsd = req.body?.googleBillingUsd !== undefined
+        ? Number(req.body.googleBillingUsd)
+        : (process.env.SYNKRO_GOOGLE_BILLING_DAILY_USD ? Number(process.env.SYNKRO_GOOGLE_BILLING_DAILY_USD) : undefined);
+      const date = req.body?.date ? new Date(req.body.date) : new Date();
+      const result = await reconcileDailySpend(date, Number.isFinite(googleBillingUsd) ? googleBillingUsd : undefined);
+      if (result.alertTriggered) {
+        console.error('[RECONCILE_ALERT] Manual reconcile discrepancy exceeded 10%:', JSON.stringify(result));
+      }
+      return res.status(200).json(result);
+    } catch (err: any) {
+      return res.status(500).json({ error: err?.message || 'Reconcile failed' });
     }
   });
 

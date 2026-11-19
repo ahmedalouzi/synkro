@@ -46,6 +46,10 @@ const requireAuth = async (req: express.Request, res: express.Response, next: ex
       return;
     }
     const session = await authService.validateSession(token);
+    if ((session as any).emailVerified === false) {
+      res.status(403).json({ code: 'EMAIL_NOT_VERIFIED', error: 'Email verification required. Please verify your email address to use Cloud Build services.' });
+      return;
+    }
     (req as any).user = session;
     next();
   } catch (err: any) {
@@ -79,8 +83,14 @@ const buildRateLimiter = async (req: express.Request, res: express.Response, nex
     }
 
     const count = parseInt(result.rows[0].count, 10);
-    if (count >= 10) {
-      res.status(429).json({ error: 'Usage Limit Exceeded: You can only build 10 times per day.' });
+    const plan = String((req as any).user?.plan || 'free').toLowerCase();
+    const maxBuilds = plan === 'free' ? 3 : 10;
+    if (count >= maxBuilds) {
+      res.status(429).json({
+        error: plan === 'free'
+          ? 'Usage Limit Exceeded: Free tier is limited to 3 builds per day. Upgrade to Pro for 10 builds/day.'
+          : 'Usage Limit Exceeded: You can only build 10 times per day.',
+      });
       return;
     }
 
@@ -812,7 +822,13 @@ buildRouter.post('/signing/:projectId/keystore', async (req, res) => {
       return;
     }
     try {
-      userId = (await authService.validateSession(header.slice('Bearer '.length))).userId;
+      const validated = await authService.validateSession(header.slice('Bearer '.length));
+      if ((validated as any).emailVerified === false) {
+        audit('email_not_verified');
+        res.status(403).json({ code: 'EMAIL_NOT_VERIFIED', error: 'Email verification required. Please verify your email address.' });
+        return;
+      }
+      userId = validated.userId;
     } catch {
       audit('bad_token');
       res.status(401).json({ error: 'Unauthorized: invalid session' });

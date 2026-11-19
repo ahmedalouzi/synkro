@@ -62,7 +62,10 @@ export default async function runTests() {
   
   const email = `usage_test_${Math.random().toString(36).substring(7)}@example.com`;
   await gateway.authService.signup(email, 'hash-password-123');
+  await db.query('UPDATE users SET email_verified = TRUE WHERE email = $1', [email]);
   const session = await gateway.authService.login(email, 'hash-password-123');
+  const { creditLedgerService } = await import('../src/models/credit-ledger');
+  await creditLedgerService.ensureMonthlyPlanGrant(session.userId, 'free');
 
   const gatewayReqId = `gateway-usage-req-${Math.random().toString(36).substring(7)}`;
   const headers = {

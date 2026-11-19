@@ -254,6 +254,8 @@ export interface AgentMessage {
   createdAt: string;
   /** Agent run that produced this assistant message; links it to its timeline steps. */
   runId?: string;
+  /** Credits used by this turn/message */
+  creditsUsed?: number;
 }
 
 export interface ProposedEdit {
@@ -268,6 +270,7 @@ export interface AgentStreamEvent {
   type: 'status' | 'delta' | 'done' | 'error' | 'activity';
   content: string;
   threadId?: string;
+  creditsUsed?: number;
 }
 
 export interface AgentActivityEvent {
@@ -742,6 +745,8 @@ export interface SshTarget {
   identityFile?: string;
 }
 
+export type OAuthProvider = 'google' | 'github';
+
 export const IPC_CHANNELS = {
   WORKSPACE_OPEN_FOLDER: 'workspace:openFolder',
   WORKSPACE_GET_RECENT: 'workspace:getRecent',
@@ -860,6 +865,10 @@ export const IPC_CHANNELS = {
   AUTH_SIGN_UP: 'auth:signUp',
   AUTH_LOGOUT: 'auth:logout',
   AUTH_GET_ACCOUNT: 'auth:getAccount',
+  AUTH_VERIFY_EMAIL: 'auth:verifyEmail',
+  AUTH_RESEND_VERIFICATION: 'auth:resendVerification',
+  AUTH_OAUTH_START: 'auth:oauthStart',
+  AUTH_OAUTH_CANCEL: 'auth:oauthCancel',
   EXTENSIONS_INSTALLED: 'extensions:installed',
   EXTENSIONS_INSTALL: 'extensions:install',
   EXTENSIONS_UNINSTALL: 'extensions:uninstall',
@@ -1218,13 +1227,18 @@ export interface IpcApi {
   uninstallExtension: (extensionId: string) => Promise<void>;
   getExtensionDetails: (extensionId: string) => Promise<any>;
   // Auth
-  authSignIn: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
-  authSignUp: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  authSignIn: (email: string, password: string) => Promise<{ success: boolean; error?: string; emailVerified?: boolean; verificationRequired?: boolean }>;
+  authSignUp: (email: string, password: string) => Promise<{ success: boolean; error?: string; emailVerified?: boolean; verificationRequired?: boolean }>;
   authLogout: () => Promise<void>;
+  authVerifyEmail: (code: string) => Promise<{ success: boolean; error?: string; emailVerified?: boolean }>;
+  authResendVerification: () => Promise<{ success: boolean; error?: string }>;
+  authStartOAuth: (provider: OAuthProvider) => Promise<{ success: boolean; error?: string }>;
+  authCancelOAuth: () => Promise<{ success: boolean }>;
   authGetAccount: () => Promise<{
     email: string;
     tier?: string;
     plan?: string;
+    emailVerified?: boolean;
     usedCost?: number;
     budgetCost?: number;
     usedTokens?: number;
@@ -1240,6 +1254,11 @@ export interface IpcApi {
     monthlyCompletions?: number | null;
     completionsUsed?: number;
     completionsResetAt?: string;
+    /** Credits-based billing */
+    creditsRemaining?: number;
+    monthlyCredits?: number;
+    creditsUsedThisMonth?: number;
+    creditsResetAt?: string;
   } | null>;
   onPublishStatus: (callback: (status: any) => void) => () => void;
   onPublishLog: (callback: (line: string) => void) => () => void;
@@ -1283,11 +1302,14 @@ export interface AIUsage {
   inputTokens: number;
   outputTokens: number;
   totalTokens: number;
+  cachedTokens?: number;
+  thinkingTokens?: number;
 }
 
 export interface CostEstimate {
   cost: number;
   currency: string;
+  credits?: number;
 }
 
 export interface AIError {

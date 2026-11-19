@@ -18,7 +18,19 @@
     "orContinueWithEmail": "أو المتابعة عبر البريد الإلكتروني",
     "privateBeta": "نسخة تجريبية خاصة",
     "authFailed": "فشلت المصادقة",
-    "oauthComingSoon": "تسجيل الدخول عبر {provider} قادم قريبًا. يرجى استخدام بريدك الإلكتروني حاليًا."
+    "oauthComingSoon": "تسجيل الدخول عبر {provider} قادم قريبًا. يرجى استخدام بريدك الإلكتروني حاليًا.",
+    "verifyEmailTitle": "تأكيد بريدك الإلكتروني",
+    "verifyEmailSubtitle": "أرسلنا رمزًا مكونًا من 6 أرقام إلى {email}",
+    "verifyEmailCodeLabel": "الرمز المكون من 6 أرقام",
+    "verifyEmailSubmit": "تأكيد ومتابعة",
+    "resendCode": "إعادة إرسال الرمز",
+    "resendCodeIn": "إعادة إرسال الرمز خلال {seconds} ثانية",
+    "useDifferentEmail": "استخدام بريد إلكتروني آخر",
+    "codeSentNotice": "تم إرسال رمز تحقق جديد.",
+    "invalidCodeLength": "يرجى إدخال جميع الأرقام الستة.",
+    "signingIn": "جارٍ تسجيل الدخول…",
+    "waitingForProvider": "بانتظار {provider} في متصفحك…",
+    "cancel": "إلغاء"
   },
   "onboarding": {
     "welcomeTitle": "مرحبًا بك في Atomvs",
@@ -247,6 +259,10 @@
       "includedUsage": "الاستخدام المشمول",
       "refreshesWeekly": "يتجدد أسبوعيًا · التجديد القادم في {date}",
       "usageServerTracked": "يتم تتبع الاستخدام وفرضه عبر خوادم Atomvs.",
+      "creditsRemaining": "الرصيد المتبقي",
+      "creditsLeftValue": "{remaining} / {total} رصيد متبقٍ",
+      "creditsRefreshes": "يتجدد شهريًا · موعد التجديد القادم {date}",
+      "creditsDescription": "الرصيد المتبقي لطلبات الذكاء الاصطناعي في دورة الفوترة الحالية.",
       "tabCompletions": "إكمالات Tab",
       "unlimitedOnPlan": "غير محدود في خطتك الحالية.",
       "resetsDate": "يتجدد في {date}",
@@ -478,7 +494,9 @@
     "agentWorking": "الوكيل يعمل…",
     "http500": "خطأ في الخادم (HTTP 500)",
     "planBuildFix": "خطط، ابنِ، وأصلح أي شيء",
-    "emptyHint": "@ لإضافة ملفات وسياق · / للأوامر · الصق الصور لتظهر شاشتك للوكيل"
+    "emptyHint": "@ لإضافة ملفات وسياق · / للأوامر · الصق الصور لتظهر شاشتك للوكيل",
+    "usedCredits": "استُخدم {count} رصيد",
+    "usedCredit": "استُخدم رصيد واحد"
   },
   "preview": {
     "title": "المعاينة",

@@ -1,4 +1,5 @@
 import { BackendAIGateway } from '../src/models/backend-gateway';
+import { db } from '../src/models/db';
 
 export default async function runTests() {
   console.log('  Running BackendAIGateway unit tests...');
@@ -9,7 +10,10 @@ export default async function runTests() {
   
   const email = `gateway_test_${Math.random().toString(36).substring(7)}@example.com`;
   await gateway.authService.signup(email, 'hash-password-123');
+  await db.query('UPDATE users SET email_verified = TRUE WHERE email = $1', [email]);
   const session = await gateway.authService.login(email, 'hash-password-123');
+  const { creditLedgerService } = await import('../src/models/credit-ledger');
+  await creditLedgerService.ensureMonthlyPlanGrant(session.userId, 'free');
 
   // Test 1: Successful Auth & Generate routing
   const authHeaders = {

@@ -542,6 +542,14 @@ export function ChatPane({ onOpenSettings: _onOpenSettings }: ChatPaneProps) {
         ) : isLive && runActivities.length === 0 ? (
           <div className="cx-thinking">{streamStatus || 'Thinking…'}</div>
         ) : null}
+
+        {!isLive && message.creditsUsed !== undefined && message.creditsUsed > 0 && (
+          <div className="cx-credits-badge" data-testid="chat-message-credits">
+            {message.creditsUsed === 1
+              ? t('chat.usedCredit', { count: 1 })
+              : t('chat.usedCredits', { count: message.creditsUsed })}
+          </div>
+        )}
       </div>
     );
   };

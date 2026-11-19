@@ -201,7 +201,9 @@ export class ProductionAIGateway implements AIGateway {
       
       // Pass the Retry-After header if present
       let retryAfterMs;
-      const retryHeader = response.headers.get('retry-after');
+      const retryHeader = typeof response?.headers?.get === 'function'
+        ? response.headers.get('retry-after')
+        : (response?.headers as any)?.['retry-after'];
       if (retryHeader) {
         const seconds = parseInt(retryHeader, 10);
         if (!isNaN(seconds)) retryAfterMs = seconds * 1000;

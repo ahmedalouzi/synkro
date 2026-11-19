@@ -27,6 +27,7 @@ function createInMemoryMockPool() {
     id: testUserId,
     email: 'builder@synkro.com',
     plan: 'free',
+    email_verified: true,
   });
   sessions.set('valid_test_token', {
     userId: testUserId,
@@ -59,6 +60,7 @@ function createInMemoryMockPool() {
             expires_at: sess.expiresAt,
             email: u.email,
             plan: u.plan,
+            email_verified: true,
           },
         ],
       };

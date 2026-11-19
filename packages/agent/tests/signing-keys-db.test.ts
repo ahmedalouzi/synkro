@@ -35,6 +35,7 @@ export default async function run() {
   const password = 'correct-horse-9';
   const owner = await auth.signup(`signing-owner-${crypto.randomUUID()}@test.local`, password);
   const other = await auth.signup(`signing-other-${crypto.randomUUID()}@test.local`, password);
+  await db.query('UPDATE users SET email_verified = TRUE WHERE id IN ($1, $2)', [owner.userId, other.userId]);
   const projectId = crypto.randomUUID();
   const server = (() => {
     const app = express();

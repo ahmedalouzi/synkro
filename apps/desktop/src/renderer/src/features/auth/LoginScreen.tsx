@@ -108,7 +108,7 @@ const ArrowIcon = () => (
 
 export function LoginScreen() {
   const { t } = useI18n();
-  const { login } = useAuthStore();
+  const { login, loginWithOAuth, cancelOAuth, pendingVerificationEmail, verifyEmail, resendVerification, cancelVerification } = useAuthStore();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -117,10 +117,33 @@ export function LoginScreen() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
+  const [oauthBusy, setOauthBusy] = useState<'Google' | 'GitHub' | null>(null);
+  const [otp, setOtp] = useState<string[]>(['', '', '', '', '', '']);
+  const [cooldown, setCooldown] = useState(60);
+  const otpInputRefs = useRef<(HTMLInputElement | null)[]>([]);
   const cardRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const parallaxFrame = useRef(0);
   const demo = useAgentDemo();
+
+  useEffect(() => {
+    if (!pendingVerificationEmail) return;
+    if (cooldown <= 0) return;
+    const interval = setInterval(() => {
+      setCooldown((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [cooldown, pendingVerificationEmail]);
+
+  useEffect(() => {
+    if (pendingVerificationEmail) {
+      setOtp(['', '', '', '', '', '']);
+      setCooldown(60);
+      setError('');
+      setNotice('');
+      setTimeout(() => otpInputRefs.current[0]?.focus(), 50);
+    }
+  }, [pendingVerificationEmail]);
 
   // Background layers drift against the pointer (--px/--py in -1..1) for depth.
   const handleParallax = (e: React.PointerEvent) => {
@@ -152,12 +175,115 @@ export function LoginScreen() {
     setMode(next);
     setError('');
     setNotice('');
+    if (oauthBusy) {
+      void cancelOAuth();
+      setOauthBusy(null);
+      setBusy(false);
+    }
   };
 
-  // Placeholders until the server supports OAuth sign-in.
-  const handleOAuth = (provider: 'Google' | 'GitHub') => {
+  const handleOtpChange = (index: number, val: string) => {
+    const digit = val.replace(/\D/g, '').slice(-1);
+    const newOtp = [...otp];
+    newOtp[index] = digit;
+    setOtp(newOtp);
     setError('');
-    setNotice(t('login.oauthComingSoon', { provider }));
+
+    if (digit && index < 5) {
+      otpInputRefs.current[index + 1]?.focus();
+    }
+
+    if (digit && index === 5 && newOtp.every((d) => d.length === 1)) {
+      void handleVerifySubmit(newOtp.join(''));
+    }
+  };
+
+  const handleOtpKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Backspace' && !otp[index] && index > 0) {
+      otpInputRefs.current[index - 1]?.focus();
+    }
+  };
+
+  const handleOtpPaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    e.preventDefault();
+    const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
+    if (!pasted) return;
+    const newOtp = [...otp];
+    for (let i = 0; i < 6; i++) {
+      newOtp[i] = pasted[i] || '';
+    }
+    setOtp(newOtp);
+    setError('');
+    const nextIdx = Math.min(pasted.length, 5);
+    otpInputRefs.current[nextIdx]?.focus();
+
+    if (pasted.length === 6) {
+      void handleVerifySubmit(pasted);
+    }
+  };
+
+  const handleVerifySubmit = async (codeToVerify?: string) => {
+    const code = codeToVerify || otp.join('');
+    if (code.length !== 6) {
+      setError(t('login.invalidCodeLength'));
+      return;
+    }
+    setBusy(true);
+    setError('');
+    setNotice('');
+    const res = await verifyEmail(code);
+    setBusy(false);
+    if (!res.success) {
+      setError(res.error || t('login.authFailed'));
+    }
+  };
+
+  const handleResend = async () => {
+    if (cooldown > 0 || busy) return;
+    setBusy(true);
+    setError('');
+    setNotice('');
+    const res = await resendVerification();
+    setBusy(false);
+    if (res.success) {
+      setCooldown(60);
+      setNotice(t('login.codeSentNotice'));
+    } else {
+      setError(res.error || 'Failed to resend verification code');
+    }
+  };
+
+  const handleCancelVerification = async () => {
+    setBusy(true);
+    await cancelVerification();
+    setBusy(false);
+    setError('');
+    setNotice('');
+  };
+
+  const handleOAuth = async (provider: 'Google' | 'GitHub') => {
+    setError('');
+    setNotice('');
+    setOauthBusy(provider);
+    setBusy(true);
+
+    try {
+      const res = await loginWithOAuth(provider.toLowerCase() as 'google' | 'github');
+      if (!res.success) {
+        setError(res.error || t('login.authFailed'));
+      }
+    } catch (err: any) {
+      setError(err.message || t('login.authFailed'));
+    } finally {
+      setOauthBusy(null);
+      setBusy(false);
+    }
+  };
+
+  const handleCancelOAuth = async () => {
+    await cancelOAuth();
+    setOauthBusy(null);
+    setBusy(false);
   };
 
   // Spotlight that follows the pointer across the card.
@@ -266,35 +392,16 @@ export function LoginScreen() {
                 <span className="lx-orb-ring" />
                 <SynkroMark size={36} />
               </div>
-              <h1 className="lx-title">{mode === 'signin' ? t('login.welcomeBack') : t('login.createAccount')}</h1>
+              <h1 className="lx-title">
+                {pendingVerificationEmail
+                  ? t('login.verifyEmailTitle')
+                  : (mode === 'signin' ? t('login.welcomeBack') : t('login.createAccount'))}
+              </h1>
               <p className="lx-caption">
-                {mode === 'signin' ? t('login.signInSubtitle') : t('login.signUpSubtitle')}
+                {pendingVerificationEmail
+                  ? t('login.verifyEmailSubtitle', { email: pendingVerificationEmail })
+                  : (mode === 'signin' ? t('login.signInSubtitle') : t('login.signUpSubtitle'))}
               </p>
-            </div>
-
-            <div className="lx-tabs" role="tablist">
-              <span className={`lx-tab-indicator ${mode === 'signup' ? 'is-right' : ''}`} />
-              <button type="button" role="tab" aria-selected={mode === 'signin'} className={`lx-tab ${mode === 'signin' ? 'is-active' : ''}`} onClick={() => switchMode('signin')} disabled={busy}>
-                {t('login.signIn')}
-              </button>
-              <button type="button" role="tab" aria-selected={mode === 'signup'} className={`lx-tab ${mode === 'signup' ? 'is-active' : ''}`} onClick={() => switchMode('signup')} disabled={busy}>
-                {t('login.signUp')}
-              </button>
-            </div>
-
-            <div className="lx-oauth">
-              <button type="button" className="lx-oauth-btn" onClick={() => handleOAuth('Google')} disabled={busy}>
-                <GoogleIcon />
-                Google
-              </button>
-              <button type="button" className="lx-oauth-btn" onClick={() => handleOAuth('GitHub')} disabled={busy}>
-                <GitHubIcon />
-                GitHub
-              </button>
-            </div>
-
-            <div className="lx-divider">
-              <span>{t('login.orContinueWithEmail')}</span>
             </div>
 
             {notice && !error && (
@@ -310,72 +417,175 @@ export function LoginScreen() {
               </div>
             )}
 
-            <form onSubmit={handleSubmit} className="login-form">
-              <label className="lx-field">
-                <span className="lx-label">{t('login.email')}</span>
-                <span className="lx-input-wrap">
-                  <span className="lx-input-icon"><MailIcon /></span>
-                  <input
-                    id="email"
-                    type="email"
-                    placeholder={t('login.emailPlaceholder')}
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                    disabled={busy}
-                    autoFocus
-                    autoComplete="email"
-                    className="lx-input"
-                  />
-                </span>
-              </label>
+            {pendingVerificationEmail ? (
+              <form onSubmit={(e) => { e.preventDefault(); void handleVerifySubmit(); }} className="lx-otp-form">
+                <div className="lx-otp-inputs" onPaste={handleOtpPaste}>
+                  {otp.map((digit, idx) => (
+                    <input
+                      key={idx}
+                      ref={(el) => { otpInputRefs.current[idx] = el; }}
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      maxLength={1}
+                      value={digit}
+                      onChange={(e) => handleOtpChange(idx, e.target.value)}
+                      onKeyDown={(e) => handleOtpKeyDown(idx, e)}
+                      disabled={busy}
+                      className="lx-otp-digit"
+                      aria-label={`Digit ${idx + 1}`}
+                      autoFocus={idx === 0}
+                    />
+                  ))}
+                </div>
 
-              <label className="lx-field">
-                <span className="lx-label">
-                  {t('login.password')}
-                  {capsLock && <span className="lx-caps">{t('login.capsLockOn')}</span>}
-                </span>
-                <span className="lx-input-wrap">
-                  <span className="lx-input-icon"><LockIcon /></span>
-                  <input
-                    id="password"
-                    type={showPassword ? 'text' : 'password'}
-                    placeholder={mode === 'signup' ? t('login.passwordPlaceholderSignUp') : t('login.passwordPlaceholderSignIn')}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    onKeyUp={trackCapsLock}
-                    onKeyDown={trackCapsLock}
-                    required
-                    disabled={busy}
-                    minLength={8}
-                    autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
-                    className="lx-input"
-                  />
+                <button type="submit" className="lx-submit" disabled={busy || otp.join('').length !== 6}>
+                  <span className="lx-submit-shine" />
+                  {busy ? (
+                    <span className="login-spinner"></span>
+                  ) : (
+                    <>
+                      {t('login.verifyEmailSubmit')}
+                      <ArrowIcon />
+                    </>
+                  )}
+                </button>
+
+                <div className="lx-otp-actions">
                   <button
                     type="button"
-                    className="lx-eye"
-                    onClick={() => setShowPassword((v) => !v)}
-                    title={showPassword ? t('login.hidePassword') : t('login.showPassword')}
-                    aria-label={showPassword ? t('login.hidePassword') : t('login.showPassword')}
-                    tabIndex={-1}
+                    className="lx-otp-resend-btn"
+                    onClick={handleResend}
+                    disabled={cooldown > 0 || busy}
                   >
-                    <EyeIcon open={showPassword} />
+                    {cooldown > 0
+                      ? t('login.resendCodeIn', { seconds: cooldown })
+                      : t('login.resendCode')}
                   </button>
-                </span>
-              </label>
+                  <button
+                    type="button"
+                    className="lx-otp-back-btn"
+                    onClick={handleCancelVerification}
+                    disabled={busy}
+                  >
+                    {t('login.useDifferentEmail')}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <>
+                <div className="lx-tabs" role="tablist">
+                  <span className={`lx-tab-indicator ${mode === 'signup' ? 'is-right' : ''}`} />
+                  <button type="button" role="tab" aria-selected={mode === 'signin'} className={`lx-tab ${mode === 'signin' ? 'is-active' : ''}`} onClick={() => switchMode('signin')} disabled={busy}>
+                    {t('login.signIn')}
+                  </button>
+                  <button type="button" role="tab" aria-selected={mode === 'signup'} className={`lx-tab ${mode === 'signup' ? 'is-active' : ''}`} onClick={() => switchMode('signup')} disabled={busy}>
+                    {t('login.signUp')}
+                  </button>
+                </div>
 
-              <button type="submit" className="lx-submit" disabled={busy}>
-                <span className="lx-submit-shine" />
-                {busy ? (
-                  <span className="login-spinner"></span>
-                ) : (
-                  <>
-                    {mode === 'signin' ? t('login.signIn') : t('login.createAccountBtn')}
-                    <ArrowIcon />
-                  </>
+                <div className="lx-oauth">
+                  <button
+                    type="button"
+                    className={`lx-oauth-btn ${oauthBusy === 'Google' ? 'is-loading' : ''}`}
+                    onClick={() => void handleOAuth('Google')}
+                    disabled={busy}
+                  >
+                    {oauthBusy === 'Google' ? <span className="lx-spinner" aria-hidden="true" /> : <GoogleIcon />}
+                    {oauthBusy === 'Google' ? t('login.signingIn') : 'Google'}
+                  </button>
+                  <button
+                    type="button"
+                    className={`lx-oauth-btn ${oauthBusy === 'GitHub' ? 'is-loading' : ''}`}
+                    onClick={() => void handleOAuth('GitHub')}
+                    disabled={busy}
+                  >
+                    {oauthBusy === 'GitHub' ? <span className="lx-spinner" aria-hidden="true" /> : <GitHubIcon />}
+                    {oauthBusy === 'GitHub' ? t('login.signingIn') : 'GitHub'}
+                  </button>
+                </div>
+
+                {oauthBusy && (
+                  <div className="lx-oauth-waiting" role="status">
+                    <span>{t('login.waitingForProvider', { provider: oauthBusy })}</span>
+                    <button type="button" className="lx-oauth-cancel" onClick={() => void handleCancelOAuth()}>
+                      {t('login.cancel')}
+                    </button>
+                  </div>
                 )}
-              </button>
-            </form>
+
+                <div className="lx-divider">
+                  <span>{t('login.orContinueWithEmail')}</span>
+                </div>
+
+                <form onSubmit={handleSubmit} className="login-form">
+                  <label className="lx-field">
+                    <span className="lx-label">{t('login.email')}</span>
+                    <span className="lx-input-wrap">
+                      <span className="lx-input-icon"><MailIcon /></span>
+                      <input
+                        id="email"
+                        type="email"
+                        placeholder={t('login.emailPlaceholder')}
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        required
+                        disabled={busy}
+                        autoFocus
+                        autoComplete="email"
+                        className="lx-input"
+                      />
+                    </span>
+                  </label>
+
+                  <label className="lx-field">
+                    <span className="lx-label">
+                      {t('login.password')}
+                      {capsLock && <span className="lx-caps">{t('login.capsLockOn')}</span>}
+                    </span>
+                    <span className="lx-input-wrap">
+                      <span className="lx-input-icon"><LockIcon /></span>
+                      <input
+                        id="password"
+                        type={showPassword ? 'text' : 'password'}
+                        placeholder={mode === 'signup' ? t('login.passwordPlaceholderSignUp') : t('login.passwordPlaceholderSignIn')}
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        onKeyUp={trackCapsLock}
+                        onKeyDown={trackCapsLock}
+                        required
+                        disabled={busy}
+                        minLength={8}
+                        autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+                        className="lx-input"
+                      />
+                      <button
+                        type="button"
+                        className="lx-eye"
+                        onClick={() => setShowPassword((v) => !v)}
+                        title={showPassword ? t('login.hidePassword') : t('login.showPassword')}
+                        aria-label={showPassword ? t('login.hidePassword') : t('login.showPassword')}
+                        tabIndex={-1}
+                      >
+                        <EyeIcon open={showPassword} />
+                      </button>
+                    </span>
+                  </label>
+
+                  <button type="submit" className="lx-submit" disabled={busy}>
+                    <span className="lx-submit-shine" />
+                    {busy ? (
+                      <span className="login-spinner"></span>
+                    ) : (
+                      <>
+                        {mode === 'signin' ? t('login.signIn') : t('login.createAccountBtn')}
+                        <ArrowIcon />
+                      </>
+                    )}
+                  </button>
+                </form>
+              </>
+            )}
 
           </div>
         </section>
