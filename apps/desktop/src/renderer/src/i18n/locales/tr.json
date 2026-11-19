@@ -150,6 +150,7 @@
     "hidePreview": "Önizlemeyi Gizle",
     "showPreview": "Önizlemeyi Göster",
     "device": "Cihaz",
+    "frameFinish": "Çerçeve rengi",
     "toggleChat": "Sohbeti Aç/Kapat (Ctrl+Alt+B)",
     "settingsTooltip": "Ayarlar (Ctrl+,)",
     "upgradeToPro": "Pro'ya Yükselt",
@@ -485,7 +486,17 @@
     "start": "Başlat",
     "detach": "Ayır",
     "livePreview": "Canlı önizleme",
-    "livePreviewSubtitle": "Kod değişiklikleri yukarıdaki çerçevede anında yeniden yüklenir."
+    "livePreviewSubtitle": "Kod değişiklikleri yukarıdaki çerçevede anında yeniden yüklenir.",
+    "flutterEnv": {
+      "syncedTitle": "Flutter, {folder} içinde",
+      "syncedBody": "{folder}, eşitleme sırasında Flutter dosyalarını kilitler; bu yüzden Flutter onları güncelleyemez ya da silemez ve önizleme başlayamaz. Flutter klasörünü {folder} dışına taşıyın (örneğin C:\\src\\flutter), sonra yeni konumu Ayarlar'dan seçin.",
+      "lockTitle": "Başka bir Flutter komutu hâlâ çalışıyor",
+      "lockBody": "Flutter aynı anda yalnızca bir komut çalıştırır. Atomvs dışında (bir terminalde ya da başka bir editörde) başka bir komut hâlâ çalışıyor ya da takıldı. Onu kapatın ya da bitmesini bekleyin, sonra yeniden deneyin.",
+      "lockSynced": "Flutter klasörünüz {folder} içinde; bu, Flutter komutlarının bitmesini engelleyebilir. Klasörü dışarı taşımak (örneğin C:\\src\\flutter) genellikle sorunu çözer.",
+      "notCode": "Bu, uygulamanızın kodundaki bir sorun değil.",
+      "openSettings": "Flutter konumunu seç",
+      "retry": "Yeniden dene"
+    }
   },
   "bottomPanel": {
     "terminal": "Terminal",

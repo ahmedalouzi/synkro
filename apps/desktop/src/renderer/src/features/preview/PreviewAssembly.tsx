@@ -1,6 +1,6 @@
-import React from 'react';
-import { ChassisBack, ChassisFront, SystemBars } from './PhoneFrame';
-import { deviceGeometry, type DeviceConfig } from './devices';
+import React, { useEffect, useRef } from 'react';
+import { ChassisBack, ChassisFront, SystemBars, type StatusOverride } from './PhoneFrame';
+import { deviceGeometry, type DeviceConfig, type Finish } from './devices';
 import type { SystemBarTones } from './usePreviewSafeArea';
 
 interface PreviewAssemblyProps {
@@ -10,6 +10,10 @@ interface PreviewAssemblyProps {
   tone?: SystemBarTones;
   /** The app's background colour, shown under the iframe; black until the app reports it. */
   background?: string | null;
+  /** iPhones: the metal band's finish (devices.ts); the device's default when absent. */
+  finish?: Finish;
+  /** Frame lab only: fixed status-bar time and signal for repeatable captures. */
+  statusOverride?: StatusOverride;
   /** The app (iframe or placeholder). It fills the whole screen. */
   children: React.ReactNode;
 }
@@ -26,7 +30,21 @@ const BEZEL_OUTSET = 2;
  * simulator: the app fills the screen, and the status bar, home indicator, Dynamic Island and camera hole are
  * drawn over it. The chassis art is laid out in portrait and rotated as a whole for landscape.
  */
-export function PreviewAssembly({ device, landscape = false, tone = DEFAULT_TONES, background, children }: PreviewAssemblyProps) {
+export function PreviewAssembly({ device, landscape = false, tone = DEFAULT_TONES, background, finish, statusOverride, children }: PreviewAssemblyProps) {
+  const finishUsed = finish ?? device.finishes?.[0];
+  const rootRef = useRef<HTMLDivElement>(null);
+  const first = useRef(true);
+  // A subtle 200 ms morph when the model or finish changes: opacity and scale only (compositor, 60 fps), on the
+  // existing element, so the app's iframe is not remounted. None with reduced motion.
+  useEffect(() => {
+    if (first.current) { first.current = false; return; }
+    const el = rootRef.current;
+    if (!el?.animate || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    el.animate(
+      [{ opacity: 0.55, transform: 'scale(0.985)' }, { opacity: 1, transform: 'none' }],
+      { duration: 200, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)' },
+    );
+  }, [device.id, finishUsed?.id]);
   const g = deviceGeometry(device, landscape);
   const portrait = deviceGeometry(device, false);
   const r = device.screenRadius;
@@ -49,8 +67,8 @@ export function PreviewAssembly({ device, landscape = false, tone = DEFAULT_TONE
   );
 
   return (
-    <div className="device-assembly" style={{ position: 'relative', width: g.frame.width, height: g.frame.height }}>
-      {art(<ChassisBack device={device} geometry={portrait} />, 0)}
+    <div ref={rootRef} className="device-assembly" style={{ position: 'relative', width: g.frame.width, height: g.frame.height }}>
+      {art(<ChassisBack device={device} geometry={portrait} finish={finishUsed} />, 0)}
 
       {/* The screen: the app edge to edge, the system bars over it. */}
       <div className="screen-mask" style={{
@@ -69,7 +87,10 @@ export function PreviewAssembly({ device, landscape = false, tone = DEFAULT_TONE
         <div className="screen-app" style={{ position: 'absolute', inset: 0, overflow: 'hidden' }}>
           {children}
         </div>
-        <SystemBars device={device} geometry={g} landscape={landscape} tone={tone} />
+        <SystemBars device={device} geometry={g} landscape={landscape} tone={tone} override={statusOverride} />
+        {/* The cover glass: a very faint diagonal reflection and a 1 px inner edge, over everything, never
+            catching the pointer. Static, so it costs nothing per frame. */}
+        {device.os === 'ios' && <div className={`pf-glare${landscape ? ' pf-glare--landscape' : ''}`} aria-hidden="true" />}
       </div>
 
       {/* The bezel's inner edge, laid over the screen's edge: a ring in the chassis colour, concentric with

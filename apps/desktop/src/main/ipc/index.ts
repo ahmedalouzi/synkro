@@ -782,7 +782,7 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
     return strips ? sampleStrips(event.sender, strips) : [];
   });
 
-  let currentDetachedDeviceId = 'iphone-15';
+  let currentDetachedDeviceId = 'iphone-17-pro';
   let currentDetachedLandscape = false;
 
   /** Detached window size that shows the whole device frame (portrait phones and wide foldables alike). */

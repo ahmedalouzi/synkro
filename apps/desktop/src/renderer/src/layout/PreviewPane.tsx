@@ -1,9 +1,10 @@
 import { useI18n } from '../i18n';
+import { parseFlutterEnvironmentProblem } from '@peep/shared';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { usePreviewStore } from '../stores/preview-store';
 import { useWorkspaceStore } from '../stores/workspace-store';
 import { PreviewAssembly } from '../features/preview/PreviewAssembly';
-import { DEVICES, deviceGeometry, fitZoom, type DeviceType } from '../features/preview/devices';
+import { DEVICES, deviceFinish, deviceGeometry, deviceTitle, fitZoom, type DeviceType } from '../features/preview/devices';
 import { usePreviewSafeArea } from '../features/preview/usePreviewSafeArea';
 import { useComposerStore } from '../stores/composer-store';
 import './PreviewPane.css';
@@ -179,6 +180,8 @@ Please modify the selected element and its corresponding component files as foll
   const setDeviceId = usePreviewStore((s) => s.setDeviceId);
   const landscape = usePreviewStore((s) => s.landscape);
   const setLandscape = usePreviewStore((s) => s.setLandscape);
+  const finishes = usePreviewStore((s) => s.finishes);
+  const setFinish = usePreviewStore((s) => s.setFinish);
 
   /* ── Refs ── */
   const paneRef = useRef<HTMLElement>(null);
@@ -192,6 +195,7 @@ Please modify the selected element and its corresponding component files as foll
   const platform = project?.platform ?? 'flutter';
   const platColor = getPlatformColor(platform);
   const device = DEVICES.find((d) => d.id === deviceId) ?? DEVICES[0]!;
+  const frameFinish = deviceFinish(device, finishes[device.id]);
   const geometry = deviceGeometry(device, landscape);
   const { tone, background, onFrameLoad } = usePreviewSafeArea(iframeRef, session?.url, device, geometry);
 
@@ -324,6 +328,10 @@ Please modify the selected element and its corresponding component files as foll
      session.error.toLowerCase().includes('command not found') ||
      session.error.toLowerCase().includes('enoent') ||
      session.error.includes('Is Flutter SDK installed?'));
+
+  // A problem with the Flutter installation, not the code (SDK inside OneDrive, startup lock held outside Atomvs):
+  // its own explanation and no Auto-Fix (the agent cannot fix it in code, and must not stop the user's processes).
+  const flutterEnvProblem = platform === 'flutter' && session?.status === 'error' ? parseFlutterEnvironmentProblem(session.error) : null;
 
   const handleOpenSdkSettings = () => {
     if (typeof (window.peep as any)?.openSettings === 'function') {
@@ -470,7 +478,42 @@ Please modify the selected element and its corresponding component files as foll
             </div>
           ) : (
             <div className="preview-stage">
-              <div className="preview-device-label">{device.label}</div>
+              <div className="preview-device-label">
+                {/* The device picker, where the eye already is: the name above the phone (the toolbar's select is hidden). */}
+                <label className="preview-device-picker" title={t('titlebar.device')}>
+                  <span className="preview-device-picker__text">{deviceTitle(device)}</span>
+                  <svg className="preview-device-picker__chevron" width="9" height="9" viewBox="0 0 10 10" aria-hidden="true">
+                    <path d="M2 3.5 5 6.5 8 3.5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                  <select
+                    className="preview-device-picker__select"
+                    value={deviceId}
+                    onChange={(e) => setDeviceId(e.target.value as DeviceType)}
+                    aria-label={t('titlebar.device')}
+                    data-testid="preview-device-picker"
+                  >
+                    {DEVICES.map((d) => <option key={d.id} value={d.id}>{deviceTitle(d)}</option>)}
+                  </select>
+                </label>
+                {/* Finishes of this model (iPhones): small swatches, the choice remembered per model. */}
+                {device.finishes && (
+                  <span className="preview-finish-picker" role="radiogroup" aria-label={t('titlebar.frameFinish')}>
+                    {device.finishes.map((f) => (
+                      <button
+                        key={f.id}
+                        type="button"
+                        role="radio"
+                        aria-checked={frameFinish?.id === f.id}
+                        className={`preview-finish${frameFinish?.id === f.id ? ' is-on' : ''}`}
+                        style={{ ['--swatch' as string]: f.metal }}
+                        title={f.name}
+                        aria-label={f.name}
+                        onClick={() => setFinish(device.id, f.id)}
+                      />
+                    ))}
+                  </span>
+                )}
+              </div>
               {/* CSS zoom (not transform: scale): Chromium re-renders the iframe at the
                   zoomed size so the app stays sharp, while it still sees the device's
                   logical width (e.g. 393px). transform would stretch a 1x bitmap. */}
@@ -480,7 +523,7 @@ Please modify the selected element and its corresponding component files as foll
                 zoom: scale,
                 flexShrink: 0,
               }}>
-                <PreviewAssembly device={device} landscape={landscape} tone={tone} background={background}>
+                <PreviewAssembly device={device} landscape={landscape} tone={tone} background={background} finish={frameFinish}>
                   {session?.status === 'starting' && (
                     <div className="preview-placeholder">
                       <span className="preview-placeholder__icon preview-placeholder__spinner">⏳</span>
@@ -488,7 +531,34 @@ Please modify the selected element and its corresponding component files as foll
                       <p>{getStartingMsg(platform)}</p>
                     </div>
                   )}
-                  {session?.status === 'error' && isFlutterSdkMissing ? (
+                  {flutterEnvProblem ? (
+                    <div id="preview-flutter-env" className="preview-placeholder preview-placeholder--error preview-env-problem" role="alert">
+                      <span className="preview-placeholder__icon" aria-hidden="true">{flutterEnvProblem.kind === 'startup-lock' ? '⏳' : '☁️'}</span>
+                      <h3>{flutterEnvProblem.kind === 'startup-lock' ? t('preview.flutterEnv.lockTitle') : t('preview.flutterEnv.syncedTitle', { folder: flutterEnvProblem.folder })}</h3>
+                      <p>
+                        {flutterEnvProblem.kind === 'startup-lock'
+                          ? t('preview.flutterEnv.lockBody')
+                          : t('preview.flutterEnv.syncedBody', { folder: flutterEnvProblem.folder })}
+                      </p>
+                      {flutterEnvProblem.kind === 'startup-lock' && flutterEnvProblem.folder && (
+                        <p>{t('preview.flutterEnv.lockSynced', { folder: flutterEnvProblem.folder })}</p>
+                      )}
+                      {flutterEnvProblem.sdkPath && (
+                        <code className="preview-env-problem__path" dir="ltr">{flutterEnvProblem.sdkPath}</code>
+                      )}
+                      <p className="preview-env-problem__note">{t('preview.flutterEnv.notCode')}</p>
+                      <div className="preview-env-problem__actions">
+                        {flutterEnvProblem.kind === 'sdk-in-synced-folder' && (
+                          <button type="button" id="preview-flutter-env-settings" className="preview-retry-btn preview-retry-btn--primary" onClick={handleOpenSdkSettings}>
+                            {t('preview.flutterEnv.openSettings')}
+                          </button>
+                        )}
+                        <button type="button" id="preview-flutter-env-retry" className="preview-retry-btn" onClick={handleStart} disabled={!project}>
+                          {t('preview.flutterEnv.retry')}
+                        </button>
+                      </div>
+                    </div>
+                  ) : session?.status === 'error' && isFlutterSdkMissing ? (
                     <div className="preview-placeholder preview-placeholder--error" style={{ maxWidth: '340px', margin: '0 auto', padding: '24px 16px' }}>
                       <span className="preview-placeholder__icon">📦</span>
                       <h3>Flutter SDK Required</h3>
