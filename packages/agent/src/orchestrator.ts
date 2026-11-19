@@ -460,9 +460,7 @@ export async function runAgentLoop(
 
     if (assistantMessage.tool_calls && assistantMessage.tool_calls.length > 0) {
       // Text it wrote before the tools (the one-line plan) ends here: the final answer starts a new paragraph.
-      if (typeof assistantMessage.content === 'string' && assistantMessage.content.trim()) callbacks.onDelta('
-
-');
+      if (typeof assistantMessage.content === 'string' && assistantMessage.content.trim()) callbacks.onDelta('\n\n');
       // Notify observer: entering tool execution phase.
       emitPhase('tool_executing');
       conversationHistory.push(assistantMessage);
