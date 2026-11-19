@@ -1,4 +1,5 @@
 import { OPENAI_TOOLS } from './tools/definitions';
+import { packagesAdded } from './tools/safety';
 import { ProviderError } from '@peep/shared';
 import type { ChatMessage } from './types';
 
@@ -98,10 +99,10 @@ function toolNameToActivityType(name: string): AgentTimelineActivityType {
 // is marked "Not verified" with what is missing and the last error.
 // ---------------------------------------------------------------------------
 
-/** A check's output that shows a problem. */
 /** A tool result for something that did not run: refused by a safety rule, or not confirmed. Exported for tests. */
 export const NOT_RUN = /^(BLOCKED: |Not run: |Command was rejected by user|File deletion rejected by user|Command error: Command not allowed)/;
 
+/** A check's output that shows a problem. */
 const CHECK_FAILED = /Error lines in the output \(|^Preview: (error|not running)|Start error:|Runtime errors in the page \(|visible content NO|Error overlay on screen|"success": false|error TS\d+|exited with code [1-9]|^Error:|^BLOCKED:/m;
 
 const CHANGE_TOOLS = new Set(['propose_file_edit', 'patch_file', 'delete_file', 'rename_file', 'bootstrap_project']);
@@ -458,6 +459,10 @@ export async function runAgentLoop(
     );
 
     if (assistantMessage.tool_calls && assistantMessage.tool_calls.length > 0) {
+      // Text it wrote before the tools (the one-line plan) ends here: the final answer starts a new paragraph.
+      if (typeof assistantMessage.content === 'string' && assistantMessage.content.trim()) callbacks.onDelta('
+
+');
       // Notify observer: entering tool execution phase.
       emitPhase('tool_executing');
       conversationHistory.push(assistantMessage);
@@ -543,6 +548,9 @@ export async function runAgentLoop(
           timestamp: new Date().toISOString(),
           ...(fileHint ? { file: fileHint } : {}),
           ...(cmdHint  ? { command: cmdHint } : {}),
+          // New packages that came in (they need no approval): the user sees each name.
+          ...(cmdHint && !toolBlocked && !toolFailed && /exited with code 0\./.test(singleCallMsg.content) && packagesAdded(cmdHint).length
+            ? { packages: packagesAdded(cmdHint) } : {}),
         });
       }
 
@@ -604,7 +612,8 @@ export async function runAgentLoop(
       ...conversationHistory,
       {
         role: 'user',
-        content: 'Summarize what you did and what the user should review. Be concise.',
+        content: 'In one to three short sentences, in the language of my last message, say what now works and where to see it. '
+          + 'No lists, no file names, no instructions I did not ask for.',
       },
     ],
     signal,

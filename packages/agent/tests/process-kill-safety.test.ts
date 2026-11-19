@@ -76,13 +76,14 @@ export default async function run() {
     await assert.rejects(terminal.streamCommand('t1', command, os.tmpdir()), /Command not allowed: .*(outside Atomvs|Only processes Atomvs started)/, command);
     await assert.rejects(terminal.runCommand(command, os.tmpdir()), /Command not allowed/, command);
   }
-  assert.equal(terminal.isCommandAllowed('flutter --version & taskkill /PID 4242 /F'), true, 'a PID Atomvs started');
+  assert.equal(terminal.isCommandAllowed('flutter --version & taskkill /PID 4242 /F'), false, 'a PID Atomvs started: asks first');
+  assert.equal(terminal.isCommandAllowed('flutter --version & taskkill /PID 4242 /F', { approved: true }), true, 'then runs');
   assert.equal(terminal.isCommandAllowed('flutter pub get'), true);
-  assert.equal(terminal.isCommandAllowed('cmd /c dir'), false, 'the prefix allowlist still applies');
+  assert.equal(terminal.isCommandAllowed('cmd /c dir'), false, 'a shell asks first');
 
   console.log('  [kill-safety] The agent passes the PIDs Atomvs started; the prompt says why...');
   const agentService = fs.readFileSync(path.join(root, 'apps/desktop/src/main/services/agent-service.ts'), 'utf8');
-  assert.match(agentService, /classifyCommand\(commandStr, \{ ownPids: new Set\(this\.ownedPids\(\)\) \}\)/);
+  assert.match(agentService, /classifyCommand\(commandStr, \{\s*ownPids: new Set\(this\.ownedPids\(\)\),/);
   const ipc = fs.readFileSync(path.join(root, 'apps/desktop/src/main/ipc/index.ts'), 'utf8');
   assert.match(ipc, /agentService\.setOwnedPidsProvider\(\(\) => \[\.\.\.processManager\.pids\(\), \.\.\.terminalService\.pids\(\)\]\)/);
   assert.match(ipc, /terminalService\.setOwnedPidsProvider\(\(\) => processManager\.pids\(\)\)/);
@@ -116,7 +117,7 @@ export default async function run() {
     assert.equal(resolved.length, 1);
     assert.equal(resolved[0].status, 'blocked');
     assert.match(resolved[0].message, /^Blocked: Stopping processes by name/);
-    for (const text of ['BLOCKED: x', "Not run: this command needs the user's confirmation and none came within 60 s: x",
+    for (const text of ['BLOCKED: x', 'Not run: the user did not answer the approval request (a new message or Stop ended it): x',
       'Command was rejected by user: x', 'File deletion rejected by user: a.txt', 'Command error: Command not allowed: x']) {
       assert.ok(NOT_RUN.test(text), text);
     }
@@ -124,8 +125,8 @@ export default async function run() {
     const chat = fs.readFileSync(path.join(root, 'apps/desktop/src/renderer/src/layout/ChatPane.tsx'), 'utf8');
     assert.match(chat, /if \(a\.status === 'blocked'\) return \{ verb: 'Blocked', target \};/);
     const agent = fs.readFileSync(path.join(root, 'apps/desktop/src/main/services/agent-service.ts'), 'utf8');
-    assert.match(agent, /if \(confirmed === 'timeout'\) \{\s*return `Not run: this command needs the user's confirmation and none came within 60 s/,
-      'no confirmation is not "rejected by user"');
+    assert.match(agent, /if \(outcome === 'no-answer'\) \{\s*return `Not run: the user did not answer the approval request/,
+      'no answer is not "rejected by user"');
   }
 
   console.log('  [kill-safety] Atomvs\'s own code never stops processes by name...');

@@ -1,14 +1,17 @@
 import { useState, type ReactNode } from 'react';
-import type { AgentTimelineActivity, ProposedEdit } from '@peep/shared';
+import type { AgentTimelineActivity, ApprovalRequest, ProposedEdit } from '@peep/shared';
+import { useI18n } from '../../i18n';
+import { ApprovalCard } from '../chat/ApprovalCard';
 import type { PreviewRefreshEvent } from '../../stores/run-events-store';
 import { absolute, baseName, runItems, sameFile, thoughtSeconds } from './run-model';
 import { useFollowStore } from '../../stores/follow-store';
 import './agent-run.css';
 
 /*
- * One agent run inside its reply, as on the website's LiveDemo: "Thought for Ns", compact tool rows as they
- * happen, a card per file the agent writes ("Writing…" → "Ready to review" with Undo / Keep / Review), and the
- * preview's "Fast Refresh 412 ms · iPhone 15". The final answer (markdown) follows in ChatPane.
+ * One agent run inside its reply, as on the website's LiveDemo: "Thought for Ns", the one-line plan, compact tool
+ * rows as they happen (Blocked / Waiting for your approval / Added package included, with the approval cards), ONE
+ * card for all the files the run changed (N files, +/-, a list that opens, Undo All / Keep All / Review), and the
+ * preview's "Fast Refresh 412 ms · iPhone 15". The short final answer (markdown) follows in ChatPane.
  */
 
 const ICON = {
@@ -60,14 +63,22 @@ export interface AgentRunProps {
   resolutions: Record<string, CardResolution>;
   refresh?: PreviewRefreshEvent;
   onOpenFile: (absolutePath: string) => void;
-  onUndo: (edit: ProposedEdit) => void;
-  onKeep: (edit: ProposedEdit) => void;
-  onReview: (edit: ProposedEdit) => void;
+  onUndo: (edits: ProposedEdit[]) => void;
+  onKeep: (edits: ProposedEdit[]) => void;
+  onReview: () => void;
+  /** The agent's one sentence before it started working. */
+  plan?: string;
+  /** Approval cards waiting in this run (live run only). */
+  approvals?: ApprovalRequest[];
 }
 
-function stepRow(a: AgentTimelineActivity, projectPath: string | undefined, onOpenFile: (p: string) => void) {
+function stepRow(
+  a: AgentTimelineActivity, projectPath: string | undefined, onOpenFile: (p: string) => void,
+  t: (key: string, params?: Record<string, string | number>) => string, waiting: boolean,
+) {
   const done = a.status !== 'in_progress';
   const failed = a.status === 'failed';
+  const blocked = a.status === 'blocked';
   const fileLink = (file: string) => (
     <button type="button" className="ar-step__target" onClick={() => onOpenFile(absolute(file, projectPath))} title={file}>{file}</button>
   );
@@ -94,12 +105,18 @@ function stepRow(a: AgentTimelineActivity, projectPath: string | undefined, onOp
       default: verb = a.message.replace(/…$/, '');
     }
   }
+  // Refused by a safety rule or not answered: it did not run, so never "Ran" / "Deleted".
+  if (blocked) verb = 'Blocked';
+  // Its approval card is open below.
+  if (waiting) verb = t('approval.waiting');
   return (
-    <div key={a.id} className={`ar-step${done ? '' : ' is-live'}${failed ? ' is-failed' : ''}`} title={a.message}>
+    <div key={a.id} className={`ar-step${done ? '' : ' is-live'}${failed ? ' is-failed' : ''}${blocked ? ' is-blocked' : ''}${waiting ? ' is-waiting' : ''}`} title={a.message}>
       <Icon d={icon} size={12} />
       <span className="ar-step__verb">{verb}</span>
       {target}
       {failed && <span className="ar-step__verb">failed</span>}
+      {blocked && <span className="ar-step__note">{a.message.replace(/^Blocked: /, '')}</span>}
+      {a.packages?.map((name) => <span key={name} className="ar-step__note ar-step__note--ok">{t('approval.addedPackage', { name })}</span>)}
     </div>
   );
 }
@@ -108,11 +125,20 @@ function stepRow(a: AgentTimelineActivity, projectPath: string | undefined, onOp
 const VISIBLE_STEPS = 8;
 
 export function AgentRun(props: AgentRunProps) {
-  const { activities, isLive, projectPath, refresh, onOpenFile } = props;
+  const { activities, isLive, projectPath, refresh, onOpenFile, plan, approvals = [] } = props;
+  const { t } = useI18n();
   const [showAll, setShowAll] = useState(false);
   const items = runItems(activities);
   const seconds = thoughtSeconds(activities);
   const steps = items.filter((i) => i.kind === 'step');
+  // Each file once (a file written twice in a run is one row), in the order the run first touched it.
+  const files: AgentTimelineActivity[] = [];
+  for (const item of items) {
+    if (item.kind !== 'file' || !item.a.file) continue;
+    const at = files.findIndex((f) => sameFile(f.file!, item.a.file!));
+    if (at === -1) files.push(item.a);
+    else files[at] = item.a;
+  }
   const hiddenSteps = !isLive && !showAll && steps.length > VISIBLE_STEPS ? steps.length - VISIBLE_STEPS : 0;
   const shown = hiddenSteps > 0 ? new Set(steps.slice(-VISIBLE_STEPS)) : null;
 
@@ -121,30 +147,26 @@ export function AgentRun(props: AgentRunProps) {
       {seconds === null
         ? (isLive && <div className="ar-thinking">Thinking</div>)
         : <div className="ar-thought">Thought for {seconds}s</div>}
+      {plan && <div className="ar-plan">{plan}</div>}
 
       {hiddenSteps > 0 && (
         <button type="button" className="ar-more" onClick={() => setShowAll(true)}>+{hiddenSteps} more steps</button>
       )}
 
-      {(() => {
-        // Consecutive steps share one list; each file card stands on its own.
-        const out: ReactNode[] = [];
-        let group: ReactNode[] = [];
-        const flush = () => {
-          if (group.length) out.push(<div key={`g${out.length}`} className="ar-steps">{group}</div>);
-          group = [];
-        };
-        for (const item of items) {
-          if (item.kind === 'step') {
-            if (!shown || shown.has(item)) group.push(stepRow(item.a, projectPath, onOpenFile));
-            continue;
-          }
-          flush();
-          out.push(<FileCard key={item.a.id} {...props} a={item.a} />);
-        }
-        flush();
-        return out;
-      })()}
+      {steps.length > 0 && (
+        <div className="ar-steps">
+          {steps.filter((item) => !shown || shown.has(item)).map((item) => {
+            const waiting = item.a.status === 'in_progress'
+              && approvals.some((r) => r.subject === (item.a.command ?? item.a.file) || (!!item.a.file && sameFile(r.subject, item.a.file)));
+            return stepRow(item.a, projectPath, onOpenFile, t, waiting);
+          })}
+        </div>
+      )}
+
+      {approvals.map((request) => <ApprovalCard key={request.id} request={request} />)}
+
+      {/* One card for every file this run changed, not a card per file. */}
+      {files.length > 0 && <FilesCard {...props} files={files} />}
 
       {refresh && (
         <div className="ar-step is-ok">
@@ -157,34 +179,69 @@ export function AgentRun(props: AgentRunProps) {
   );
 }
 
-function FileCard({ a, projectPath, pendingEdits, counts, resolutions, onOpenFile, onUndo, onKeep, onReview }: AgentRunProps & { a: AgentTimelineActivity }) {
-  const file = a.file ?? '';
-  const edit = pendingEdits.find((e) => sameFile(e.path, file));
-  const countKey = Object.keys(counts).find((p) => sameFile(p, file));
-  const c = edit ? counts[edit.path] : countKey ? counts[countKey] : undefined;
-  const resolvedKey = Object.keys(resolutions).find((p) => sameFile(p, file));
-  const resolution = resolvedKey ? resolutions[resolvedKey] : undefined;
-  // "Writing…" while the tool runs, and while follow mode plays the same edit in the editor.
-  const playing = useFollowStore((st) => [...st.playing].some((p) => sameFile(p, file)));
-  const writing = a.status === 'in_progress' || playing;
-  const failed = a.status === 'failed';
-  const state = writing ? 'Writing…' : failed ? 'Failed' : resolution === 'kept' ? 'Kept' : resolution === 'undone' ? 'Undone' : edit ? 'Ready to review' : 'Applied';
+/** Opens by itself while a file is being written or there are only a few; otherwise one line until clicked. */
+const OPEN_UP_TO = 3;
+
+function FilesCard({ files, projectPath, pendingEdits, counts, resolutions, onOpenFile, onUndo, onKeep, onReview }: AgentRunProps & { files: AgentTimelineActivity[] }) {
+  const playing = useFollowStore((st) => st.playing);
+  const [open, setOpen] = useState<boolean | null>(null);
+  const rows = files.map((a) => {
+    const file = a.file ?? '';
+    const edit = pendingEdits.find((e) => sameFile(e.path, file));
+    const countKey = Object.keys(counts).find((p) => sameFile(p, file));
+    const c = edit ? counts[edit.path] : countKey ? counts[countKey] : undefined;
+    const resolvedKey = Object.keys(resolutions).find((p) => sameFile(p, file));
+    const resolution = resolvedKey ? resolutions[resolvedKey] : undefined;
+    // "Writing…" while the tool runs, and while follow mode plays the same edit in the editor.
+    const writing = a.status === 'in_progress' || [...playing].some((p) => sameFile(p, file));
+    const failed = a.status === 'failed';
+    const state = writing ? 'Writing…' : failed ? 'Failed' : resolution === 'kept' ? 'Kept' : resolution === 'undone' ? 'Undone' : edit ? '' : 'Applied';
+    return { a, file, edit, c, resolution, writing, state };
+  });
+  const pending = rows.filter((r) => r.edit && !r.resolution && !r.writing).map((r) => r.edit!);
+  const added = rows.reduce((n, r) => n + (r.c?.added ?? 0), 0);
+  const removed = rows.reduce((n, r) => n + (r.c?.removed ?? 0), 0);
+  const writing = rows.find((r) => r.writing);
+  const allKept = rows.every((r) => r.resolution === 'kept' || (!r.edit && !r.writing));
+  const allUndone = rows.length > 0 && rows.every((r) => r.resolution === 'undone');
+  const isOpen = open ?? (rows.length <= OPEN_UP_TO);
 
   return (
-    <div className={`ar-edit${writing ? ' is-writing' : ''}${resolution === 'kept' ? ' is-kept' : ''}${resolution === 'undone' ? ' is-undone' : ''}`}>
-      <div className="ar-edit__head">
-        <FileIcon name={file} />
-        <button type="button" className="ar-edit__name" title={file} onClick={() => onOpenFile(edit?.path ?? absolute(file, projectPath))}>{baseName(file)}</button>
-        {c && c.added > 0 && <span className="ar-edit__add">+{c.added}</span>}
-        {c && c.removed > 0 && <span className="ar-edit__del">-{c.removed}</span>}
-        <span className="ar-edit__state">{state}</span>
-      </div>
-      <div className="ar-edit__bar"><span /></div>
-      {!writing && edit && !resolution && (
+    <div className={`ar-files${writing ? ' is-writing' : ''}${allUndone ? ' is-undone' : ''}`}>
+      <button type="button" className="ar-files__head" onClick={() => setOpen(!isOpen)} aria-expanded={isOpen}>
+        <span className={`ar-files__chevron${isOpen ? ' is-open' : ''}`}><Icon d="M9 6l6 6-6 6" size={11} /></span>
+        <span className="ar-files__title">{rows.length} {rows.length === 1 ? 'file' : 'files'} changed</span>
+        {added > 0 && <span className="ar-edit__add">+{added}</span>}
+        {removed > 0 && <span className="ar-edit__del">-{removed}</span>}
+        <span className="ar-edit__state">
+          {writing ? `Writing ${baseName(writing.file)}…` : allUndone ? 'Undone' : pending.length ? 'Ready to review' : allKept ? 'Kept' : ''}
+        </span>
+      </button>
+      {writing && <div className="ar-edit__bar"><span /></div>}
+      {isOpen && (
+        <div className="ar-files__list">
+          {rows.map((r) => (
+            <div key={r.a.id} className={`ar-files__row${r.resolution ? ` is-${r.resolution}` : ''}`}>
+              <FileIcon name={r.file} />
+              <button type="button" className="ar-edit__name" title={r.file} onClick={() => onOpenFile(r.edit?.path ?? absolute(r.file, projectPath))}>{baseName(r.file)}</button>
+              {r.c && r.c.added > 0 && <span className="ar-edit__add">+{r.c.added}</span>}
+              {r.c && r.c.removed > 0 && <span className="ar-edit__del">-{r.c.removed}</span>}
+              <span className="ar-edit__state">{r.state}</span>
+              {r.edit && !r.resolution && !r.writing && (
+                <span className="ar-files__row-actions">
+                  <button type="button" className="ar-link" onClick={() => onUndo([r.edit!])}>Undo</button>
+                  <button type="button" className="ar-link" onClick={() => onKeep([r.edit!])}>Keep</button>
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      {pending.length > 0 && (
         <div className="ar-edit__actions">
-          <button type="button" className="ar-btn" onClick={() => onUndo(edit)}>Undo</button>
-          <button type="button" className="ar-btn ar-btn--primary" onClick={() => onKeep(edit)}>Keep</button>
-          <button type="button" className="ar-btn" onClick={() => onReview(edit)}>Review</button>
+          <button type="button" className="ar-btn" onClick={() => onUndo(pending)}>Undo All</button>
+          <button type="button" className="ar-btn ar-btn--primary" onClick={() => onKeep(pending)}>Keep All</button>
+          <button type="button" className="ar-btn" onClick={onReview}>Review</button>
         </div>
       )}
     </div>

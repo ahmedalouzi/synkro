@@ -1,7 +1,8 @@
+import { useApprovalStore } from '../stores/approval-store';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { createTwoFilesPatch } from 'diff';
-import type { AgentMessage, ProposedEdit } from '@peep/shared';
+import type { AgentMessage } from '@peep/shared';
 import { useChatStore } from '../stores/chat-store';
 import { useWorkspaceStore } from '../stores/workspace-store';
 import { useDiagnosticsStore, usePreviewStore } from '../stores/preview-store';
@@ -75,6 +76,7 @@ const ICON = {
 
 export function ChatPane({ onOpenSettings: _onOpenSettings }: ChatPaneProps) {
   const { t } = useI18n();
+  const approvals = useApprovalStore((s) => s.pending);
   const {
     messages,
     input,
@@ -417,7 +419,6 @@ export function ChatPane({ onOpenSettings: _onOpenSettings }: ChatPaneProps) {
   };
 
   /* ── Pending edits: Keep / Undo / Review ── */
-  const [changesExpanded, setChangesExpanded] = useState(false);
   const editSummaries = useMemo(
     () => proposedEdits.map((edit) => ({ edit, ...diffSummary(edit.originalContent, edit.proposedContent) })),
     [proposedEdits],
@@ -433,6 +434,8 @@ export function ChatPane({ onOpenSettings: _onOpenSettings }: ChatPaneProps) {
     setCardResolutions((prev) => ({ ...prev, ...Object.fromEntries(paths.map((p) => [p, outcome])) }));
   };
   const refreshes = useRunEventsStore((s) => s.refreshes);
+  // Per reply: how much text came before the agent's first step (the one-line plan).
+  const planCut = useRef<Record<string, number>>({});
 
   /** Opens a file as it is on disk (the agent has already written its changes). */
   const openFromDisk = async (path: string) => {
@@ -474,9 +477,6 @@ export function ChatPane({ onOpenSettings: _onOpenSettings }: ChatPaneProps) {
     openFile({ path: REVIEW_TAB_PATH, name: 'Review Changes', content: '', dirty: false });
   };
 
-  const openEditPreview = (edit: ProposedEdit) => {
-    openFile({ path: edit.path, name: fileName(edit.path), content: edit.proposedContent, dirty: true });
-  };
 
   /* ── Rendering ── */
   const visibleMessages = messages.filter((m) => m.id !== WELCOME_ID);
@@ -504,11 +504,19 @@ export function ChatPane({ onOpenSettings: _onOpenSettings }: ChatPaneProps) {
 
     const runActivities = message.runId ? timelineActivities.filter((a) => a.runId === message.runId) : [];
     const isLive = message.id === streamingMessageId;
-    const content = message.content.replace(LEGACY_ACTIVITY_HTML, '');
+    const fullContent = message.content.replace(LEGACY_ACTIVITY_HTML, '');
+    // The one-line plan: what the agent wrote before its first step (remembered when that step arrives).
+    const hasSteps = runActivities.some((a) => a.type !== 'understanding' && a.type !== 'completed');
+    if (isLive && hasSteps && planCut.current[message.id] === undefined) planCut.current[message.id] = fullContent.length;
+    const cut = planCut.current[message.id] ?? 0;
+    const planText = fullContent.slice(0, cut).trim();
+    const plan = planText && !/\n/.test(planText) && planText.length <= 240 ? planText : undefined;
+    const content = plan ? fullContent.slice(cut).trim() : fullContent;
+    const runApprovals = isLive ? approvals.filter((r) => !r.threadId || r.threadId === activeThreadId) : [];
 
     return (
       <div className="cx-turn cx-turn--assistant">
-        {(runActivities.length > 0 || isLive) && (
+        {(runActivities.length > 0 || isLive || runApprovals.length > 0) && (
           <AgentRun
             activities={runActivities}
             isLive={isLive}
@@ -518,9 +526,11 @@ export function ChatPane({ onOpenSettings: _onOpenSettings }: ChatPaneProps) {
             resolutions={cardResolutions}
             refresh={message.runId ? refreshes[message.runId] : undefined}
             onOpenFile={(path) => void openFromDisk(path)}
-            onUndo={(edit) => handleUndo([edit.id])}
-            onKeep={(edit) => handleKeep([edit.id])}
+            onUndo={(edits) => handleUndo(edits.map((e) => e.id))}
+            onKeep={(edits) => handleKeep(edits.map((e) => e.id))}
             onReview={openReview}
+            plan={plan}
+            approvals={runApprovals}
           />
         )}
 
@@ -644,39 +654,6 @@ export function ChatPane({ onOpenSettings: _onOpenSettings }: ChatPaneProps) {
           />
         )}
       </div>
-
-      {/* ── Pending changes bar ── */}
-      {editSummaries.length > 0 && (
-        <div className="cx-changes">
-          {changesExpanded && (
-            <div className="cx-changes__list">
-              {editSummaries.map(({ edit, added, removed }) => (
-                <div key={edit.id} className="cx-changes__row" onClick={() => openEditPreview(edit)} title={edit.path}>
-                  <Icon d={ICON.file} size={12} />
-                  <span className="cx-changes__name">{fileName(edit.path)}</span>
-                  <span className="cx-add">+{added}</span>
-                  <span className="cx-del">-{removed}</span>
-                  <span className="cx-changes__row-actions">
-                    <button type="button" className="cx-text-btn" onClick={(e) => { e.stopPropagation(); handleUndo([edit.id]); }}>Undo</button>
-                    <button type="button" className="cx-text-btn" onClick={(e) => { e.stopPropagation(); handleKeep([edit.id]); }}>Keep</button>
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-          <div className="cx-changes__bar">
-            <button type="button" className="cx-changes__toggle" onClick={() => setChangesExpanded((v) => !v)}>
-              <span className={`cx-chevron ${changesExpanded ? 'cx-chevron--open' : ''}`}><Icon d={ICON.chevron} size={12} /></span>
-              {editSummaries.length} File{editSummaries.length === 1 ? '' : 's'}
-            </button>
-            <div className="cx-changes__actions">
-              <button type="button" className="cx-text-btn" onClick={() => handleUndo(proposedEdits.map((e) => e.id))}>Undo All</button>
-              <button type="button" className="cx-text-btn" onClick={() => handleKeep(proposedEdits.map((e) => e.id))}>Keep All</button>
-              <button type="button" className="cx-review-btn" onClick={openReview}>Review</button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ── Composer ── */}
       <div className="cx-composer-wrap">

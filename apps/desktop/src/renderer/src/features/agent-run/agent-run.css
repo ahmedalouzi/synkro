@@ -73,7 +73,7 @@ button.ar-step__target:hover { text-decoration: underline; text-underline-offset
   background: linear-gradient(90deg, #7c83ff, #61dafb); box-shadow: 0 0 10px #7c83ff;
 }
 /* While writing, the length of the write is not known: a glow that sweeps along the bar. */
-.ar-edit.is-writing .ar-edit__bar span { width: 45%; animation: ar-bar-sweep 1.1s cubic-bezier(.4,0,.2,1) infinite; }
+.ar-edit.is-writing .ar-edit__bar span, .ar-files.is-writing .ar-edit__bar span { width: 45%; animation: ar-bar-sweep 1.1s cubic-bezier(.4,0,.2,1) infinite; }
 .ar-edit.is-kept .ar-edit__bar span { background: #4ade80; box-shadow: none; }
 .ar-edit.is-undone .ar-edit__bar span { background: #52525b; box-shadow: none; }
 @keyframes ar-bar-sweep { from { transform: translateX(-100%); } to { transform: translateX(230%); } }
@@ -102,3 +102,36 @@ button.ar-step__target:hover { text-decoration: underline; text-underline-offset
   .ar-thinking, .ar-step, .ar-step.is-ok, .ar-edit, .cx-markdown.is-typing > :last-child::after { animation: none; }
   .ar-edit.is-writing .ar-edit__bar span { animation: none; width: 100%; opacity: .7; }
 }
+
+/* The one-line plan under "Thought for Ns". */
+.ar-plan { margin: 2px 0 6px; font-size: 12.5px; line-height: 1.5; color: var(--text-secondary); }
+
+/* Blocked (a safety rule or no answer) and waiting for the user's approval. */
+.ar-step.is-blocked { flex-wrap: wrap; }
+.ar-step.is-blocked .ar-step__verb { color: #fbbf24; }
+.ar-step.is-waiting .ar-step__verb { color: #fbbf24; }
+.ar-step__note { flex: 1 1 100%; min-width: 0; padding-inline-start: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--text-muted); }
+.ar-step__note--ok { color: var(--text-secondary); }
+.ar-step:has(.ar-step__note) { flex-wrap: wrap; row-gap: 1px; }
+
+/* One card for all the files of a run. */
+.ar-files { margin: 6px 0; border: 1px solid var(--border); border-radius: 8px; background: rgba(255, 255, 255, 0.02); overflow: hidden; }
+.ar-files.is-undone { opacity: 0.6; }
+.ar-files__head { display: flex; align-items: center; gap: 6px; width: 100%; padding: 7px 10px; border: 0; background: none; color: var(--text-primary); font: inherit; font-size: 12px; cursor: pointer; text-align: start; }
+.ar-files__head:hover { background: rgba(255, 255, 255, 0.03); }
+.ar-files__chevron { display: inline-flex; color: var(--text-muted); transition: transform 0.15s; }
+.ar-files__chevron.is-open { transform: rotate(90deg); }
+[dir="rtl"] .ar-files__chevron:not(.is-open) { transform: rotate(180deg); }
+.ar-files__title { font-weight: 500; }
+.ar-files__head .ar-edit__state { margin-inline-start: auto; }
+.ar-files__list { max-height: 220px; overflow-y: auto; padding: 2px 6px 6px; border-top: 1px solid var(--border); }
+.ar-files__row { display: flex; align-items: center; gap: 6px; padding: 3px 4px; border-radius: 5px; font-size: 12px; }
+.ar-files__row:hover { background: rgba(255, 255, 255, 0.04); }
+.ar-files__row.is-undone .ar-edit__name { text-decoration: line-through; opacity: 0.6; }
+.ar-files__row .ar-edit__state { margin-inline-start: auto; }
+.ar-files__row-actions { display: none; gap: 8px; margin-inline-start: auto; }
+.ar-files__row:hover .ar-files__row-actions { display: inline-flex; }
+.ar-files__row:hover .ar-edit__state:empty { display: none; }
+.ar-link { padding: 0; border: 0; background: none; color: var(--text-secondary); font: inherit; font-size: 11.5px; cursor: pointer; }
+.ar-link:hover { color: var(--text-primary); text-decoration: underline; }
+.ar-files .ar-edit__actions { padding: 0 10px 8px; }

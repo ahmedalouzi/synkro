@@ -18,6 +18,8 @@ import { searchContent } from './content-search';
 import { resolveMentions } from './mention-resolver';
 import { createAIGateway } from './gateway-factory';
 import { CheckpointService } from './checkpoint-service';
+import type { ApprovalService, ApprovalStore } from './approval-service';
+import { readFileSync } from 'node:fs';
 import { loadProjectRules } from './project-rules';
 
 /** Agent tools that change a file at `args.path` (captured for checkpoints). */
@@ -25,6 +27,17 @@ const FILE_WRITING_TOOLS = new Set(['patch_file', 'propose_file_edit', 'delete_f
 
 /** Maximum bytes of run_command output forwarded to the LLM as tool result. */
 const RUN_COMMAND_LLM_OUTPUT_LIMIT = 50_000;
+
+/** package.json "scripts" of the project, so `npm run x` is judged by what x runs. */
+function packageScripts(projectPath: string): Record<string, string> | undefined {
+  try {
+    const scripts = JSON.parse(readFileSync(join(projectPath, 'package.json'), 'utf8'))?.scripts;
+    if (!scripts || typeof scripts !== 'object') return undefined;
+    return Object.fromEntries(Object.entries(scripts).filter((e): e is [string, string] => typeof e[1] === 'string'));
+  } catch {
+    return undefined;
+  }
+}
 
 const RN_SYSTEM_ADDENDUM = `
 This is a React Native / Expo project.
@@ -83,6 +96,15 @@ export class AgentService {
 
   setOwnedPidsProvider(provider: () => number[]): void {
     this.ownedPids = provider;
+  }
+
+  /** The approval cards (run_command, delete_file) and the per-project "always allow" choices. */
+  private approvals: ApprovalService | null = null;
+  private approvalStore: ApprovalStore | null = null;
+
+  setApprovals(approvals: ApprovalService, store: ApprovalStore): void {
+    this.approvals = approvals;
+    this.approvalStore = store;
   }
 
   setPreviewManager(preview: PreviewManager): void {
@@ -183,6 +205,8 @@ export class AgentService {
   cancel(): void {
     this.abortController?.abort();
     this.abortController = null;
+    // A new message or Stop: the cards still waiting end as "no answer", so nothing runs later.
+    this.approvals?.cancelAll();
 
     // Cancel any active agent-run terminal command session (Task 6)
     if (this.agentCommandSessionId) {
@@ -419,36 +443,35 @@ export class AgentService {
             const rewritten = expoProject ? toExpoInstall(requested) : null;
             const commandStr = rewritten ?? requested;
             const rewriteNote = rewritten ? `Rewrote "${requested}" to "${rewritten}" (Expo project: versions that match its SDK).\n` : '';
-            const safety = classifyCommand(commandStr, { ownPids: new Set(this.ownedPids()) });
+            // One decision (the same classifyCommand TerminalService applies): safe runs, dangerous asks the user in
+            // the chat's approval card, blocked never runs and shows no card.
+            const safety = classifyCommand(commandStr, {
+              ownPids: new Set(this.ownedPids()),
+              scripts: packageScripts(projectPath),
+              alwaysAllowed: this.approvalStore?.allowed(projectPath),
+            });
 
             if (safety.level === 'blocked') {
               return `BLOCKED: ${safety.reason}`;
             }
 
             if (safety.level === 'dangerous') {
-              // Send a confirmation request to the renderer and wait for response
-              const confirmId = randomUUID();
-              const confirmed = await new Promise<boolean | 'timeout'>((resolve) => {
-                this.mainWindow?.webContents.send('agent:confirm-command', {
-                  id: confirmId,
-                  command: commandStr,
-                  reason: safety.reason,
-                });
-
-                const { ipcMain } = require('electron');
-                ipcMain.once(`agent:confirm-command-response:${confirmId}`, (_: unknown, approved: boolean) => {
-                  resolve(approved);
-                });
-
-                setTimeout(() => resolve('timeout'), 60000);
-              });
-
-              if (confirmed === 'timeout') {
-                return `Not run: this command needs the user's confirmation and none came within 60 s: ${commandStr}`;
+              const outcome = this.approvals
+                ? await this.approvals.request({
+                  threadId: options.threadId,
+                  kind: 'command',
+                  subject: commandStr,
+                  reason: safety.reason ?? '',
+                  alwaysAllowKey: safety.alwaysAllowKey ?? null,
+                })
+                : 'no-answer';
+              if (outcome === 'no-answer') {
+                return `Not run: the user did not answer the approval request (a new message or Stop ended it): ${commandStr}`;
               }
-              if (!confirmed) {
+              if (outcome === 'reject') {
                 return `Command was rejected by user: ${commandStr}`;
               }
+              if (outcome === 'always' && safety.alwaysAllowKey) this.approvalStore?.allow(projectPath, safety.alwaysAllowKey);
             }
 
             const runCaptured = async (cmd: string): Promise<string> => {
@@ -480,7 +503,8 @@ export class AgentService {
               let exitCode: number;
               let commandError: string | null = null;
               try {
-                exitCode = await this.terminal.streamCommand(sessionId, cmd, projectPath);
+                // The user allowed this exact command (or it is safe): TerminalService checks the same rules again.
+                exitCode = await this.terminal.streamCommand(sessionId, cmd, projectPath, { approved: cmd === commandStr });
               } catch (err: any) {
                 exitCode = 1;
                 commandError = err.message || String(err);
@@ -513,21 +537,19 @@ export class AgentService {
           case 'delete_file': {
             const path = this.resolvePath(projectPath, String(args.path));
             // Always require user confirmation for file deletion
-            const confirmId = randomUUID();
-            const confirmed = await new Promise<boolean | 'timeout'>((resolve) => {
-              this.mainWindow?.webContents.send('agent:confirm-command', {
-                id: confirmId,
-                command: `DELETE FILE: ${args.path}`,
-                reason: `The agent wants to delete ${args.path}. Reason: ${args.reason || 'Not specified'}`,
-              });
-              const { ipcMain } = require('electron');
-              ipcMain.once(`agent:confirm-command-response:${confirmId}`, (_: unknown, approved: boolean) => {
-                resolve(approved);
-              });
-              setTimeout(() => resolve('timeout'), 60000);
-            });
-            if (confirmed === 'timeout') return `Not run: deleting a file needs the user's confirmation and none came within 60 s: ${args.path}`;
-            if (!confirmed) return `File deletion rejected by user: ${args.path}`;
+            const outcome = this.approvals
+              ? await this.approvals.request({
+                threadId: options.threadId,
+                kind: 'delete-file',
+                subject: String(args.path),
+                reason: String(args.reason || ''),
+                alwaysAllowKey: null,
+                // Captured above, before the card: Restore checkpoint brings the file back.
+                reversible: this.checkpoints.recording,
+              })
+              : 'no-answer';
+            if (outcome === 'no-answer') return `Not run: the user did not answer the approval request (a new message or Stop ended it): delete ${args.path}`;
+            if (outcome === 'reject') return `File deletion rejected by user: ${args.path}`;
             await unlink(path);
             return `Deleted: ${args.path}`;
           }

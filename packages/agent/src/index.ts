@@ -7,7 +7,7 @@ export { truncateConversationHistory, estimateTokens } from './context/truncate'
 export { runAgentLoop, type AgentCallbacks, type AgentConfig, type AgentToolExecutor, type AgentLogger } from './orchestrator';
 export { AgentStateMachine } from './state-machine';
 export type { ChatMessage, ToolCall } from './types';
-export { classifyCommand, findProcessKill, processKillPolicy, type SafetyLevel, type CommandSafetyResult, type ProcessKill, type ProcessKillPolicy, type ClassifyOptions } from './tools/safety';
+export { classifyCommand, findProcessKill, processKillPolicy, isSafeCommand, alwaysAllowKeyOf, packagesAdded, staysInProject, SAFE_COMMANDS, type CommandContext, type SafetyLevel, type CommandSafetyResult, type ProcessKill, type ProcessKillPolicy, type ClassifyOptions } from './tools/safety';
 export {
   loadDesignManifest,
   saveDesignManifest,
