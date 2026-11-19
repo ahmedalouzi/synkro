@@ -147,6 +147,7 @@
     "hidePreview": "Hide Preview",
     "showPreview": "Show Preview",
     "device": "Device",
+    "frameFinish": "Frame finish",
     "toggleChat": "Toggle Chat (Ctrl+Alt+B)",
     "settingsTooltip": "Settings (Ctrl+,)",
     "upgradeToPro": "Upgrade to Pro",

@@ -268,13 +268,61 @@
 /* ── Device label ────────────────────────────────────────────────── */
 .preview-device-label {
   font-size: 11px;
-  letter-spacing: 0.07em;
+  /* As Xcode's Simulator names it: "iPhone 15 Pro · iOS 18" (deviceTitle), not upper case. */
+  letter-spacing: 0.01em;
   color: var(--text-muted);
-  opacity: 0.55;
+  opacity: 0.7;
   flex-shrink: 0;
-  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  gap: 10px;
   font-weight: 600;
 }
+
+/* Device picker: the name above the phone, with a chevron; a native <select> laid over it (keyboard and screen
+   readers get the real control). Same height as the plain label, so nothing moves. */
+.preview-device-picker {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 6px;
+  margin: -2px -6px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.15s ease-out, opacity 0.15s ease-out;
+}
+.preview-device-picker:hover { background: rgba(255, 255, 255, 0.06); }
+.preview-device-picker:focus-within { outline: 2px solid var(--accent, #7c6cff); outline-offset: 1px; }
+.preview-device-picker__chevron { opacity: 0.8; flex-shrink: 0; }
+.preview-device-picker__select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  opacity: 0;
+  cursor: pointer;
+  font: inherit;
+}
+
+/* Frame finish swatches next to the device name: same row height, no layout shift between models. */
+.preview-finish-picker {
+  display: inline-flex;
+  gap: 5px;
+}
+.preview-finish {
+  width: 10px;
+  height: 10px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  background: radial-gradient(circle at 35% 30%, color-mix(in oklab, var(--swatch), white 45%), var(--swatch) 55%, color-mix(in oklab, var(--swatch), black 30%));
+  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.6);
+  transition: box-shadow 0.15s ease-out;
+}
+.preview-finish:hover { box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.6), 0 0 0 2px rgba(255, 255, 255, 0.25); }
+.preview-finish.is-on { box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.6), 0 0 0 2px var(--bg-base, #0b0b0e), 0 0 0 3px rgba(255, 255, 255, 0.75); }
+.preview-finish:focus-visible { outline: 2px solid var(--accent, #7c6cff); outline-offset: 3px; }
 
 /* ── Placeholder states ──────────────────────────────────────────── */
 .preview-placeholder {
