@@ -470,7 +470,17 @@
     "start": "تشغيل",
     "detach": "فصل النافذة",
     "livePreview": "معاينة مباشرة",
-    "livePreviewSubtitle": "تُعاد تحميل تغييرات الكود فورًا داخل الإطار أعلاه."
+    "livePreviewSubtitle": "تُعاد تحميل تغييرات الكود فورًا داخل الإطار أعلاه.",
+    "flutterEnv": {
+      "syncedTitle": "مجلد Flutter داخل {folder}",
+      "syncedBody": "يقفل {folder} ملفات Flutter أثناء مزامنتها، فلا يستطيع Flutter تحديثها أو حذفها ولا تبدأ المعاينة. انقل مجلد Flutter خارج {folder} (مثلًا إلى C:\\src\\flutter)، ثم اختر موقعه الجديد من الإعدادات.",
+      "lockTitle": "هناك أمر Flutter آخر ما زال يعمل",
+      "lockBody": "يشغّل Flutter أمرًا واحدًا في كل مرة. هناك أمر آخر خارج Atomvs (في طرفية أو محرر آخر) ما زال يعمل أو عالقًا. أغلقه أو انتظر حتى ينتهي، ثم أعد المحاولة.",
+      "lockSynced": "مجلد Flutter لديك داخل {folder}، وهذا قد يمنع أوامر Flutter من الانتهاء. نقله إلى خارجه (مثلًا إلى C:\\src\\flutter) يحل المشكلة عادةً.",
+      "notCode": "هذه ليست مشكلة في كود تطبيقك.",
+      "openSettings": "اختر موقع Flutter",
+      "retry": "إعادة المحاولة"
+    }
   },
   "bottomPanel": {
     "terminal": "الطرفية",

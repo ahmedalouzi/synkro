@@ -470,7 +470,17 @@
     "start": "Start",
     "detach": "Detach",
     "livePreview": "Live preview",
-    "livePreviewSubtitle": "Code changes reload instantly in the frame above."
+    "livePreviewSubtitle": "Code changes reload instantly in the frame above.",
+    "flutterEnv": {
+      "syncedTitle": "Flutter is inside {folder}",
+      "syncedBody": "{folder} locks Flutter's files while it syncs them, so Flutter can't update or delete them and the preview can't start. Move the Flutter folder out of {folder} (for example to C:\\src\\flutter), then choose the new location in Settings.",
+      "lockTitle": "Another Flutter command is still running",
+      "lockBody": "Flutter only runs one command at a time. Another one outside Atomvs (in a terminal or another editor) is still running or stuck. Close it or wait for it to finish, then retry.",
+      "lockSynced": "Your Flutter folder is inside {folder}, which can keep Flutter commands from finishing. Moving it out (for example to C:\\src\\flutter) usually fixes this.",
+      "notCode": "This isn't a problem in your app's code.",
+      "openSettings": "Choose Flutter location",
+      "retry": "Retry"
+    }
   },
   "bottomPanel": {
     "terminal": "Terminal",
