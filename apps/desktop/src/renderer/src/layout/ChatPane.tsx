@@ -1,3 +1,5 @@
+import { ApprovalCard } from '../features/chat/ApprovalCard';
+import { useApprovalStore } from '../stores/approval-store';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { createTwoFilesPatch } from 'diff';
@@ -116,6 +118,7 @@ const ICON = {
 
 export function ChatPane({ onOpenSettings: _onOpenSettings }: ChatPaneProps) {
   const { t } = useI18n();
+  const approvals = useApprovalStore((s) => s.pending);
   const {
     messages,
     input,
@@ -522,16 +525,26 @@ export function ChatPane({ onOpenSettings: _onOpenSettings }: ChatPaneProps) {
     const isLive = message.id === streamingMessageId;
     const showEdits = message.id === lastAssistantId && editSummaries.length > 0;
     const content = message.content.replace(LEGACY_ACTIVITY_HTML, '');
+    // Approval cards of this chat, shown under the live reply's steps.
+    const threadApprovals = isLive ? approvals.filter((r) => !r.threadId || r.threadId === activeThreadId) : [];
     const stepList = (
       <div className="cx-steps">
         {steps.map((a) => {
-          const { verb, target } = stepLabel(a);
+          const label = stepLabel(a);
+          // A step whose command or file waits for the user: "Waiting for your approval", not "Running".
+          const waiting = a.status === 'in_progress'
+            && threadApprovals.some((r) => r.subject === (a.command ?? a.file) || (a.file && r.subject === a.file));
+          const verb = waiting ? t('approval.waiting') : label.verb;
+          const target = label.target;
           return (
             <div key={a.id} className={`cx-step cx-step--${a.status}`} title={a.message}>
-              <span className="cx-step__verb">{verb}</span>
+              <span className={`cx-step__verb${waiting ? ' cx-step__verb--waiting' : ''}`}>{verb}</span>
               {target && <span className="cx-step__target">{target}</span>}
               {a.status === 'failed' && <span className="cx-step__failed">failed</span>}
               {a.status === 'blocked' && <span className="cx-step__blocked">{a.message.replace(/^Blocked: /, '')}</span>}
+              {a.packages?.map((name) => (
+                <span key={name} className="cx-step__package">{t('approval.addedPackage', { name })}</span>
+              ))}
             </div>
           );
         })}
@@ -550,6 +563,7 @@ export function ChatPane({ onOpenSettings: _onOpenSettings }: ChatPaneProps) {
             {stepList}
           </details>
         ))}
+        {threadApprovals.map((request) => <ApprovalCard key={request.id} request={request} />)}
 
         {content ? (
           // Rendered as markdown, never raw HTML: model output can contain injected markup.

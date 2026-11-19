@@ -1,0 +1,46 @@
+/* The agent's approval request, inline in the chat under the step that waits for it. */
+.cx-approval {
+  margin: 8px 0 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  background: rgba(251, 191, 36, 0.06);
+  outline: none;
+}
+.cx-approval:focus-visible,
+.cx-approval:focus { box-shadow: 0 0 0 2px rgba(251, 191, 36, 0.35); }
+.cx-approval__title { font-size: 12px; font-weight: 600; color: var(--text-primary); margin-bottom: 6px; }
+.cx-approval__subject {
+  display: block;
+  padding: 6px 8px;
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.25);
+  font-size: 11.5px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-all;
+  text-align: start;
+  color: var(--text-primary);
+}
+.cx-approval__reason,
+.cx-approval__note { margin: 6px 0 0; font-size: 11.5px; line-height: 1.5; color: var(--text-secondary); }
+.cx-approval__note { color: var(--text-muted); }
+.cx-approval__actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.cx-approval__btn {
+  padding: 4px 10px;
+  border-radius: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-primary);
+  font-size: 12px;
+  cursor: pointer;
+}
+.cx-approval__btn:hover { background: rgba(255, 255, 255, 0.09); }
+.cx-approval__btn--primary { background: #f5b83d; border-color: #f5b83d; color: #1a1205; font-weight: 600; }
+.cx-approval__btn--primary:hover { background: #ffc857; }
+.cx-approval__btn--reject { color: #fca5a5; }
+.cx-approval__btn kbd { margin-inline-start: 4px; font: inherit; font-size: 10px; opacity: 0.7; }
+.cx-step__verb--waiting { color: #fbbf24; }
+/* "Added package: axios": new packages need no approval, but the user sees each one. */
+.cx-step:has(.cx-step__package) { flex-wrap: wrap; row-gap: 2px; }
+.cx-step__package { flex: 1 1 100%; font-size: 11px; color: var(--text-muted); }

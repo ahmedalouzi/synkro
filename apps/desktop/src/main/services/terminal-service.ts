@@ -4,26 +4,22 @@ import { join } from 'node:path';
 import { existsSync } from 'node:fs';
 import type { BrowserWindow } from 'electron';
 import { IPC_EVENTS } from '@peep/shared';
-import { processKillPolicy } from '@peep/agent';
+import { classifyCommand } from '@peep/agent';
+import { readFileSync } from 'node:fs';
 import type { RunCommandResult } from '@peep/shared';
 import { globalIpcBatcher } from '../utils/ipc-batcher';
 import { cleanUserProjectEnv } from './process-manager';
 
-const ALLOWED_PREFIXES = [
-  'flutter ',
-  'dart ',
-  'git status',
-  'git diff',
-  'git log',
-  'git add',
-  'git commit',
-  'git branch',
-  'pwd',
-  'cd ',
-  'dir',
-  'ls',
-  'echo ',
-];
+/** package.json "scripts" in `cwd`, so `npm run x` is judged by what x runs. */
+function scriptsIn(cwd: string): Record<string, string> | undefined {
+  try {
+    const scripts = JSON.parse(readFileSync(join(cwd, 'package.json'), 'utf8'))?.scripts;
+    if (!scripts || typeof scripts !== 'object') return undefined;
+    return Object.fromEntries(Object.entries(scripts).filter((e): e is [string, string] => typeof e[1] === 'string'));
+  } catch {
+    return undefined;
+  }
+}
 
 /** Kills a shell and everything it started (e.g. `npm start`), not just the shell itself. */
 function killTree(child: ChildProcess): void {
@@ -335,25 +331,29 @@ export class TerminalService {
   }
 
   /**
-   * Why `command` may not run here, or null. A command that stops processes is refused anywhere in the line (an
-   * allowed prefix does not help: "flutter --version & taskkill /F /IM dart.exe" runs both in the shell) unless it
-   * stops only processes Atomvs started, by PID. Otherwise the command must start with an allowed prefix.
+   * Why `command` may not run here, or null: the same decision as the agent's run_command (classifyCommand). Blocked
+   * never runs (e.g. stopping processes by name, anywhere in the line). Safe runs. Anything else runs only when the
+   * user allowed it in the approval card (`approved`, from AgentService); a command from the window (RUN_COMMAND IPC)
+   * cannot pass that flag.
    */
-  commandRejection(command: string): string | null {
-    const trimmed = command.trim().toLowerCase();
-    if (!trimmed) return 'empty command';
-    const kill = processKillPolicy(command, new Set([...this.pids(), ...this.otherOwnedPids()]));
-    if (!kill.allowed) return kill.reason!;
-    return ALLOWED_PREFIXES.some((prefix) => trimmed.startsWith(prefix)) ? null : command;
+  commandRejection(command: string, opts: { approved?: boolean; cwd?: string } = {}): string | null {
+    if (!command.trim()) return 'empty command';
+    const decision = classifyCommand(command, {
+      ownPids: new Set([...this.pids(), ...this.otherOwnedPids()]),
+      scripts: opts.cwd ? scriptsIn(opts.cwd) : undefined,
+    });
+    if (decision.level === 'blocked') return decision.reason ?? command;
+    if (decision.level === 'safe' || opts.approved) return null;
+    return `needs the user's approval first: ${command}`;
   }
 
-  isCommandAllowed(command: string): boolean {
-    return this.commandRejection(command) === null;
+  isCommandAllowed(command: string, opts: { approved?: boolean; cwd?: string } = {}): boolean {
+    return this.commandRejection(command, opts) === null;
   }
 
   async runCommand(command: string, cwd: string): Promise<RunCommandResult> {
-    if (!this.isCommandAllowed(command)) {
-      throw new Error(`Command not allowed: ${this.commandRejection(command) ?? command}`);
+    if (!this.isCommandAllowed(command, { cwd })) {
+      throw new Error(`Command not allowed: ${this.commandRejection(command, { cwd }) ?? command}`);
     }
 
     return new Promise((resolve, reject) => {
@@ -389,9 +389,9 @@ export class TerminalService {
     });
   }
 
-  async streamCommand(id: string, command: string, cwd: string): Promise<number> {
-    if (!this.isCommandAllowed(command)) {
-      throw new Error(`Command not allowed: ${this.commandRejection(command) ?? command}`);
+  async streamCommand(id: string, command: string, cwd: string, opts: { approved?: boolean } = {}): Promise<number> {
+    if (!this.isCommandAllowed(command, { approved: opts.approved, cwd })) {
+      throw new Error(`Command not allowed: ${this.commandRejection(command, { approved: opts.approved, cwd }) ?? command}`);
     }
 
     if (!cwd || !existsSync(cwd)) {

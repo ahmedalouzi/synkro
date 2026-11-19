@@ -157,6 +157,10 @@ const api: IpcApi = {
   onAgentActivity: (callback: any) => subscribe<any>('agent:activity', callback),
   // @ts-ignore
   onAgentTimeline: (callback: any) => subscribe<any>(IPC_EVENTS.AGENT_TIMELINE, callback),
+  onApprovalRequest: (callback) => subscribe(IPC_EVENTS.AGENT_APPROVAL_REQUEST, callback),
+  onApprovalResolved: (callback) => subscribe(IPC_EVENTS.AGENT_APPROVAL_RESOLVED, callback),
+  respondApproval: (id, decision) => ipcRenderer.invoke(IPC_CHANNELS.AGENT_APPROVAL_RESPOND, id, decision) as Promise<boolean>,
+  getPendingApprovals: () => ipcRenderer.invoke(IPC_CHANNELS.AGENT_APPROVAL_PENDING),
   onAgentPhase: (callback: (phase: import('@peep/shared').AgentPhase) => void) =>
     subscribe<import('@peep/shared').AgentPhase>(IPC_EVENTS.AGENT_PHASE_CHANGED, callback),
   // Main sends { edits, threadId }; the callback used to get that object as if it were the array ("edits is
