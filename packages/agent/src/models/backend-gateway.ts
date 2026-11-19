@@ -939,12 +939,16 @@ export class BackendAIGateway {
   }
 
   private mapError(e: any): AIError {
-    if (e.message === 'Provider request aborted') {
+    if (e?.message === 'Provider request aborted') {
       return { code: 'REQUEST_CANCELLED', message: 'Request cancelled by the user.' };
     }
+    const rawMsg = String(e?.message || 'Unknown provider error');
+    const safeMsg = rawMsg
+      .replace(/\b(?:sk-[a-zA-Z0-9\-_]+|AIza[0-9A-Za-z\-_]+|gsk_[a-zA-Z0-9\-_]+|xox[baprs]-[a-zA-Z0-9\-_]+)\b/g, '[REDACTED]')
+      .replace(/(Bearer\s+|api[_-]?key[=:]\s*|session_token[=:]\s*)([^\s,;'"&]+)/gi, '$1[REDACTED]');
     return {
       code: 'PROVIDER_ERROR',
-      message: `Provider request failed: ${e.message}`
+      message: `Provider request failed: ${safeMsg}`
     };
   }
 
