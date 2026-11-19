@@ -60,7 +60,9 @@ export default async function run() {
   assert.doesNotMatch(formatPreviewReport(session, '', parsePreviewRuntimeReport(base)), /Layout problems/);
 
   console.log('  [layout] The preview shim measures tab bars and sends the check into the page...');
-  const shim = fs.readFileSync(path.join(root, 'apps/desktop/src/preload/preview-safe-area.ts'), 'utf8');
+  // The preload (injection) and the page shim it injects (preview-safe-area-page.ts, shared with the frame lab).
+  const shim = ['preview-safe-area.ts', 'preview-safe-area-page.ts']
+    .map((f) => fs.readFileSync(path.join(root, 'apps/desktop/src/preload', f), 'utf8')).join('\n');
   assert.match(shim, /\$\{tabBarLayoutIssues\.toString\(\)\}/, 'the check is injected with the shim');
   assert.match(shim, /querySelectorAll\('\[role="tablist"\]'\)/, 'React Navigation tab bars ([role=tablist])');
   assert.match(shim, /layout: \(\(\) => \{\s*try \{[\s\S]*?return \[\.\.\.tabBarIssues\(measureTabBars\(\)\), \.\.\.flutter\]\.slice\(0, 5\);\s*\} catch \{ return \[\]; \}/,

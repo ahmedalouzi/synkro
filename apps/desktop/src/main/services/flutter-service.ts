@@ -1,6 +1,7 @@
 import { access, mkdir, readdir, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
-import type { Diagnostic, MobileEnvironment } from '@peep/shared';
+import { existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { FLUTTER_STARTUP_LOCK_LINE, flutterEnvironmentMessage, syncedFolderOf, type Diagnostic, type MobileEnvironment } from '@peep/shared';
 import { getTemplate, parseFlutterAnalyze } from '@peep/flutter-adapter';
 import type { ProcessManager } from './process-manager';
 import { writePreviewEntry } from './flutter-preview-entry';
@@ -32,6 +33,42 @@ export interface SdkInfo {
 
 const PREVIEW_PORT = 5174;
 const PREVIEW_STARTUP_MS = 120_000;
+
+/** A flutter (or dart) command started by Atomvs, from ProcessInfo.command. Exported for tests. */
+export function isFlutterCommand(command: string): boolean {
+  return /(^|[\\/"\s])(flutter|dart)(\.bat|\.exe)?("?\s|"?$)/i.test(command);
+}
+
+/** The SDK folder from PATH: the folder above the bin/ that holds flutter(.bat), or null. Exported for tests. */
+export function sdkFromPath(pathVar: string, isWin: boolean): string | null {
+  for (const dir of pathVar.split(isWin ? ';' : ':')) {
+    if (dir && existsSync(join(dir, isWin ? 'flutter.bat' : 'flutter'))) return dirname(dir.replace(/[\\/]+$/, ''));
+  }
+  return null;
+}
+
+/**
+ * The path in "Flutter failed to delete a directory at "<path>"" (a sync client or antivirus held a file), or null.
+ * Exported for tests.
+ */
+export function lockedSdkPath(log: string): string | null {
+  const m = /Flutter failed to delete a directory at[:\s]+"?([^"\r\n]+?)"?(?:\.\s|\.?\r?\n|\.?$)/i.exec(log);
+  return m ? m[1].trim() : null;
+}
+
+/** C:\...\flutter\.pub-preload-cache or C:\...\flutter\bin\cache\x -> C:\...\flutter. */
+function sdkOfLockedPath(path: string): string {
+  const parts = path.split(/[\\/]/);
+  const bin = parts.lastIndexOf('bin');
+  return (bin > 0 ? parts.slice(0, bin) : parts.slice(0, -1)).join('\\');
+}
+
+class LockedSdkFileError extends Error {
+  constructor(readonly path: string, log: string) {
+    super(log);
+  }
+}
+
 export const FLUTTER_SDK_NOT_FOUND_MSG =
   'Flutter SDK not found. A local Flutter SDK is required for live preview. Please install Flutter or configure its path in Settings.';
 
@@ -57,6 +94,9 @@ export class FlutterService extends FrameworkProvider {
   ) {
     super();
   }
+
+  /** How long the preview waits for a startup lock held outside Atomvs, and before retrying a locked SDK file. */
+  readonly timings = { lockWaitMs: 60_000, retryMs: 3_000 };
 
   setSdkPath(path: string | undefined): void {
     this.sdkPath = path;
@@ -134,6 +174,11 @@ void main() {
     }
   }
 
+  /** The SDK folder: the one set in Settings, else the one whose bin/ holds flutter on PATH. */
+  private resolveSdkPath(): string | null {
+    return this.sdkPath ?? sdkFromPath(process.env.PATH ?? process.env.Path ?? '', process.platform === 'win32');
+  }
+
   async startWebPreview(
     projectRoot: string,
     port = PREVIEW_PORT,
@@ -142,6 +187,34 @@ void main() {
     const flutterRoot = await this.findFlutterRoot(projectRoot);
     // Through the preview entrypoint: the app gets the phone's safe-area insets (see flutter-preview-entry.ts).
     const target = await writePreviewEntry(flutterRoot);
+    const sdkPath = this.resolveSdkPath();
+    const folder = sdkPath ? syncedFolderOf(sdkPath, process.env) : null;
+    if (folder) onLog?.(`[Atomvs] ${flutterEnvironmentMessage({ kind: 'sdk-in-synced-folder', folder, sdkPath: sdkPath! })}\n`);
+    try {
+      return await this.runWebPreview(flutterRoot, port, sdkPath, folder, onLog, target);
+    } catch (error) {
+      if (!(error instanceof LockedSdkFileError)) throw error;
+      // A sync client or antivirus held a file for a moment (e.g. .pub-preload-cache on the first run): once more.
+      onLog?.(`[Atomvs] Flutter could not delete a folder in its SDK (${error.path}); retrying once in ${this.timings.retryMs / 1000} s...\n`);
+      await new Promise((resolve) => setTimeout(resolve, this.timings.retryMs));
+      try {
+        return await this.runWebPreview(flutterRoot, port, sdkPath, folder, onLog, target);
+      } catch (again) {
+        if (!(again instanceof LockedSdkFileError)) throw again;
+        const lockedIn = folder ?? syncedFolderOf(again.path, process.env);
+        if (lockedIn) {
+          throw new Error(flutterEnvironmentMessage({ kind: 'sdk-in-synced-folder', folder: lockedIn, sdkPath: sdkPath ?? sdkOfLockedPath(again.path) }));
+        }
+        throw new Error(again.message);
+      }
+    }
+  }
+
+  /** One `flutter run -d web-server`. Rejects with LockedSdkFileError when Flutter could not delete a folder in its SDK. */
+  private runWebPreview(
+    flutterRoot: string, port: number, sdkPath: string | null, folder: string | null, onLog?: (line: string) => void,
+    target: string | null = null,
+  ): Promise<{ url: string; processId: number; logs: string[] }> {
     const info = this.processManager.spawn(
       this.getFlutterBin(),
       ['run', '-d', 'web-server', '--web-port', String(port), '--web-hostname', '127.0.0.1', ...(target ? ['-t', target] : [])],
@@ -150,11 +223,29 @@ void main() {
 
     const url = `http://127.0.0.1:${port}`;
     const logs: string[] = [];
+    const startupTimeout = () => new Error(`Preview startup timed out after ${PREVIEW_STARTUP_MS / 1000}s. Is Flutter SDK installed?`);
 
     return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(new Error(`Preview startup timed out after ${PREVIEW_STARTUP_MS / 1000}s. Is Flutter SDK installed?`));
-      }, PREVIEW_STARTUP_MS);
+      let settled = false;
+      let deadline: ReturnType<typeof setTimeout> | undefined;
+      let waitingForLock = false;
+      let lockHandled = false;
+      const finish = (fn: () => void) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(deadline);
+        fn();
+      };
+      // A preview that does not start is stopped: a flutter command left running keeps holding the startup lock.
+      const fail = (error: Error) => finish(() => {
+        if (info.process.exitCode === null) this.processManager.kill(info.id);
+        reject(error);
+      });
+      const setDeadline = (ms: number, error: () => Error) => {
+        clearTimeout(deadline);
+        deadline = setTimeout(() => fail(error()), ms);
+      };
+      setDeadline(PREVIEW_STARTUP_MS, startupTimeout);
 
       const handleOutput = (chunk: Buffer) => {
         const text = chunk.toString();
@@ -164,13 +255,30 @@ void main() {
 
         if (onLog) onLog(text);
 
+        if (text.includes(FLUTTER_STARTUP_LOCK_LINE)) {
+          if (!lockHandled) {
+            // Another flutter command holds the SDK's startup lock. Stop the ones Atomvs started (by PID: never every
+            // flutter.exe on the PC), then wait a while for one outside Atomvs to finish.
+            lockHandled = true;
+            waitingForLock = true;
+            const stopped = this.processManager.stopWhere((p) => p.id !== info.id && isFlutterCommand(p.command));
+            onLog?.(`[Atomvs] Another Flutter command holds Flutter's startup lock. `
+              + (stopped ? `Stopped ${stopped} Flutter command(s) Atomvs had started. ` : '')
+              + `Waiting up to ${this.timings.lockWaitMs / 1000} s for it to be released...\n`);
+            setDeadline(this.timings.lockWaitMs, () => new Error(flutterEnvironmentMessage({ kind: 'startup-lock', folder, sdkPath })));
+          }
+        } else if (waitingForLock && text.trim()) {
+          // The lock is free and flutter goes on: the usual startup time from here.
+          waitingForLock = false;
+          setDeadline(PREVIEW_STARTUP_MS, startupTimeout);
+        }
+
         if (
           text.includes(url) ||
           text.includes('is being served at') ||
           text.includes('Serving at')
         ) {
-          clearTimeout(timeout);
-          resolve({ url, processId: info.id, logs });
+          finish(() => resolve({ url, processId: info.id, logs }));
         }
       };
 
@@ -178,23 +286,24 @@ void main() {
       info.process.stderr?.on('data', handleOutput);
 
       info.process.on('error', (error) => {
-        clearTimeout(timeout);
         const msg = error instanceof Error ? error.message : String(error);
         if ((error as any)?.code === 'ENOENT' || isFlutterSdkNotFoundError(msg)) {
-          reject(new Error(FLUTTER_SDK_NOT_FOUND_MSG));
+          fail(new Error(FLUTTER_SDK_NOT_FOUND_MSG));
         } else {
-          reject(error);
+          fail(error);
         }
       });
 
       info.process.on('exit', (code) => {
         if (code !== 0 && code !== null) {
-          clearTimeout(timeout);
           const fullLog = logs.join('\n');
-          if (code === 127 || isFlutterSdkNotFoundError(fullLog)) {
-            reject(new Error(FLUTTER_SDK_NOT_FOUND_MSG));
+          const locked = lockedSdkPath(fullLog);
+          if (locked) {
+            fail(new LockedSdkFileError(locked, fullLog));
+          } else if (code === 127 || isFlutterSdkNotFoundError(fullLog)) {
+            fail(new Error(FLUTTER_SDK_NOT_FOUND_MSG));
           } else {
-            reject(new Error(fullLog || `flutter run exited with code ${code}`));
+            fail(new Error(fullLog || `flutter run exited with code ${code}`));
           }
         }
       });
@@ -273,8 +382,12 @@ void main() {
         if (code === 0) {
           resolve(output);
         } else {
+          const locked = lockedSdkPath(output);
+          const lockedIn = locked ? syncedFolderOf(this.resolveSdkPath() ?? locked, process.env) ?? syncedFolderOf(locked, process.env) : null;
           if (code === 127 || isFlutterSdkNotFoundError(output)) {
             reject(new Error(FLUTTER_SDK_NOT_FOUND_MSG));
+          } else if (locked && lockedIn) {
+            reject(new Error(flutterEnvironmentMessage({ kind: 'sdk-in-synced-folder', folder: lockedIn, sdkPath: this.resolveSdkPath() ?? sdkOfLockedPath(locked) })));
           } else {
             reject(new Error(output || `flutter exited with code ${code}`));
           }

@@ -150,6 +150,7 @@
     "hidePreview": "إخفاء المعاينة",
     "showPreview": "إظهار المعاينة",
     "device": "الجهاز",
+    "frameFinish": "لون الإطار",
     "toggleChat": "تبديل المحادثة (Ctrl+Alt+B)",
     "settingsTooltip": "الإعدادات (Ctrl+,)",
     "upgradeToPro": "الترقية إلى Pro",
@@ -455,6 +456,21 @@
     "update.checkForUpdates": "التحقق من وجود تحديثات...",
     "workbench.action.showAboutDialog": "حول التطبيق"
   },
+  "approval": {
+    "commandTitle": "يريد الوكيل تشغيل أمر",
+    "deleteTitle": "يريد الوكيل حذف ملف",
+    "deleteReason": "السبب: {reason}",
+    "deleteNoReason": "لم يذكر سببًا.",
+    "deleteReversible": "يمكنك استعادته بـ «استعادة نقطة الحفظ».",
+    "deleteNotReversible": "لا يمكن التراجع عن هذا الحذف من Atomvs.",
+    "allowOnce": "السماح مرة واحدة",
+    "allowDelete": "حذف",
+    "always": "السماح دائمًا بـ «{key}» في هذا المشروع",
+    "alwaysHint": "سيشغّل Atomvs أوامر «{key}» في هذا المشروع دون أن يسأل.",
+    "reject": "رفض",
+    "waiting": "بانتظار موافقتك",
+    "addedPackage": "أُضيفت حزمة: {name}"
+  },
   "chat": {
     "askAnything": "اسأل أي شيء، @ للإشارة، / للإجراءات",
     "inputPlaceholder": "خطّط، ابنِ، @ لإضافة سياق",
@@ -470,7 +486,17 @@
     "start": "تشغيل",
     "detach": "فصل النافذة",
     "livePreview": "معاينة مباشرة",
-    "livePreviewSubtitle": "تُعاد تحميل تغييرات الكود فورًا داخل الإطار أعلاه."
+    "livePreviewSubtitle": "تُعاد تحميل تغييرات الكود فورًا داخل الإطار أعلاه.",
+    "flutterEnv": {
+      "syncedTitle": "مجلد Flutter داخل {folder}",
+      "syncedBody": "يقفل {folder} ملفات Flutter أثناء مزامنتها، فلا يستطيع Flutter تحديثها أو حذفها ولا تبدأ المعاينة. انقل مجلد Flutter خارج {folder} (مثلًا إلى C:\\src\\flutter)، ثم اختر موقعه الجديد من الإعدادات.",
+      "lockTitle": "هناك أمر Flutter آخر ما زال يعمل",
+      "lockBody": "يشغّل Flutter أمرًا واحدًا في كل مرة. هناك أمر آخر خارج Atomvs (في طرفية أو محرر آخر) ما زال يعمل أو عالقًا. أغلقه أو انتظر حتى ينتهي، ثم أعد المحاولة.",
+      "lockSynced": "مجلد Flutter لديك داخل {folder}، وهذا قد يمنع أوامر Flutter من الانتهاء. نقله إلى خارجه (مثلًا إلى C:\\src\\flutter) يحل المشكلة عادةً.",
+      "notCode": "هذه ليست مشكلة في كود تطبيقك.",
+      "openSettings": "اختر موقع Flutter",
+      "retry": "إعادة المحاولة"
+    }
   },
   "bottomPanel": {
     "terminal": "الطرفية",

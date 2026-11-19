@@ -1,5 +1,5 @@
 // QA Edit Injection Test - Concurrent Modification Triggered!
-import { ipcMain, dialog, app, BrowserWindow, screen } from 'electron';
+import { ipcMain, dialog, app, BrowserWindow, screen, Notification } from 'electron';
 import { handleWindowOpenSafely } from '../safe-external';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
@@ -11,6 +11,7 @@ import { DatabaseService } from '../services/db';
 import { WorkspaceManager } from '../services/workspace-manager';
 import { ProcessManager } from '../services/process-manager';
 import { ProcessRegistry } from '../services/process-registry';
+import { ApprovalService, ApprovalStore, registerApprovalIpc } from '../services/approval-service';
 import { FlutterService } from '../services/flutter-service';
 import { PreviewManager } from '../services/preview-manager';
 import { FileWatcherService } from '../services/file-watcher';
@@ -233,6 +234,22 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
   agentService.setMainWindow(mainWindow);
   agentService.setPreviewManager(previewManager);
   agentService.setOwnedPidsProvider(() => [...processManager.pids(), ...terminalService.pids()]);
+  // The approval cards: the window shows them in the chat; a desktop notification when it is not focused.
+  const approvals = new ApprovalService(
+    (channel, payload) => mainWindow?.webContents.send(channel, payload),
+    (request) => {
+      if (!mainWindow || mainWindow.isFocused()) return;
+      mainWindow.flashFrame(true);
+      if (Notification.isSupported()) {
+        new Notification({
+          title: 'Atomvs needs your approval',
+          body: request.kind === 'delete-file' ? `Delete ${request.subject}?` : request.subject.slice(0, 200),
+        }).show();
+      }
+    },
+  );
+  agentService.setApprovals(approvals, new ApprovalStore(path.join(app.getPath('userData'), 'command-approvals.json')));
+  registerApprovalIpc(ipcMain, approvals);
   const projectService = new ProjectService(platformRegistry, workspace);
   const deviceService = new DeviceService();
 
@@ -764,7 +781,7 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
     return strips ? sampleStrips(event.sender, strips) : [];
   });
 
-  let currentDetachedDeviceId = 'iphone-15';
+  let currentDetachedDeviceId = 'iphone-17-pro';
   let currentDetachedLandscape = false;
 
   /** Detached window size that shows the whole device frame (portrait phones and wide foldables alike). */

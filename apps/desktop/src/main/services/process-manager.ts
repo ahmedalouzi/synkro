@@ -189,6 +189,18 @@ export class ProcessManager {
     return true;
   }
 
+  /** Stops the running processes this manager started that match (each with its child processes); returns how many. */
+  stopWhere(match: (info: ProcessInfo) => boolean): number {
+    let stopped = 0;
+    for (const info of this.processes.values()) {
+      if (info.process.exitCode !== null || info.process.signalCode !== null || info.status === 'stopped') continue;
+      if (!match(info)) continue;
+      this.kill(info.id);
+      stopped++;
+    }
+    return stopped;
+  }
+
   get(id: number): ProcessInfo | undefined {
     return this.processes.get(id);
   }

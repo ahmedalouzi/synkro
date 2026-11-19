@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Tab bar fixture</title>
+    <style>
+      html, body { margin: 0; height: 100%; font-family: system-ui, sans-serif; background: #ffffff; }
+      #screen { position: fixed; left: 0; right: 0; top: 0; display: flex; align-items: center; justify-content: center; color: #333; }
+      #tabbar { position: fixed; left: 0; right: 0; bottom: 0; display: flex; background: #f8f8f8; border-top: 1px solid #ddd; box-sizing: border-box; }
+      .tab { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden; }
+      .tab .icon { font-size: 22px; line-height: 24px; }
+      .tab .label { display: block; font-size: 11px; line-height: 13px; white-space: nowrap; }
+    </style>
+  </head>
+  <body>
+    <!-- Dev/test only (frame lab): a bottom tab bar laid out the way React Navigation does it. -->
+    <div id="screen">Ana Sayfa</div>
+    <nav id="tabbar" role="tablist"></nav>
+    <script type="module" src="./tab-bar.ts"></script>
+  </body>
+</html>

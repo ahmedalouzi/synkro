@@ -1,13 +1,16 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { PreviewAssembly } from './PreviewAssembly';
 import './DetachedPreview.css';
-import { DEVICES, deviceGeometry, fitZoom, type DeviceType } from './devices';
+import { DEVICES, deviceFinish, deviceGeometry, fitZoom, type DeviceType } from './devices';
+import { usePreviewStore } from '../../stores/preview-store';
 import { usePreviewSafeArea } from './usePreviewSafeArea';
 
 export function DetachedPreview() {
   const query = new URLSearchParams(window.location.search);
-  const deviceId = (query.get('deviceId') as DeviceType) || 'iphone-15';
+  const deviceId = (query.get('deviceId') as DeviceType) || 'iphone-17-pro';
   const device = DEVICES.find((d) => d.id === deviceId) || DEVICES[0];
+  // The finish picked in the main window (remembered in localStorage, read when this window's store starts).
+  const frameFinish = deviceFinish(device, usePreviewStore((s) => s.finishes)[device.id]);
   const landscape = query.get('landscape') === '1';
   const geometry = deviceGeometry(device, landscape);
 
@@ -61,7 +64,7 @@ export function DetachedPreview() {
         
         <div className="detached-title-center">
           <div className="title-device">{device.label}</div>
-          <div className="title-os">{device.id.includes('pixel') || device.id.includes('galaxy') ? 'Android 14.0' : 'iOS 17.0'}</div>
+          <div className="title-os">{device.osVersion ?? 'Android 14.0'}</div>
         </div>
 
         <div className="detached-actions" style={{ WebkitAppRegion: 'no-drag' } as any}>
@@ -95,7 +98,7 @@ export function DetachedPreview() {
               zoom: scale,
             }}
           >
-            <PreviewAssembly device={device} landscape={landscape} tone={tone} background={background}>
+            <PreviewAssembly device={device} landscape={landscape} tone={tone} background={background} finish={frameFinish}>
               {session?.status === 'starting' && (
                 <div className="preview-placeholder">
                   <span className="preview-placeholder__icon preview-placeholder__spinner">⏳</span>

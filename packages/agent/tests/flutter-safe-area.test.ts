@@ -87,7 +87,8 @@ export default async function run() {
   const service = fs.readFileSync(path.join(root, 'apps/desktop/src/main/services/flutter-service.ts'), 'utf8');
   assert.match(service, /const target = await writePreviewEntry\(flutterRoot\);/);
   assert.match(service, /'--web-hostname', '127\.0\.0\.1', \.\.\.\(target \? \['-t', target\] : \[\]\)\]/);
-  const shim = fs.readFileSync(path.join(root, 'apps/desktop/src/preload/preview-safe-area.ts'), 'utf8');
+  const shim = ['preview-safe-area.ts', 'preview-safe-area-page.ts']
+    .map((f) => fs.readFileSync(path.join(root, 'apps/desktop/src/preload', f), 'utf8')).join('\n');
   assert.match(shim, /\$\{flutterLayoutIssues\.toString\(\)\}\);`/);
   assert.match(shim, /'atomvs:flutter-layout'\]\) window\.addEventListener\(type, schedule\)/);
 
