@@ -14,8 +14,24 @@ export default async function runTests() {
   }
 
   const reasoningConfig = router.route('reasoning');
-  if (reasoningConfig.providerId !== 'openai' || reasoningConfig.modelId !== 'gpt-4o') {
-    throw new Error('reasoning tier routing mapped to incorrect model config');
+  if (process.env.OPENAI_API_KEY) {
+    if (reasoningConfig.providerId !== 'openai' || reasoningConfig.modelId !== 'gpt-4o') {
+      throw new Error('reasoning tier routing mapped to incorrect model config');
+    }
+  } else {
+    if (reasoningConfig.providerId !== 'google' || reasoningConfig.modelId !== 'gemini-3.6-flash') {
+      throw new Error('reasoning tier routing without OPENAI_API_KEY must fall back to google/gemini-3.6-flash');
+    }
+  }
+
+  // Verify explicit OpenAI vs Gemini-fallback routing regardless of env
+  const reasoningWithOpenAi = router.route('reasoning', 'pro', undefined, { hasOpenAiKey: true });
+  if (reasoningWithOpenAi.providerId !== 'openai' || reasoningWithOpenAi.modelId !== 'gpt-4o') {
+    throw new Error('reasoning tier with hasOpenAiKey=true must map to openai/gpt-4o');
+  }
+  const reasoningNoOpenAi = router.route('reasoning', 'pro', undefined, { hasOpenAiKey: false });
+  if (reasoningNoOpenAi.providerId !== 'google' || reasoningNoOpenAi.modelId !== 'gemini-3.6-flash') {
+    throw new Error('reasoning tier with hasOpenAiKey=false must fall back to google/gemini-3.6-flash');
   }
 
   const premiumConfig = router.route('premium');
