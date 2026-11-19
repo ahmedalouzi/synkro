@@ -1,0 +1,137 @@
+/* ═══════════════════════════════════════════════════════════════════
+   AGENT RUN — the reply's live timeline, file cards and preview events.
+   Ported from the website's LiveDemo (synkro-web src/components/home/live-demo.css, .ld-*): same colours,
+   borders, glow and animations, sized up from the demo's miniature to the real chat.
+═══════════════════════════════════════════════════════════════════ */
+
+.ar-run { display: flex; flex-direction: column; gap: 8px; }
+
+/* "Thinking" shimmer while waiting for the first step, then "Thought for Ns". */
+.ar-thinking, .ar-thought { font-size: 12px; }
+.ar-thinking {
+  width: max-content;
+  background: linear-gradient(90deg, #52525b 0%, #e4e4e7 50%, #52525b 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: ar-shimmer 1.2s linear infinite;
+}
+.ar-thought { color: #71717a; }
+@keyframes ar-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+
+/* Tool rows: Read <file>, Searched "…", Ran …, Checked preview. */
+.ar-steps { display: flex; flex-direction: column; gap: 6px; }
+.ar-step {
+  display: flex; align-items: center; gap: 7px; min-width: 0;
+  font-size: 12.5px; color: #71717a; white-space: nowrap;
+  animation: ar-step-in .35s ease-out both;
+}
+.ar-step svg { flex-shrink: 0; }
+.ar-step__verb { color: #a1a1aa; flex-shrink: 0; }
+.ar-step__target {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; color: #a5b4fc;
+  background: none; border: 0; padding: 0; font: inherit; text-align: left;
+}
+button.ar-step__target { cursor: pointer; }
+button.ar-step__target:hover { text-decoration: underline; text-underline-offset: 3px; }
+.ar-step.is-live .ar-step__verb { color: #c7c9ff; }
+.ar-step.is-failed .ar-step__verb { color: #f87171; }
+.ar-step.is-ok { color: #4ade80; animation: ar-msg-in .5s both; }
+.ar-step.is-ok .ar-step__verb { color: #4ade80; }
+.ar-step.is-ok .ar-step__target { color: #71717a; }
+.ar-more {
+  align-self: flex-start; padding: 0; border: 0; background: none; cursor: pointer;
+  font-size: 12px; color: #71717a;
+}
+.ar-more:hover { color: #a1a1aa; }
+@keyframes ar-step-in { from { opacity: 0; transform: translateX(-8px); } }
+
+/* One card per written file: "Writing…" with a glowing bar, then "Ready to review" + Undo / Keep / Review. */
+.ar-edit {
+  position: relative; border-radius: 9px; border: 1px solid rgba(255,255,255,.1); background: #131317; overflow: hidden;
+  animation: ar-msg-in .5s cubic-bezier(.2,.8,.2,1.2) both; transition: border-color .4s, box-shadow .4s;
+}
+.ar-edit.is-writing { border-color: rgba(124,131,255,.45); box-shadow: 0 0 24px -8px rgba(124,131,255,.6); }
+.ar-edit.is-kept { border-color: rgba(74,222,128,.35); }
+.ar-edit.is-undone { opacity: .6; }
+.ar-edit__head { display: flex; align-items: center; gap: 7px; padding: 9px 11px; font-size: 12.5px; min-width: 0; }
+.ar-edit__name {
+  color: #e4e4e7; font-family: var(--font-code); font-size: 12px;
+  background: none; border: 0; padding: 0; cursor: pointer;
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ar-edit__name:hover { text-decoration: underline; text-underline-offset: 3px; }
+.ar-edit__add { font-family: var(--font-code); font-size: 12px; color: #4ade80; flex-shrink: 0; }
+.ar-edit__del { font-family: var(--font-code); font-size: 12px; color: #f87171; flex-shrink: 0; }
+.ar-edit__state { margin-left: auto; font-size: 11.5px; color: #71717a; flex-shrink: 0; }
+.ar-edit.is-writing .ar-edit__state { color: #a5b4fc; }
+.ar-edit.is-kept .ar-edit__state { color: #4ade80; }
+.ar-edit__bar { height: 2px; background: rgba(255,255,255,.05); overflow: hidden; }
+.ar-edit__bar span {
+  display: block; height: 100%; width: 100%;
+  background: linear-gradient(90deg, #7c83ff, #61dafb); box-shadow: 0 0 10px #7c83ff;
+}
+/* While writing, the length of the write is not known: a glow that sweeps along the bar. */
+.ar-edit.is-writing .ar-edit__bar span, .ar-files.is-writing .ar-edit__bar span { width: 45%; animation: ar-bar-sweep 1.1s cubic-bezier(.4,0,.2,1) infinite; }
+.ar-edit.is-kept .ar-edit__bar span { background: #4ade80; box-shadow: none; }
+.ar-edit.is-undone .ar-edit__bar span { background: #52525b; box-shadow: none; }
+@keyframes ar-bar-sweep { from { transform: translateX(-100%); } to { transform: translateX(230%); } }
+.ar-edit__actions { display: flex; gap: 7px; padding: 9px 11px; }
+.ar-btn {
+  display: inline-flex; align-items: center; gap: 5px; padding: 4px 11px; border-radius: 6px;
+  border: 1px solid rgba(255,255,255,.12); background: transparent; color: #d4d4d8;
+  font: inherit; font-size: 12px; cursor: pointer; transition: background .2s, border-color .2s, transform .15s;
+}
+.ar-btn:hover { border-color: rgba(255,255,255,.24); background: rgba(255,255,255,.04); }
+.ar-btn:disabled { opacity: .5; cursor: default; }
+.ar-btn--primary { background: #e4e4e7; color: #0c0c0f; border-color: transparent; font-weight: 600; }
+.ar-btn--primary:hover { background: #fff; }
+.ar-edit.is-kept .ar-btn--primary { background: #4ade80; transform: scale(.96); }
+
+@keyframes ar-msg-in { from { opacity: 0; transform: translateY(10px) scale(.97); } }
+
+/* The blinking caret at the end of the reply while it types out (the demo's .ld-stream-caret). */
+.cx-markdown.is-typing > :last-child::after {
+  content: ''; display: inline-block; width: 7px; height: 13px; margin-left: 3px; vertical-align: -2px; border-radius: 1px;
+  background: #a5b4fc; animation: ar-blink .8s steps(1) infinite;
+}
+@keyframes ar-blink { 50% { opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .ar-thinking, .ar-step, .ar-step.is-ok, .ar-edit, .cx-markdown.is-typing > :last-child::after { animation: none; }
+  .ar-edit.is-writing .ar-edit__bar span { animation: none; width: 100%; opacity: .7; }
+}
+
+/* The one-line plan under "Thought for Ns". */
+.ar-plan { margin: 2px 0 6px; font-size: 12.5px; line-height: 1.5; color: var(--text-secondary); }
+
+/* Blocked (a safety rule or no answer) and waiting for the user's approval. */
+.ar-step.is-blocked { flex-wrap: wrap; }
+.ar-step.is-blocked .ar-step__verb { color: #fbbf24; }
+.ar-step.is-waiting .ar-step__verb { color: #fbbf24; }
+.ar-step__note { flex: 1 1 100%; min-width: 0; padding-inline-start: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--text-muted); }
+.ar-step__note--ok { color: var(--text-secondary); }
+.ar-step:has(.ar-step__note) { flex-wrap: wrap; row-gap: 1px; }
+
+/* One card for all the files of a run. */
+.ar-files { margin: 6px 0; border: 1px solid var(--border); border-radius: 8px; background: rgba(255, 255, 255, 0.02); overflow: hidden; }
+.ar-files.is-undone { opacity: 0.6; }
+.ar-files__head { display: flex; align-items: center; gap: 6px; width: 100%; padding: 7px 10px; border: 0; background: none; color: var(--text-primary); font: inherit; font-size: 12px; cursor: pointer; text-align: start; }
+.ar-files__head:hover { background: rgba(255, 255, 255, 0.03); }
+.ar-files__chevron { display: inline-flex; color: var(--text-muted); transition: transform 0.15s; }
+.ar-files__chevron.is-open { transform: rotate(90deg); }
+[dir="rtl"] .ar-files__chevron:not(.is-open) { transform: rotate(180deg); }
+.ar-files__title { font-weight: 500; }
+.ar-files__head .ar-edit__state { margin-inline-start: auto; }
+.ar-files__list { max-height: 220px; overflow-y: auto; padding: 2px 6px 6px; border-top: 1px solid var(--border); }
+.ar-files__row { display: flex; align-items: center; gap: 6px; padding: 3px 4px; border-radius: 5px; font-size: 12px; }
+.ar-files__row:hover { background: rgba(255, 255, 255, 0.04); }
+.ar-files__row.is-undone .ar-edit__name { text-decoration: line-through; opacity: 0.6; }
+.ar-files__row .ar-edit__state { margin-inline-start: auto; }
+.ar-files__row-actions { display: none; gap: 8px; margin-inline-start: auto; }
+.ar-files__row:hover .ar-files__row-actions { display: inline-flex; }
+.ar-files__row:hover .ar-edit__state:empty { display: none; }
+.ar-link { padding: 0; border: 0; background: none; color: var(--text-secondary); font: inherit; font-size: 11.5px; cursor: pointer; }
+.ar-link:hover { color: var(--text-primary); text-decoration: underline; }
+.ar-files .ar-edit__actions { padding: 0 10px 8px; }

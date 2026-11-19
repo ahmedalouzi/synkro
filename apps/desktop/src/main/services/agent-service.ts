@@ -8,7 +8,7 @@ import { IPC_EVENTS, ProviderError } from '@peep/shared';
 import * as Sentry from '@sentry/electron/main';
 import log from 'electron-log/main';
 import type { ProposedEdit, AgentStreamEvent, AgentSendOptions } from '@peep/shared';
-import { buildAgentContext, runAgentLoop, SCAFFOLD_SYSTEM_ADDENDUM, type ChatMessage, classifyCommand, loadDesignManifest, saveDesignManifest, serializeDesignManifest, GoogleGeminiAdapter, truncateConversationHistory, AgentStateMachine, type AgentLogger } from '@peep/agent';
+import { buildAgentContext, replyLanguageInstruction, runAgentLoop, SCAFFOLD_SYSTEM_ADDENDUM, type ChatMessage, classifyCommand, loadDesignManifest, saveDesignManifest, serializeDesignManifest, GoogleGeminiAdapter, truncateConversationHistory, AgentStateMachine, type AgentLogger } from '@peep/agent';
 import type { AgentPhase } from '@peep/shared';
 import type { DatabaseService } from './db';
 import type { WorkspaceManager } from './workspace-manager';
@@ -50,7 +50,7 @@ Key rules:
 - **CODE PRESERVATION**: When modifying or refactoring files, you MUST preserve all existing features, UI elements, handlers, imports, and business logic unless explicitly requested to remove or replace them. Never drop progress indicators, buttons, state properties, or helper methods during subsequent feature additions.
 - **NO CODEBLOCKS IN CHAT**: Do NOT output full code files or code blocks in your chat responses. All code additions/modifications must be proposed via tool calls. Your text response should only describe/summarize the changes.
 - **RUNNING COMMANDS**: You possess the \`run_command\` tool. Use it to install dependencies, run linting checks, typechecks, compiler diagnostics, and unit tests (e.g., \`pnpm install\`, \`pnpm typecheck\`, \`pnpm test\`, etc.) to verify your changes and resolve issues.
-- **CHAT FORMATTING STYLE**: Your text responses in the chat must be extremely concise, clean, and conversational. Do NOT output bulleted lists of changed files, markdown lists with asterisks, or duplicate the walkthrough/implementation plan. Speak directly in clean, professional, short paragraphs. Describe the high-level intent/behavior of your change instead of listing files.
+- **CHAT FORMATTING STYLE**: The chat already shows every step you take (files read, searches, commands, each file you write with its +/- counts, the preview reload), so your text never repeats it. Before working, at most one short sentence on what you will do. Your FINAL message is 1-3 short sentences: what is now working and where to see it, plus one tip if useful (e.g. "Done. The Classes tab is live on iPhone 15. Tap + to add a class."). No headings, no bullet lists of changes or files, no code blocks, no summaries of each file. If something failed, say so plainly in one or two sentences instead.
 - **MULTI-FILE WRITES**: Write or modify ALL files associated with a feature/request in a single turn. Do not propose one file and wait for the user to say "proceed" to propose the next one. Use sequential tool calls in the same response.
 - Keep StyleSheet objects at the BOTTOM of each file.
 - Use FlatList for lists, not map() inside ScrollView.
@@ -344,13 +344,8 @@ export class AgentService {
     }
 
     const rnAddendum = isReactNative ? RN_SYSTEM_ADDENDUM : '';
-    const activeLocale = options.locale || settings.locale || 'en';
-    let localeInstruction = '';
-    if (activeLocale === 'ar') {
-      localeInstruction = `\n\n[LOCALIZATION INSTRUCTION]\nThe user's active language is Arabic (العربية).\n- You MUST converse, explain, plan, and answer the user in Arabic.\n- All generated code, variable and function names, file paths, git commit messages, terminal commands, and inline code comments MUST remain strictly in English.\n`;
-    } else if (activeLocale === 'tr') {
-      localeInstruction = `\n\n[LOCALIZATION INSTRUCTION]\nThe user's active language is Turkish (Türkçe).\n- You MUST converse, explain, plan, and answer the user in Turkish.\n- All generated code, variable and function names, file paths, git commit messages, terminal commands, and inline code comments MUST remain strictly in English.\n`;
-    }
+    // Answer in the language of the user's latest message; the interface language is only a fallback.
+    const localeInstruction = replyLanguageInstruction(options.message, options.locale || settings.locale);
       console.log(`[E2E_VERIFICATION] 5. Building System Prompt...`);
       const systemContext =
         (options.scaffoldMode ? `${SCAFFOLD_SYSTEM_ADDENDUM}\n\n` : '') +

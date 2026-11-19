@@ -4,6 +4,13 @@ import { usePreviewStore, useDiagnosticsStore } from '../stores/preview-store';
 import { useChatStore } from '../stores/chat-store';
 import { useWorkspaceStore } from '../stores/workspace-store';
 import { useComposerStore } from '../stores/composer-store';
+import { useRunEventsStore } from '../stores/run-events-store';
+import { useFollowStore } from '../stores/follow-store';
+import { startFollow } from '../features/editor/start-follow';
+
+/** The proposed content last seen per agent edit: only an edit that changed is synced or played again. */
+const seenEdits = new Map<string, string>();
+import { DEVICES } from '../features/preview/devices';
 import { findNode, foldersToRefresh, samePath, type WatchEvent } from '../features/explorer/live-tree';
 
 export function usePeepEvents(): void {
@@ -27,7 +34,12 @@ export function usePeepEvents(): void {
     });
 
     const unsubDiagnostics = window.peep.onDiagnostics(setDiagnostics);
-    const unsubLog = window.peep.onPreviewLog(addLog);
+    // Preview log lines also feed the "Fast Refresh 412 ms · iPhone 15" row of the agent run that changed files.
+    const unsubLog = window.peep.onPreviewLog((line: string) => {
+      addLog(line);
+      const device = DEVICES.find((d) => d.id === usePreviewStore.getState().deviceId)?.label ?? 'Preview';
+      useRunEventsStore.getState().onPreviewLog(line, device);
+    });
 
     const unsubAgent = window.peep.onAgentStream((event) => {
       const activeThreadId = useChatStore.getState().activeThreadId;
@@ -66,6 +78,10 @@ export function usePeepEvents(): void {
       if (activity.threadId && activity.threadId !== useChatStore.getState().activeThreadId) return;
       if (useComposerStore.getState().isOpen) return;
       useChatStore.getState().upsertTimelineActivity(activity);
+      // A file the app runs changed: the next bundle Metro reports belongs to this run.
+      if ((activity.type === 'editing' || activity.type === 'deleting') && activity.status === 'completed' && !/(^|[\\/])\.peep[\\/]/.test(activity.file ?? '')) {
+        useRunEventsStore.getState().expectRefresh(activity.runId);
+      }
     });
 
     // The agent's approval requests (run a command, delete a file): cards in the chat until answered.
@@ -81,15 +97,29 @@ export function usePeepEvents(): void {
       const workspaceStore = useWorkspaceStore.getState();
 
       // The agent has already written these files: open tabs show the new content as saved. A tab with the
-      // user's own unsaved edits keeps them and shows the "changed on disk" notice instead.
-      for (const edit of edits) {
+      // user's own unsaved edits keeps them and shows the "changed on disk" notice instead. With follow mode on,
+      // the newest edit is played in the editor (or offered as a chip while the user types in another tab).
+      const follow = useFollowStore.getState();
+      const changed = edits.filter((edit) => {
+        if (seenEdits.get(edit.id) === edit.proposedContent) return false;
+        seenEdits.set(edit.id, edit.proposedContent);
+        return true;
+      });
+      const toFollow = follow.enabled && !isComposer ? changed[changed.length - 1] : undefined;
+      for (const edit of changed) {
         const existing = workspaceStore.openFiles.find((f) => samePath(f.path, edit.path));
-        if (!existing) continue;
-        if (existing.dirty && existing.content !== edit.proposedContent) {
+        if (existing?.dirty && existing.content !== edit.proposedContent) {
           workspaceStore.setFileExternallyModified(existing.path, true);
-        } else {
-          workspaceStore.syncFileContent(existing.path, edit.proposedContent);
+          continue;
         }
+        const name = edit.path.split(/[\\/]/).pop() ?? edit.path;
+        const followEdit = { path: edit.path, name, oldContent: existing?.content ?? edit.originalContent, newContent: edit.proposedContent };
+        if (edit === toFollow && !follow.isUserBusyElsewhere(edit.path)) {
+          startFollow(followEdit);
+          continue;
+        }
+        if (edit === toFollow) follow.showChip(followEdit);
+        if (existing) workspaceStore.syncFileContent(existing.path, edit.proposedContent);
       }
 
       if (isComposer) {
@@ -134,7 +164,8 @@ export function usePeepEvents(): void {
     const unsubFileChanged = window.peep.onFileChanged((path: string) => {
       const workspaceStore = useWorkspaceStore.getState();
       const existing = workspaceStore.openFiles.find((f) => samePath(f.path, path));
-      if (!existing) return;
+      // A follow-mode edit is playing in this tab: it sets the new content itself.
+      if (!existing || useFollowStore.getState().playing.has(existing.path)) return;
       void window.peep.readFile(existing.path).then((newContent) => {
         const current = useWorkspaceStore.getState().openFiles.find((f) => f.path === existing.path);
         if (!current || current.content === newContent) return;
@@ -173,7 +204,7 @@ export function usePeepEvents(): void {
       void window.peep.readFile(planPath).then((content) => {
         const existing = workspaceStore.openFiles.find((f) => f.path === planPath);
         if (existing) {
-          workspaceStore.openFile({ ...existing, content, dirty: false });
+          workspaceStore.syncFileContent(existing.path, content);
         }
       }).catch(() => {});
     });

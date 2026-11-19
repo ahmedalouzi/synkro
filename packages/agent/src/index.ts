@@ -2,6 +2,7 @@ export { FLUTTER_SYSTEM_PROMPT } from './prompts/flutter-system';
 export { SCAFFOLD_SYSTEM_ADDENDUM } from './prompts/scaffold-system';
 export { OPENAI_TOOLS } from './tools/definitions';
 export { buildAgentContext } from './context/builder';
+export { detectMessageLanguage, replyLanguageInstruction, type ReplyLanguage } from './prompts/reply-language';
 export { truncateConversationHistory, estimateTokens } from './context/truncate';
 export { runAgentLoop, type AgentCallbacks, type AgentConfig, type AgentToolExecutor, type AgentLogger } from './orchestrator';
 export { AgentStateMachine } from './state-machine';

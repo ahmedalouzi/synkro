@@ -119,8 +119,9 @@ export default async function run() {
     );
     assert.ok(failed.every((a) => !a.packages), 'nothing listed when the install failed');
   }
-  const chatPane = fs.readFileSync(path.join(root, 'apps/desktop/src/renderer/src/layout/ChatPane.tsx'), 'utf8');
-  assert.match(chatPane, /a\.packages\?\.map\(\(name\) => \([\s\S]*?t\('approval\.addedPackage', \{ name \}\)/);
+  // The chat step (AgentRun since the Live Demo design) lists them.
+  const agentRun = fs.readFileSync(path.join(root, 'apps/desktop/src/renderer/src/features/agent-run/AgentRun.tsx'), 'utf8');
+  assert.match(agentRun, /a\.packages\?\.map\(\(name\) => [\s\S]*?t\('approval\.addedPackage', \{ name \}\)/);
   for (const lang of ['en', 'ar', 'tr']) {
     const text = JSON.parse(fs.readFileSync(path.join(root, `apps/desktop/src/renderer/src/i18n/locales/${lang}.json`), 'utf8')).approval.addedPackage;
     assert.ok(text.includes('{name}'), `${lang}: approval.addedPackage`);

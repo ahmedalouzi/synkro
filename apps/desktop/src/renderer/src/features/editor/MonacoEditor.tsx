@@ -1,6 +1,6 @@
 import Editor, { type OnMount } from '@monaco-editor/react';
 import type { editor } from 'monaco-editor';
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import './MonacoEditor.css';
 import { useDiagnosticsStore } from '../../stores/preview-store';
 import { useWorkspaceStore } from '../../stores/workspace-store';
@@ -9,6 +9,9 @@ import { clearActiveEditor, setActiveEditor } from '../../commands/editor-regist
 import { registerInlineCompletions } from './inline-completions';
 import { registerFixWithAI, setupInlineEdit } from './InlineEdit';
 import { addSelectionToChat } from '../chat/ask-agent';
+import { useFollowStore } from '../../stores/follow-store';
+import { playFollowEdit } from './follow-play';
+import { samePath } from '../explorer/live-tree';
 
 let emmetInitialized = false;
 
@@ -96,7 +99,22 @@ export function languageForPath(filePath: string): string {
 
 export function MonacoEditor({ path, value, onChange, onSave, externallyModified, onKeepLocal, onReloadFromDisk }: MonacoEditorProps) {
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
+  const monacoRef = useRef<Parameters<OnMount>[1] | null>(null);
+  const [mounted, setMounted] = useState(false);
   const wordWrap = useWorkspaceStore((s) => s.editorWordWrap);
+
+  // Follow mode: play the agent's edit of this file once the editor is up (removed lines flash, new lines type in).
+  const followPlay = useFollowStore((s) => s.play);
+  const playedNonce = useRef(0);
+  useEffect(() => {
+    const ed = editorRef.current;
+    const monaco = monacoRef.current;
+    if (!mounted || !ed || !monaco || !followPlay || playedNonce.current === followPlay.nonce || !samePath(followPlay.path, path)) return;
+    playedNonce.current = followPlay.nonce;
+    void playFollowEdit(ed, monaco, followPlay, (content) => useWorkspaceStore.getState().syncFileContent(path, content))
+      .catch(() => useWorkspaceStore.getState().syncFileContent(path, followPlay.newContent))
+      .finally(() => useFollowStore.getState().setPlaying(path, false));
+  }, [mounted, followPlay, path]);
   const minimap = useWorkspaceStore((s) => s.editorMinimap);
 
   useEffect(() => () => {
@@ -106,7 +124,11 @@ export function MonacoEditor({ path, value, onChange, onSave, externallyModified
   const handleMount: OnMount = useCallback(
     (editorInstance, monaco) => {
       editorRef.current = editorInstance;
+      monacoRef.current = monaco;
       setActiveEditor(editorInstance);
+      setMounted(true);
+      // Typing here tells follow mode the user is busy in this tab (it then only shows a chip for other files).
+      editorInstance.onKeyDown(() => useFollowStore.getState().noteTyping(path));
 
       // F1 opens the workbench command palette (VS Code), not Monaco's built-in one.
       editorInstance.addCommand(monaco.KeyCode.F1, () => {
@@ -124,7 +146,9 @@ export function MonacoEditor({ path, value, onChange, onSave, externallyModified
       setupInlineEdit(editorInstance, monaco);
       registerFixWithAI(monaco);
 
-      editorInstance.focus();
+      // A tab follow mode opened for an agent edit does not take focus (the user may be typing in the chat).
+      if (useFollowStore.getState().quietPath === path) useFollowStore.getState().setQuietPath(null);
+      else editorInstance.focus();
 
       registerInlineCompletions(monaco);
 

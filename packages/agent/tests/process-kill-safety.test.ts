@@ -122,8 +122,9 @@ export default async function run() {
       assert.ok(NOT_RUN.test(text), text);
     }
     assert.ok(!NOT_RUN.test('Command exited with code 1.\nOutput:\nBLOCKED: inside the output'), 'only the start of a result');
-    const chat = fs.readFileSync(path.join(root, 'apps/desktop/src/renderer/src/layout/ChatPane.tsx'), 'utf8');
-    assert.match(chat, /if \(a\.status === 'blocked'\) return \{ verb: 'Blocked', target \};/);
+    // The chat step (AgentRun since the Live Demo design).
+    const chat = fs.readFileSync(path.join(root, 'apps/desktop/src/renderer/src/features/agent-run/AgentRun.tsx'), 'utf8');
+    assert.match(chat, /if \(blocked\) verb = 'Blocked';/);
     const agent = fs.readFileSync(path.join(root, 'apps/desktop/src/main/services/agent-service.ts'), 'utf8');
     assert.match(agent, /if \(outcome === 'no-answer'\) \{\s*return `Not run: the user did not answer the approval request/,
       'no answer is not "rejected by user"');
