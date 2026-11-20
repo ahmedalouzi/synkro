@@ -1,3 +1,4 @@
+import { CURATED_FONTS, ILLUSTRATION_PRESETS } from '../brand/brand';
 export const OPENAI_TOOLS = [
   {
     type: 'function' as const,
@@ -135,8 +136,39 @@ export const OPENAI_TOOLS = [
   {
     type: 'function' as const,
     function: {
+      name: 'set_brand',
+      description: 'Create or change the app\'s brand identity (brand.json, the single source of its look). First call (no brand.json yet): give every field, an original identity for THIS app idea. Later (e.g. "make it darker", "change the color to green"): give only the fields that change. Atomvs fixes contrast to WCAG AA, writes brand.json and regenerates the theme (lib/theme/brand.dart or src/theme/brand.ts), the logo PNG and the fonts. Screens never need edits for a brand change.',
+      parameters: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: 'App name, max 40 characters.' },
+          tagline: { type: 'string', description: 'One short line, max 90 characters.' },
+          logo_svg: { type: 'string', description: 'An ORIGINAL vector mark for this app: one <svg viewBox=...>…</svg>, simple shapes and paths, no text, no scripts, no images, no external references, no copied brand marks. Max 20 KB.' },
+          colors: {
+            type: 'object',
+            description: 'Hex #RRGGBB. primaryOn = text on primary; ink = body text on surface; muted = secondary text on surface.',
+            properties: {
+              primary: { type: 'string' }, primaryOn: { type: 'string' }, secondary: { type: 'string' }, surface: { type: 'string' },
+              ink: { type: 'string' }, muted: { type: 'string' }, success: { type: 'string' }, danger: { type: 'string' },
+            },
+          },
+          font: { type: 'string', enum: [...CURATED_FONTS], description: 'One of the curated Google Fonts.' },
+          radius: {
+            type: 'object',
+            properties: { card: { type: 'number' }, button: { type: 'number' }, sheet: { type: 'number' } },
+            description: 'Corner radii in logical pixels, 0-48.',
+          },
+          illustration_style: { type: 'string', enum: Object.keys(ILLUSTRATION_PRESETS), description: Object.entries(ILLUSTRATION_PRESETS).map(([k, v]) => `${k}: ${v}`).join('; ') },
+          splash_motion: { type: 'string', description: 'The animated in-app splash, tied to the app\'s domain (e.g. "the leaf mark unfurls, then the name fades up"), max 240 characters.' },
+        },
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
       name: 'update_design_manifest',
-      description: 'Create or update the project Design Manifest (.peep/design.json). Use this to establish or evolve the project\'s visual DNA (colors, typography, spacing, component styles, brand personality). Always call this before generating major UI for the first time.',
+      description: 'Create or update the project Design Manifest (.peep/design.json): layout and component patterns (spacing, buttons, cards, navigation, states, animations). Colors, fonts, radii and the logo are NOT here: they are the brand (set_brand).',
       parameters: {
         type: 'object',
         properties: {

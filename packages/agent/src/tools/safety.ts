@@ -99,10 +99,12 @@ export const SAFE_COMMANDS: { label: string; test: (program: string, args: strin
       || /^(analyze|test|build|run|clean|create|doctor|devices|gen-l10n|--version|-v|precache)$/.test(a[0] ?? '')),
   },
   {
-    label: 'dart pub get/add/remove/upgrade/outdated/deps, analyze, test, format, fix, --version',
+    label: 'dart pub get/add/remove/upgrade/outdated/deps, analyze, test, format, fix, --version, run flutter_native_splash:create',
     test: (p, a) => p === 'dart' && (
       (a[0] === 'pub' && /^(get|add|remove|upgrade|outdated|deps)$/.test(a[1] ?? ''))
-      || /^(analyze|test|format|fix|--version)$/.test(a[0] ?? '')),
+      || /^(analyze|test|format|fix|--version)$/.test(a[0] ?? '')
+      // The brand's native splash, generated from pubspec.yaml (set_brand).
+      || (a[0] === 'run' && a[1] === 'flutter_native_splash:create' && a.length === 2)),
   },
   {
     label: 'npm / pnpm / yarn: install, ci, add, remove, update (not -g, --force, --legacy-peer-deps), ls, outdated, view',

@@ -23,3 +23,10 @@ export * from './memory/index';
 export * from './models/index';
 export * from './error-recovery/diagnostics';
 export * from './models/zip-validator';
+export {
+  BRAND_FILE, CURATED_FONTS, ILLUSTRATION_PRESETS, COLOR_KEYS, CONTRAST_PAIRS, FONT_WEIGHTS, NATIVE_SPLASH_VERSION,
+  brandProblems, finalizeBrand, mergeBrand, fixContrast, fixPaletteContrast, contrastFailures, contrastRatio, luminance, hue,
+  hueDistance, brandFingerprint, brandSignature, tooSimilar, closestTooSimilar, brandFromDesignManifest, logoProblem,
+  flutterBrandTheme, reactNativeBrandTheme, nativeSplashConfig, pubspecWithBrand, fallbackLogoPng,
+  type Brand, type BrandColors, type BrandSignature, type IllustrationPreset,
+} from './brand/brand';
