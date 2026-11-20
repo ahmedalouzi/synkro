@@ -51,12 +51,12 @@
     "sdkPlaceholder": "/path/to/flutter",
     "back": "← Back",
     "continue": "Continue →",
-    "privacyTitle": "Privacy & Analytics",
-    "privacyDesc": "Help improve Atomvs by sharing anonymous usage data. This is completely optional.",
-    "enableAnalyticsTitle": "Enable analytics",
-    "enableAnalyticsDesc": "Anonymous events stored locally only. No code or personal data is ever sent.",
-    "disableAnalyticsTitle": "No thanks",
-    "disableAnalyticsDesc": "Fully offline. You can change this anytime in Settings.",
+    "consentTitle": "Error reports",
+    "consentSends": "If a preview, a Cloud Build or an agent tool fails, Atomvs can send the error type, app version, OS and framework so we can fix it.",
+    "consentNever": "It never sends your code, file contents, prompts, keys or e-mail.",
+    "consentPolicy": "Privacy policy (atomvs.com/privacy)",
+    "consentAllow": "Allow",
+    "consentNotNow": "Not now",
     "doneTitle": "You're all set!",
     "doneDesc": "Open an existing Flutter project or create a new one from a template or prompt.",
     "tip1": "Quick file open",
@@ -312,8 +312,10 @@
       "save": "Save"
     },
     "privacy": {
-      "title": "Anonymous Usage Data",
-      "desc": "Share feature usage and crash counts to help improve Atomvs. Never includes code, file names or personal data."
+      "title": "Send error reports",
+      "desc": "When a preview, a Cloud Build or an agent tool fails, Atomvs sends the error type, app version, OS and framework so we can fix it. Never your code, file contents, prompts, keys or e-mail; paths and secrets are removed before anything leaves your computer.",
+      "learnMore": "Privacy policy",
+      "learnMoreDesc": "What is sent, how long it is kept, and how to turn it off"
     },
     "beta": {
       "devMode": "Developer Mode",

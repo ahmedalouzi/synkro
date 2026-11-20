@@ -600,6 +600,9 @@ export function SettingsModal({ open, onClose, initialSection, standalone }: Set
         >
           <Toggle checked={telemetryEnabled} onChange={(v) => void handleTelemetry(v)} />
         </Row>
+        <Row title={t('settings.privacy.learnMore')} description={t('settings.privacy.learnMoreDesc')} query={query}>
+          <button type="button" className="sx-btn" onClick={() => openWebPage('privacy')}>{t('settings.account.open')}</button>
+        </Row>
       </Card>
     ),
 

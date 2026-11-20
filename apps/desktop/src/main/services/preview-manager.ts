@@ -1,5 +1,5 @@
 import { BrowserWindow } from 'electron';
-import { IPC_EVENTS } from '@peep/shared';
+import { IPC_EVENTS, reportFailure } from '@peep/shared';
 import type { PreviewSession, PreviewRuntimeReport } from '@peep/shared';
 import type { FrameworkProvider } from './providers/base-provider';
 import { createServer } from 'node:net';
@@ -86,6 +86,7 @@ export class PreviewManager {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.log.add(`[preview error] ${message}`);
+      reportFailure({ category: 'preview', title: 'Preview failed to start', framework: provider.id, stage: 'start', error });
       const session: PreviewSession = {
         url: '',
         processId: 0,

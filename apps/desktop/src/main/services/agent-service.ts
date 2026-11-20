@@ -1226,6 +1226,7 @@ export class AgentService {
             sessionToken: settings.sessionToken || '',
             threadId: options.threadId,
             logger: agentLogger,
+            framework: mobileEnv?.framework,
           },
           systemContext,
           truncatedMessages.slice(1), // Remove the system message from initialMessages since runAgentLoop re-injects it
