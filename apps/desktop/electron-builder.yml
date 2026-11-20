@@ -6,6 +6,15 @@ files:
   - out/**/*
   # Window icon loaded at runtime (src/main/index.ts); the exe/installer icons come from `icon` below.
   - resources/icons/icon.png
+# The brand fonts (24 curated Google Fonts, OFL, see scripts/fetch-brand-fonts.mjs), next to app.asar so set_brand
+# can copy them into projects: resources/brand-fonts in the installed app.
+extraResources:
+  - from: resources/brand-fonts
+    to: brand-fonts
+    filter:
+      - "**/*.ttf"
+      - "**/OFL.txt"
+      - manifest.json
 # node-pty's native binaries (.node, conpty.dll, OpenConsole.exe) can't be loaded from inside the asar.
 asarUnpack:
   - "**/node_modules/@lydell/node-pty*/**"
