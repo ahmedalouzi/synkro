@@ -1,6 +1,6 @@
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { isAbsolute, join, relative } from 'node:path';
-import simpleGit from 'simple-git';
+import { simpleGit } from 'simple-git';
 import type { AgentMention, Diagnostic } from '@peep/shared';
 
 /**
