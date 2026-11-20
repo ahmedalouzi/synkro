@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import type { AIGateway, AIRequest, AIStreamEvent } from '@peep/shared';
 import {
-  FailureGate, OncePerFailure, describeFlutterError, escapedDartInterpolations, failureSignature, parsePreviewRuntimeReport,
+  FailureGate, OncePerFailure, autoFixBlocked, describeFlutterError, escapedDartInterpolations, failureSignature, parsePreviewRuntimeReport,
   runtimeFixMessage,
 } from '@peep/shared';
 import { parseFlutterAnalyze } from '@peep/flutter-adapter';
@@ -193,6 +193,28 @@ export default async function runTest() {
   assert.match(runtimeFixMessage([REAL_OVERFLOW]), /^The running preview reported Flutter errors[\s\S]*restart_preview[\s\S]*\n- A RenderFlex overflowed by 399 pixels[\s\S]*Fix:/);
   assert.match(preview, /runtimeFixes\.current\.claimAll\(runtimeErrors\)/);
   assert.match(preview, /if \(!project \|\| agentBusy \|\| runtimeErrors\.length === 0\) return;/, 'only while the agent is idle');
+
+  console.log('  [genq] Automatic layout fixes use credits: never with none left, never into a paused or blocked run...');
+  const idle = { agentBusy: false, pendingApprovals: 0, lastRunInterrupted: false, creditsRemaining: 120 };
+  assert.equal(autoFixBlocked(idle), null);
+  assert.equal(autoFixBlocked({ ...idle, creditsRemaining: undefined }), null, 'credits unknown (own key): allowed');
+  assert.equal(autoFixBlocked({ ...idle, creditsRemaining: 0 }), 'no-credits');
+  assert.equal(autoFixBlocked({ ...idle, creditsRemaining: -3 }), 'no-credits');
+  assert.equal(autoFixBlocked({ ...idle, pendingApprovals: 1 }), 'approval', 'a run waiting for an approval is blocked');
+  assert.equal(autoFixBlocked({ ...idle, lastRunInterrupted: true }), 'paused', 'stopped by the user, or failed');
+  assert.equal(autoFixBlocked({ ...idle, agentBusy: true }), 'busy');
+  // The window: the fresh credits, the rule before claiming (a blocked send is not counted), one short line in chat.
+  assert.match(preview, /creditsRemaining = \(await window\.peep\.authGetAccount\(\)\)\?\.creditsRemaining;/);
+  assert.match(preview, /if \(cancelled \|\| blocked\) return;\s+const fresh = runtimeFixes\.current\.claimAll\(runtimeErrors\);/);
+  assert.match(preview, /display: t\('chat\.autoLayoutFix'\)/);
+  assert.match(chat, /content: display \?\? message,/);
+  assert.match(chat, /setLastRunInterrupted\(true\); void window\.peep\.cancelAgent\(\);/, 'Stop pauses automatic fixes');
+  const events = read('apps/desktop/src/renderer/src/hooks/usePeepEvents.ts');
+  assert.match(events, /event\.type === 'done'\) \{\s+useChatStore\.getState\(\)\.setLastRunInterrupted\(false\);/);
+  assert.match(events, /event\.type === 'error'\) \{\s+useChatStore\.getState\(\)\.setLastRunInterrupted\(true\);/);
+  for (const lang of ['en', 'ar', 'tr']) {
+    assert.ok(JSON.parse(read(`apps/desktop/src/renderer/src/i18n/locales/${lang}.json`)).chat.autoLayoutFix, `${lang}: chat.autoLayoutFix`);
+  }
 
   console.log('  [genq] (d) Dart strings: a dead \\${…} is flagged; \\$${…} (a price with $) is not...');
   const dart = [

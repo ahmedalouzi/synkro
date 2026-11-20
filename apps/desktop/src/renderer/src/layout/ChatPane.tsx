@@ -346,14 +346,15 @@ export function ChatPane({ onOpenSettings: _onOpenSettings }: ChatPaneProps) {
       // Like the composer: nothing is sent while the agent is still working (a second Auto-Fix click sent the same
       // request twice in a row).
       if (useChatStore.getState().isStreaming) return;
-      const customEvent = e as CustomEvent<{ message: string; previewError?: string }>;
-      const { message, previewError } = customEvent.detail;
+      const customEvent = e as CustomEvent<{ message: string; previewError?: string; display?: string }>;
+      const { message, previewError, display } = customEvent.detail;
 
       const userMessageId = crypto.randomUUID();
       addMessage({
         id: userMessageId,
         role: 'user',
-        content: message,
+        // An automatic fix shows one short line; the agent gets the whole message.
+        content: display ?? message,
         createdAt: new Date().toISOString(),
       });
       setInput('');
@@ -826,7 +827,7 @@ export function ChatPane({ onOpenSettings: _onOpenSettings }: ChatPaneProps) {
                 }}
               />
               {isStreaming ? (
-                <button type="button" className="cx-send cx-send--stop" title="Stop" onClick={() => void window.peep.cancelAgent()}>
+                <button type="button" className="cx-send cx-send--stop" title="Stop" onClick={() => { useChatStore.getState().setLastRunInterrupted(true); void window.peep.cancelAgent(); }}>
                   <span className="cx-stop-square" />
                 </button>
               ) : (

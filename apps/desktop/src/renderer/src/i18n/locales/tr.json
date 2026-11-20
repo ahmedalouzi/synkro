@@ -496,7 +496,8 @@
     "planBuildFix": "Her şeyi planlayın, oluşturun, düzeltin",
     "emptyHint": "Dosya ve bağlam eklemek için @ · Komutlar için / · Ekranınızı göstermek için resim yapıştırın",
     "usedCredits": "{count} kredi kullanıldı",
-    "usedCredit": "1 kredi kullanıldı"
+    "usedCredit": "1 kredi kullanıldı",
+    "autoLayoutFix": "Bir yerleşim sorunu otomatik olarak düzeltiliyor…"
   },
   "preview": {
     "title": "ÖNİZLEME",

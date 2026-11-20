@@ -1357,5 +1357,6 @@ export { ProviderError } from './provider-error';
 export { syncedFolderOf, flutterEnvironmentMessage, parseFlutterEnvironmentProblem, FLUTTER_STARTUP_LOCK_LINE, type FlutterEnvironmentProblem } from './flutter-environment';
 export {
   escapedDartInterpolations, escapedInterpolationMessage, flutterErrorHint, describeFlutterError, failureSignature,
-  OncePerFailure, FailureGate, runtimeFixMessage, DART_PRICE_PATTERN, type EscapedInterpolation,
+  OncePerFailure, FailureGate, runtimeFixMessage, autoFixBlocked, DART_PRICE_PATTERN, type EscapedInterpolation,
+  type AutoFixContext, type AutoFixBlock,
 } from './generation-checks';

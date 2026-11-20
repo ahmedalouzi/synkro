@@ -1,5 +1,6 @@
 import { useI18n } from '../i18n';
-import { FailureGate, OncePerFailure, parseFlutterEnvironmentProblem, runtimeFixMessage, type PreviewRuntimeReport } from '@peep/shared';
+import { FailureGate, OncePerFailure, autoFixBlocked, parseFlutterEnvironmentProblem, runtimeFixMessage, type PreviewRuntimeReport } from '@peep/shared';
+import { useApprovalStore } from '../stores/approval-store';
 import { useChatStore } from '../stores/chat-store';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { usePreviewStore } from '../stores/preview-store';
@@ -334,13 +335,36 @@ Please modify the selected element and its corresponding component files as foll
     window.addEventListener('peep:preview-runtime', onRuntime);
     return () => window.removeEventListener('peep:preview-runtime', onRuntime);
   }, []);
+  // They use the user's credits: never with none left, never into a run that waits for an approval or that the user
+  // stopped or that failed (see autoFixBlocked). A blocked send is not counted, and the chat shows one short line.
   useEffect(() => {
     if (!project || agentBusy || runtimeErrors.length === 0) return;
-    const fresh = runtimeFixes.current.claimAll(runtimeErrors);
-    if (fresh.length === 0) return;
-    const { agentPaneOpen, toggleAgentPane } = useWorkspaceStore.getState();
-    if (!agentPaneOpen) toggleAgentPane();
-    window.dispatchEvent(new CustomEvent('peep:trigger-agent', { detail: { message: runtimeFixMessage(fresh) } }));
+    let cancelled = false;
+    void (async () => {
+      if (runtimeFixes.current.fresh(runtimeErrors).length === 0) return;
+      let creditsRemaining: number | undefined;
+      try {
+        creditsRemaining = (await window.peep.authGetAccount())?.creditsRemaining;
+      } catch {
+        creditsRemaining = undefined;
+      }
+      const chat = useChatStore.getState();
+      const blocked = autoFixBlocked({
+        agentBusy: chat.isStreaming,
+        pendingApprovals: useApprovalStore.getState().pending.length,
+        lastRunInterrupted: chat.lastRunInterrupted,
+        creditsRemaining,
+      });
+      if (cancelled || blocked) return;
+      const fresh = runtimeFixes.current.claimAll(runtimeErrors);
+      if (fresh.length === 0) return;
+      const { agentPaneOpen, toggleAgentPane } = useWorkspaceStore.getState();
+      if (!agentPaneOpen) toggleAgentPane();
+      window.dispatchEvent(new CustomEvent('peep:trigger-agent', {
+        detail: { message: runtimeFixMessage(fresh), display: t('chat.autoLayoutFix') },
+      }));
+    })();
+    return () => { cancelled = true; };
   }, [runtimeErrors, agentBusy, project]);
 
   const handleAutoHeal = () => {

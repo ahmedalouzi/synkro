@@ -65,8 +65,10 @@ export function usePeepEvents(): void {
         } else if (event.type === 'delta') {
           appendDelta(event.content);
         } else if (event.type === 'done') {
+          useChatStore.getState().setLastRunInterrupted(false);
           finishStreaming(event.creditsUsed);
         } else if (event.type === 'error') {
+          useChatStore.getState().setLastRunInterrupted(true);
           appendDelta(`\n\n⚠️ ${event.content}`);
           finishStreaming();
         }

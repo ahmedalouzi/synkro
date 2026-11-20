@@ -154,6 +154,32 @@ export class FailureGate {
   }
 }
 
+export interface AutoFixContext {
+  /** The agent is running. */
+  agentBusy: boolean;
+  /** Approval cards waiting for the user: the run is blocked on them. */
+  pendingApprovals: number;
+  /** The last run was stopped by the user or ended in an error: paused until the user sends something. */
+  lastRunInterrupted: boolean;
+  /** The account's credits (undefined: not known, e.g. Developer Mode with the user's own key). */
+  creditsRemaining?: number | null;
+}
+
+export type AutoFixBlock = 'busy' | 'approval' | 'paused' | 'no-credits';
+
+/**
+ * Why an automatic fix (a layout error the preview reported) must not be sent now, or null. Automatic sends use the
+ * user's credits: never with none left, never into a run that is blocked on an approval or that the user stopped or
+ * that failed, and never while a run is going.
+ */
+export function autoFixBlocked(c: AutoFixContext): AutoFixBlock | null {
+  if (c.agentBusy) return 'busy';
+  if (c.pendingApprovals > 0) return 'approval';
+  if (c.lastRunInterrupted) return 'paused';
+  if (typeof c.creditsRemaining === 'number' && c.creditsRemaining <= 0) return 'no-credits';
+  return null;
+}
+
 /** The message for Flutter errors the preview reported (sent once each, see OncePerFailure). */
 export function runtimeFixMessage(errors: string[]): string {
   return 'The running preview reported Flutter errors on screen (the user sees broken layout). Fix each one in the code, '
