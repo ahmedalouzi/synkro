@@ -1,5 +1,5 @@
 [Unit]
-Description=Synkro Automated Off-Site Database Backup Service
+Description=Synkro off-site database backup (encrypted with age, uploaded with a write-only key)
 After=network-online.target postgresql.service
 Wants=network-online.target
 
@@ -7,12 +7,19 @@ Wants=network-online.target
 Type=oneshot
 User=synkro
 Group=synkro
+# DATABASE_URL comes from the app's .env; the backup's own settings (bucket, write-only key, age public key) from
+# /etc/synkro/backup.env (root:synkro 0640). See docs/BACKUP_AND_MONITORING_RUNBOOK.md.
 Environment=ENV_FILE=/opt/synkro/.env
+Environment=BACKUP_ENV_FILE=/etc/synkro/backup.env
 ExecStart=/usr/local/bin/synkro-backup-offsite.sh
 StandardOutput=journal
 StandardError=journal
+# Low priority: the backup must not slow the API or the builds.
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=2h
 
-# Security Sandboxing
+# Sandboxing
 ProtectSystem=full
 ProtectHome=read-only
 ReadWritePaths=/var/backups/synkro
