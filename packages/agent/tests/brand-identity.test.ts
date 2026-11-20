@@ -324,7 +324,7 @@ flutter:
   }
   assert.equal(manifestJson.Tajawal.weights['600'], 700, 'Tajawal has no 600: its 700 is used, and recorded');
   const builder = fs.readFileSync(path.join(root, 'apps/desktop/electron-builder.yml'), 'utf8');
-  assert.match(builder, /extraResources:\n {2}- from: resources\/brand-fonts\n {4}to: brand-fonts/, 'in the installer, next to app.asar');
+  assert.match(builder, /extraResources:\r?\n {2}- from: resources\/brand-fonts\r?\n {4}to: brand-fonts/, 'in the installer, next to app.asar');
   const assets = fs.readFileSync(path.join(root, 'apps/desktop/src/main/services/brand-assets.ts'), 'utf8');
   assert.match(assets, /app\.isPackaged \? join\(process\.resourcesPath, 'brand-fonts'\) : join\(app\.getAppPath\(\), 'resources', 'brand-fonts'\)/);
   const service = fs.readFileSync(path.join(root, 'apps/desktop/src/main/services/brand-service.ts'), 'utf8');
