@@ -1,6 +1,6 @@
 {
   "name": "@peep/desktop",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "productName": "Atomvs",
   "description": "Atomvs desktop application",
@@ -44,7 +44,7 @@
     "react-resizable-panels": "^2.1.7",
     "react-virtuoso": "^4.18.12",
     "remark-gfm": "^4.0.1",
-    "simple-git": "^3.27.0",
+    "simple-git": "^4.1.0",
     "ws": "8.21.1",
     "zustand": "^5.0.2"
   },

@@ -1,10 +1,14 @@
 import { useI18n } from '../i18n';
-import { parseFlutterEnvironmentProblem } from '@peep/shared';
+import { FailureGate, OncePerFailure, autoFixBlocked, parseFlutterEnvironmentProblem, runtimeFixMessage, type PreviewRuntimeReport } from '@peep/shared';
+import { useApprovalStore } from '../stores/approval-store';
+import { useChatStore } from '../stores/chat-store';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { usePreviewStore } from '../stores/preview-store';
 import { useWorkspaceStore } from '../stores/workspace-store';
 import { PreviewAssembly } from '../features/preview/PreviewAssembly';
-import { DEVICES, deviceFinish, deviceGeometry, deviceTitle, fitZoom, type DeviceType } from '../features/preview/devices';
+import { DEVICES, deviceFinish, deviceGeometry, deviceTitle, type DeviceType } from '../features/preview/devices';
+import { ZOOM_MODES, loadZoomMode, previewZoom, saveZoomMode, type PreviewZoomMode } from '../features/preview/frame-svg';
+import { useDevicePixelRatio } from '../features/preview/useDevicePixelRatio';
 import { usePreviewSafeArea } from '../features/preview/usePreviewSafeArea';
 import { useComposerStore } from '../stores/composer-store';
 import './PreviewPane.css';
@@ -53,10 +57,28 @@ function getStoppedMsg(p: string) {
   return 'Preview stopped.';
 }
 
+/** localStorage, or null where it is blocked (reading it can throw). */
+function safeLocalStorage(): Storage | null {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
 export function PreviewPane() {
   const { t } = useI18n();
   const project = useWorkspaceStore((s) => s.project);
   const [scale, setScale] = useState(0.55);
+  // Fit (about 92 % of the stage height), 100 % or 125 %: the user's choice, remembered on this machine.
+  const [zoomMode, setZoomModeState] = useState<PreviewZoomMode>(() => loadZoomMode(safeLocalStorage()));
+  const zoomModeRef = useRef(zoomMode);
+  const dpr = useDevicePixelRatio();
+  const setZoomMode = (mode: PreviewZoomMode) => {
+    zoomModeRef.current = mode;
+    setZoomModeState(mode);
+    saveZoomMode(safeLocalStorage(), mode);
+  };
   const [connectedDevices, setConnectedDevices] = useState<any[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>('browser');
 
@@ -209,8 +231,13 @@ Please modify the selected element and its corresponding component files as foll
     const availW = el.clientWidth - 24;
     const availH = el.clientHeight - 28 - 26;
     if (availW < 10 || availH < 10) return;
-    setScale(fitZoom(deviceGeometry(d, landscapeRef.current), availW, availH, window.devicePixelRatio || 1));
+    setScale(previewZoom(zoomModeRef.current, deviceGeometry(d, landscapeRef.current), availW, availH, window.devicePixelRatio || 1));
   }, []);
+
+  // Another zoom mode, or another display scaling (the window moved to a 150 % screen): fit again.
+  useEffect(() => {
+    fitScale();
+  }, [zoomMode, dpr, fitScale]);
 
   useEffect(() => {
     fitScale();
@@ -303,8 +330,72 @@ Please modify the selected element and its corresponding component files as foll
   useEffect(() => {
     if (isDetached) lastDetachedKeyRef.current = detachedKey;
   }, [isDetached]);
+  // Auto-Fix Build: one request per failure (a second click, a double click, or a click while the agent works send
+  // nothing). A new failure (Retry, or a later error) allows it again.
+  const agentBusy = useChatStore((s) => s.isStreaming);
+  const fixGate = useRef(new FailureGate());
+  const [, setFixState] = useState(0);
+  const failedError = session?.status === 'error' ? session.error ?? '' : null;
+  useEffect(() => {
+    if (failedError === null) return;
+    fixGate.current.noteFailure();
+    setFixState((n) => n + 1);
+    // Keyed on the status and the error text, not the session object: the same failure reported twice is one.
+  }, [failedError, session?.status]);
+  const fixSent = fixGate.current.sent;
+
+  // Flutter errors the running preview reports (a RenderFlex overflow, an unbounded height): to the agent once
+  // each, at most 3 per project, and only while it is idle; the latest report wins (a fixed error is not sent).
+  const runtimeFixes = useRef(new OncePerFailure(3));
+  const [runtimeErrors, setRuntimeErrors] = useState<string[]>([]);
+  useEffect(() => {
+    runtimeFixes.current.reset();
+    setRuntimeErrors([]);
+  }, [project?.path]);
+  useEffect(() => {
+    const onRuntime = (e: Event) => {
+      const report = (e as CustomEvent<PreviewRuntimeReport>).detail;
+      setRuntimeErrors(report.errors.filter((x) => x.kind === 'flutter-error').map((x) => x.message));
+    };
+    window.addEventListener('peep:preview-runtime', onRuntime);
+    return () => window.removeEventListener('peep:preview-runtime', onRuntime);
+  }, []);
+  // They use the user's credits: never with none left, never into a run that waits for an approval or that the user
+  // stopped or that failed (see autoFixBlocked). A blocked send is not counted, and the chat shows one short line.
+  useEffect(() => {
+    if (!project || agentBusy || runtimeErrors.length === 0) return;
+    let cancelled = false;
+    void (async () => {
+      if (runtimeFixes.current.fresh(runtimeErrors).length === 0) return;
+      let creditsRemaining: number | undefined;
+      try {
+        creditsRemaining = (await window.peep.authGetAccount())?.creditsRemaining;
+      } catch {
+        creditsRemaining = undefined;
+      }
+      const chat = useChatStore.getState();
+      const blocked = autoFixBlocked({
+        agentBusy: chat.isStreaming,
+        pendingApprovals: useApprovalStore.getState().pending.length,
+        lastRunInterrupted: chat.lastRunInterrupted,
+        creditsRemaining,
+      });
+      if (cancelled || blocked) return;
+      const fresh = runtimeFixes.current.claimAll(runtimeErrors);
+      if (fresh.length === 0) return;
+      const { agentPaneOpen, toggleAgentPane } = useWorkspaceStore.getState();
+      if (!agentPaneOpen) toggleAgentPane();
+      window.dispatchEvent(new CustomEvent('peep:trigger-agent', {
+        detail: { message: runtimeFixMessage(fresh), display: t('chat.autoLayoutFix') },
+      }));
+    })();
+    return () => { cancelled = true; };
+  }, [runtimeErrors, agentBusy, project]);
+
   const handleAutoHeal = () => {
     if (!project || !session?.error) return;
+    if (!fixGate.current.claim(useChatStore.getState().isStreaming)) return;
+    setFixState((n) => n + 1);
     const { agentPaneOpen, toggleAgentPane } = useWorkspaceStore.getState();
     if (!agentPaneOpen) {
       toggleAgentPane();
@@ -477,7 +568,7 @@ Please modify the selected element and its corresponding component files as foll
               </button>
             </div>
           ) : (
-            <div className="preview-stage">
+            <div className={`preview-stage${zoomMode === 'fit' ? '' : ' is-zoomed'}`}>
               <div className="preview-device-label">
                 {/* The device picker, where the eye already is: the name above the phone (the toolbar's select is hidden). */}
                 <label className="preview-device-picker" title={t('titlebar.device')}>
@@ -496,6 +587,22 @@ Please modify the selected element and its corresponding component files as foll
                   </select>
                 </label>
                 {/* Finishes of this model (iPhones): small swatches, the choice remembered per model. */}
+                {/* Size of the phone: Fit / 100 % / 125 % (remembered). */}
+                <span className="preview-zoom" role="radiogroup" aria-label={t('preview.zoom')}>
+                  {ZOOM_MODES.map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      role="radio"
+                      aria-checked={zoomMode === m}
+                      className={`preview-zoom__opt${zoomMode === m ? ' is-on' : ''}`}
+                      data-testid={`preview-zoom-${m}`}
+                      onClick={() => setZoomMode(m)}
+                    >
+                      {m === 'fit' ? t('preview.zoomFit') : `${m}%`}
+                    </button>
+                  ))}
+                </span>
                 {device.finishes && (
                   <span className="preview-finish-picker" role="radiogroup" aria-label={t('titlebar.frameFinish')}>
                     {device.finishes.map((f) => (
@@ -514,16 +621,14 @@ Please modify the selected element and its corresponding component files as foll
                   </span>
                 )}
               </div>
-              {/* CSS zoom (not transform: scale): Chromium re-renders the iframe at the
-                  zoomed size so the app stays sharp, while it still sees the device's
-                  logical width (e.g. 393px). transform would stretch a 1x bitmap. */}
+              {/* The phone at its final size: the frame is drawn as vectors at width × height (no scaled bitmap,
+                  no transform); only the app inside uses CSS zoom, which Chromium re-renders at that size. */}
               <div className={`phone-scale-container${isRunning ? ' is-running' : ''}`} style={{
-                width: geometry.frame.width,
-                height: geometry.frame.height,
-                zoom: scale,
+                width: geometry.frame.width * scale,
+                height: geometry.frame.height * scale,
                 flexShrink: 0,
               }}>
-                <PreviewAssembly device={device} landscape={landscape} tone={tone} background={background} finish={frameFinish}>
+                <PreviewAssembly device={device} landscape={landscape} tone={tone} background={background} finish={frameFinish} zoom={scale} dpr={dpr}>
                   {session?.status === 'starting' && (
                     <div className="preview-placeholder">
                       <span className="preview-placeholder__icon preview-placeholder__spinner">⏳</span>
@@ -604,10 +709,10 @@ Please modify the selected element and its corresponding component files as foll
                       <button type="button" className="preview-retry-btn"
                         onClick={handleStart} disabled={!project}>Retry</button>
                       <button type="button" className="preview-retry-btn"
-                        onClick={handleAutoHeal} disabled={!project}
+                        onClick={handleAutoHeal} disabled={!project || agentBusy || fixSent}
                         style={{ marginLeft: '8px', background: 'var(--gold)', color: '#000', borderColor: 'var(--gold)' }}
                       >
-                        ✨ Auto-Fix Build
+                        {fixSent || agentBusy ? t('preview.autoFixWorking') : t('preview.autoFix')}
                       </button>
                     </div>
                   ) : null}

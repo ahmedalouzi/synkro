@@ -7,6 +7,18 @@ import { verifyApk, isDebugCertificate } from './apk-verify';
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
 import AdmZip from 'adm-zip';
+import { reportFailure, scrubString } from '@peep/shared';
+
+/**
+ * What a failed build's log says, for the error report: the last step it finished ("[STEP] <name> 1m02s") and its
+ * first error line, scrubbed and short. Never the whole log (it carries the user's code and file names).
+ * Exported for tests.
+ */
+export function buildFailureFacts(log: string): { lastStep: string; errorLine: string } {
+  const steps = [...log.matchAll(/^\[STEP\] (.+?) \d+m\d{2}s$/gm)].map((m) => m[1]);
+  const errorLine = log.split('\n').find((l) => /FAILURE:|What went wrong|\berror\b[:\s]|ERR!|Exception:/i.test(l)) ?? '';
+  return { lastStep: steps[steps.length - 1] ?? 'none', errorLine: scrubString(errorLine.trim()).slice(0, 200) };
+}
 
 // ---------------------------------------------------------------------------
 // RLS helper
@@ -387,6 +399,7 @@ export async function startBuildWorker() {
             }
           } catch (err: any) {
             console.error(`[BUILD_WORKER] Extraction failed for job ${job.id}:`, err);
+            reportFailure({ category: 'cloud-build', title: 'Project extraction failed', framework: job.framework, stage: 'extract', error: err });
             await withWorkerRole(async (c) => c.query(
               `UPDATE build_jobs SET status = 'failed', error_log = COALESCE(error_log, '') || $1, updated_at = NOW() WHERE id = $2`,
               [`Extraction Failed: ${err.message}\n`, job.id]
@@ -404,6 +417,7 @@ export async function startBuildWorker() {
             signingKey = await withWorkerRole((c) => getOrCreateSigningKey(c, job.user_id, job.project_id));
           } catch (err: any) {
             console.error(`[BUILD_WORKER] Signing key unavailable for job ${job.id}:`, err.message);
+            reportFailure({ category: 'cloud-build', title: 'Signing key unavailable', framework: job.framework, stage: 'signing-key', error: err });
             await withWorkerRole(async (c) => c.query(
               `UPDATE build_jobs SET status = 'failed', completed_at = NOW(), error_log = COALESCE(error_log, '') || $1, updated_at = NOW() WHERE id = $2`,
               [`[SIGNING] Release signing key unavailable: ${err.message}\n`, job.id]
@@ -498,6 +512,7 @@ export async function startBuildWorker() {
             }
 
             if (extracted && signingError) {
+              reportFailure({ category: 'cloud-build', title: 'Release signing check failed', framework: job.framework, stage: 'signing-check', error: signingError });
               await withWorkerRole(async (c) => c.query(
                 `UPDATE build_jobs SET status = 'failed', completed_at = NOW(), error_log = COALESCE(error_log, '') || $1, updated_at = NOW() WHERE id = $2 AND status != 'cancelled'`,
                 [`[SIGNING] Release signing check failed: ${signingError}\n`, job.id]
@@ -554,6 +569,7 @@ export async function startBuildWorker() {
                   ));
                 } else {
                   console.error(`[BUILD_WORKER] MinIO upload failed for job ${job.id}:`, uploadErr);
+                  reportFailure({ category: 'cloud-build', title: 'Artifact upload failed', framework: job.framework, stage: 'upload', error: uploadErr });
                   await withWorkerRole(async (c) => c.query(
                     `UPDATE build_jobs SET status = 'failed', completed_at = NOW(), error_log = COALESCE(error_log, '') || $1, updated_at = NOW() WHERE id = $2 AND status != 'cancelled'`,
                     [`[STORAGE] Artifact upload failed: ${uploadErr.message}\n`, job.id]
@@ -561,6 +577,7 @@ export async function startBuildWorker() {
                 }
               }
             } else {
+              reportFailure({ category: 'cloud-build', title: 'APK not found after a successful build', framework: job.framework, stage: 'artifact' });
               await withWorkerRole(async (c) => c.query(
                 `UPDATE build_jobs SET status = 'failed', completed_at = NOW(), error_log = COALESCE(error_log, '') || '[SYSTEM] Artifact extraction failed.\n', updated_at = NOW() WHERE id = $1 AND status != 'cancelled'`,
                 [job.id]
@@ -568,6 +585,11 @@ export async function startBuildWorker() {
             }
           } else if (!jobCancelled) {
             console.log(`[BUILD_WORKER] Job ${job.id} failed after ${buildDuration}ms.`);
+            const facts = buildFailureFacts(logsBuffer);
+            reportFailure({
+              category: 'cloud-build', title: 'Build failed', framework: job.framework, stage: 'build',
+              extra: { last_step_done: facts.lastStep, error_line: facts.errorLine, duration_s: Math.round(buildDuration / 1000) },
+            });
             await withWorkerRole(async (c) => c.query(
               `UPDATE build_jobs SET status = 'failed', completed_at = NOW(), updated_at = NOW() WHERE id = $1 AND status != 'cancelled'`,
               [job.id]

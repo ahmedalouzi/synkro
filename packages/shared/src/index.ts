@@ -14,6 +14,14 @@ export interface ProjectInfo {
   name: string;
   lastOpened: string;
   platform: PlatformTarget;
+  /**
+   * The project's brand signature (brand.json), kept on this device to keep brands apart (the last 20). Same format
+   * a server sync would use: fingerprint "v1:<sha256 hex>", font family, primary hue 0-359, ISO time.
+   */
+  brandFingerprint?: string;
+  brandFont?: string;
+  brandHue?: number;
+  brandUpdatedAt?: string;
 }
 
 export interface RnProjectInfo {
@@ -42,7 +50,8 @@ export interface PreviewSession {
 
 /** What the app in the preview iframe hit at runtime, and whether it shows anything (for the agent's checks). */
 export interface PreviewRuntimeReport {
-  errors: Array<{ kind: 'exception' | 'unhandled-rejection' | 'console.error'; message: string }>;
+  /** flutter-error: a FlutterError report from the Flutter preview entrypoint (overflow, unbounded size, build exception). */
+  errors: Array<{ kind: 'exception' | 'unhandled-rejection' | 'console.error' | 'flutter-error'; message: string }>;
   /** Visible content after load: text, images or a canvas in the app's root. */
   rendered: boolean;
   textChars: number;
@@ -181,7 +190,7 @@ export function parseProposedEditsPayload(payload: unknown): { edits: ProposedEd
   return { edits: edits as ProposedEdit[], ...(typeof threadId === 'string' ? { threadId } : {}) };
 }
 
-const RUNTIME_ERROR_KINDS = new Set(['exception', 'unhandled-rejection', 'console.error']);
+const RUNTIME_ERROR_KINDS = new Set(['exception', 'unhandled-rejection', 'console.error', 'flutter-error']);
 
 /**
  * A PreviewRuntimeReport from untrusted input (the app's page, then the renderer over IPC), or null:
@@ -855,6 +864,7 @@ export const IPC_CHANNELS = {
   PREVIEW_GET_SESSION: 'preview:getSession',
   PREVIEW_DETACH: 'preview:detach',
   PREVIEW_ATTACH: 'preview:attach',
+  PREVIEW_CLICK_THROUGH: 'preview:clickThrough',
   PREVIEW_IS_DETACHED: 'preview:isDetached',
   PREVIEW_SAMPLE_STRIPS: 'preview:sampleStrips',
   PREVIEW_RUNTIME_REPORT: 'preview:runtimeReport',
@@ -902,6 +912,8 @@ export const IPC_CHANNELS = {
   CLOUD_BUILD_CHECK_DEPS: 'cloudBuild:checkDeps',
   CLOUD_BUILD_FIX_DEPS: 'cloudBuild:fixDeps',
   CLOUD_BUILD_SHORT_LINK: 'cloudBuild:shortLink',
+  DOCTOR_RUN: 'doctor:run',
+  DOCTOR_FIX: 'doctor:fix',
 } as const;
 
 export interface ConnectedDevice {
@@ -1130,6 +1142,8 @@ export interface IpcApi {
   /** `frame` is the device frame size in CSS px, used to size the window to the device. */
   detachPreview: (deviceId?: string, frame?: { width: number; height: number }, landscape?: boolean) => Promise<void>;
   attachPreview: () => Promise<void>;
+  /** Detached preview window only: let clicks through to the desktop outside the phone's shape. */
+  setPreviewClickThrough?: (through: boolean) => Promise<void>;
   isPreviewDetached: () => Promise<boolean>;
   /**
    * The rendered pixels of strips of the calling window (CSS px, viewport coordinates), e.g. the preview's
@@ -1277,6 +1291,10 @@ export interface IpcApi {
   getCloudBuildDownloadToken?: (id: string) => Promise<{ token: string; downloadUrl: string; expiresAt: number }>;
   checkBuildDependencies?: (projectPath: string) => Promise<BuildDepsCheck>;
   fixBuildDependencies?: (projectPath: string) => Promise<BuildDepsCheck>;
+  /** Atomvs Doctor: checks this machine (and the open project, when given). Read-only. */
+  runDoctor?: (projectPath?: string) => Promise<import('./doctor').DoctorReport>;
+  /** Runs one of the main process's safe fixes (an id; the action itself is fixed in the main process). */
+  fixDoctor?: (fix: import('./doctor').DoctorMainFix, projectPath?: string) => Promise<import('./doctor').DoctorFixResult>;
   createCloudBuildShortLink?: (id: string) => Promise<{ url: string; expiresAt: number }>;
   onBuildLogChunk?: (callback: (payload: { id: string; chunk: string }) => void) => () => void;
   openSettingsWindow?: (section?: string) => Promise<void>;
@@ -1354,3 +1372,17 @@ export interface AIGateway {
 
 export { ProviderError } from './provider-error';
 export { syncedFolderOf, flutterEnvironmentMessage, parseFlutterEnvironmentProblem, FLUTTER_STARTUP_LOCK_LINE, type FlutterEnvironmentProblem } from './flutter-environment';
+export {
+  reportFailure, setFailureReporter, failureTags, failureFingerprint, scrubString, scrubEvent,
+  type FailureCategory, type FailureReport, type FailureReporter, type ReportEnvironment,
+} from './error-report';
+export {
+  evaluateDoctor, DOCTOR_MAIN_FIXES, DOCTOR_FIX_URLS,
+  type DoctorCheck, type DoctorCheckId, type DoctorStatus, type DoctorFix, type DoctorUiFix, type DoctorMainFix,
+  type DoctorReport, type DoctorFixResult, type DoctorProbes,
+} from './doctor';
+export {
+  escapedDartInterpolations, escapedInterpolationMessage, flutterErrorHint, describeFlutterError, failureSignature,
+  OncePerFailure, FailureGate, runtimeFixMessage, autoFixBlocked, DART_PRICE_PATTERN, type EscapedInterpolation,
+  type AutoFixContext, type AutoFixBlock,
+} from './generation-checks';

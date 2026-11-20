@@ -300,22 +300,7 @@ import { GoogleGeminiAdapter } from './google-adapter';
 import { creditLedgerService } from './credit-ledger';
 import { calculateModelCostUsd, costUsdToCredits } from './pricing';
 import type { AgentLogger } from '../orchestrator';
-
-export let Sentry: any = null;
-export let sentryLoadPromise: Promise<void> | null = null;
-export function ensureSentryLoaded() {
-  if (!sentryLoadPromise) {
-    sentryLoadPromise = import('@sentry/electron/main')
-      .then(m => { Sentry = m; })
-      .catch(() => { Sentry = null; });
-  }
-  return sentryLoadPromise;
-}
-
-export function _resetSentryLoaderForTest() {
-  Sentry = null;
-  sentryLoadPromise = null;
-}
+import { reportFailure } from '@peep/shared';
 
 export class BackendAIGateway {
   private adapters = new Map<string, ProviderAdapter>();
@@ -802,8 +787,7 @@ export class BackendAIGateway {
                 purpose,
               }).catch(async (usageErr: any) => {
                 self.logger.error('Failed to record streaming usage — financial data loss risk', { requestId, error: usageErr?.message });
-                await ensureSentryLoaded();
-                if (Sentry?.captureException) Sentry.captureException(usageErr, { tags: { requestId, path: '/v1/ai/stream' } });
+                reportFailure({ category: 'usage-accounting', title: 'Streaming usage not recorded', stage: 'stream-end', error: usageErr });
               });
 
               if (!isZeroOutputNonSuccess && credsUsed > 0) {
@@ -836,8 +820,7 @@ export class BackendAIGateway {
           purpose,
         }).catch(async (usageErr: any) => {
           this.logger.error('Failed to record stream error usage — financial data loss risk', { requestId, error: usageErr?.message });
-          await ensureSentryLoaded();
-          if (Sentry?.captureException) Sentry.captureException(usageErr, { tags: { requestId, path: '/v1/ai/stream' } });
+          reportFailure({ category: 'usage-accounting', title: 'Stream error usage not recorded', stage: 'stream-error', error: usageErr });
         });
         return { status: 502, headers: responseHeaders, body: this.mapError(e) };
       }

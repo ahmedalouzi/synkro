@@ -51,12 +51,12 @@
     "sdkPlaceholder": "/path/to/flutter",
     "back": "← Geri",
     "continue": "Devam Et →",
-    "privacyTitle": "Gizlilik ve Analitik",
-    "privacyDesc": "Anonim kullanım verilerini paylaşarak Atomvs'i geliştirmemize yardımcı olun. Bu tamamen isteğe bağlıdır.",
-    "enableAnalyticsTitle": "Analitiği etkinleştir",
-    "enableAnalyticsDesc": "Yalnızca yerel olarak depolanan anonim olaylar. Hiçbir kod veya kişisel veri gönderilmez.",
-    "disableAnalyticsTitle": "Hayır, teşekkürler",
-    "disableAnalyticsDesc": "Tamamen çevrimdışı. Bunu Ayarlar'dan istediğiniz zaman değiştirebilirsiniz.",
+    "consentTitle": "Hata raporları",
+    "consentSends": "Bir önizleme, Cloud Build veya ajan aracı başarısız olursa Atomvs, düzeltebilmemiz için hata türünü, uygulama sürümünü, işletim sistemini ve framework'ü gönderebilir.",
+    "consentNever": "Kodunuzu, dosya içeriklerini, istemlerinizi, anahtarlarınızı veya e-postanızı asla göndermez.",
+    "consentPolicy": "Gizlilik politikası (atomvs.com/privacy)",
+    "consentAllow": "İzin ver",
+    "consentNotNow": "Şimdi değil",
     "doneTitle": "Her şey hazır!",
     "doneDesc": "Mevcut bir Flutter projesini açın veya bir şablon ya da istemle yeni bir proje oluşturun.",
     "tip1": "Hızlı dosya açma",
@@ -193,6 +193,7 @@
       "tab": "Tab",
       "rules": "Kurallar",
       "sdk": "Mobil SDK'lar",
+      "doctor": "Doktor",
       "privacy": "Gizlilik",
       "beta": "Beta",
       "about": "Hakkında"
@@ -311,9 +312,103 @@
       "browse": "Gözat",
       "save": "Kaydet"
     },
+    "doctor": {
+      "title": "Atomvs Doktor",
+      "intro": "Bu bilgisayarda Flutter ve Expo'nun ihtiyaç duyduklarını kontrol eder. Bir düzeltme yalnızca bir ayar veya indirme sayfası açar ya da açık projenin paketlerini kurar.",
+      "run": "Tekrar kontrol et",
+      "running": "Kontrol ediliyor…",
+      "fixing": "Çalışıyor…",
+      "fixFailed": "Olmadı: {error}",
+      "status": {
+        "ok": "Tamam",
+        "warn": "Kontrol et",
+        "fail": "Sorun",
+        "skip": "Atlandı"
+      },
+      "fix": {
+        "open-sdk-settings": "Flutter klasörünü ayarla",
+        "retry": "Tekrar kontrol et",
+        "open-developer-settings": "Windows Ayarlarını aç",
+        "install-git": "Git'i indir",
+        "install-node": "Node.js'i indir",
+        "long-paths-guide": "Nasıl açılır",
+        "install-project-deps": "Paketleri kur"
+      },
+      "checks": {
+        "flutter-sdk": {
+          "title": "Flutter SDK",
+          "ok": "Flutter {version} bulundu.",
+          "warn": "Flutter kurulu değil. Flutter projeleri için gerekir (Expo için değil).",
+          "fail": "Bu bir Flutter projesi ama Atomvs Flutter'ı bulamıyor."
+        },
+        "flutter-sdk-location": {
+          "title": "Flutter klasörü",
+          "ok": "{path}",
+          "warn_synced": "Flutter, eşitleme sırasında dosyalarını kilitleyen {folder} içinde. C:\\src\\flutter gibi düz bir klasöre taşıyın.",
+          "warn_characters": "Flutter klasöründe boşluk veya İngilizce olmayan harfler var; bu, Flutter'ın Windows araçlarını bozar. C:\\src\\flutter gibi düz bir klasöre taşıyın.",
+          "skip": "Flutter klasörü ayarlandığında kontrol edilir."
+        },
+        "git": {
+          "title": "Git",
+          "ok": "Git {version}.",
+          "fail": "Git eksik. Flutter buna ihtiyaç duyar."
+        },
+        "node": {
+          "title": "Node.js",
+          "ok": "Node.js {version}.",
+          "warn": "Node.js kurulu değil. Expo projeleri için gerekir (Flutter için değil).",
+          "fail_missing": "Bu bir Expo projesi ama Node.js kurulu değil.",
+          "fail": "Node.js {version} çok eski. Expo 18 veya daha yeni bir sürüm ister."
+        },
+        "windows-developer-mode": {
+          "title": "Windows Geliştirici Modu",
+          "ok": "Açık. Flutter, eklentilerin ihtiyaç duyduğu bağlantıları oluşturabilir.",
+          "warn": "Kapalı. Eklenti kullanan Flutter uygulamaları, açılana kadar Windows'ta derlenemez.",
+          "skip": "Yalnızca Windows."
+        },
+        "windows-long-paths": {
+          "title": "Uzun dosya yolları",
+          "ok": "Açık.",
+          "warn": "Kapalı. node_modules veya Gradle içindeki derin klasörler \"path too long\" hatası verebilir. Açmak için yönetici gerekir.",
+          "skip": "Yalnızca Windows."
+        },
+        "home-path": {
+          "title": "Kullanıcı klasörü",
+          "ok": "Tamam.",
+          "warn": "Kullanıcı klasörünüzde ({path}) boşluk veya İngilizce olmayan harfler var; bu, Flutter'ın paket önbelleğini bozar. PUB_CACHE ortam değişkenini C:\\pub-cache gibi düz bir klasöre ayarlayın.",
+          "skip": "Yalnızca Windows."
+        },
+        "disk-space": {
+          "title": "Boş disk alanı",
+          "ok": "{gb} GB boş.",
+          "warn": "{gb} GB boş. Derlemeler yaklaşık 10 GB ister.",
+          "fail": "Yalnızca {gb} GB boş. 5 GB altında derlemeler başarısız olur.",
+          "skip": "Boş alan okunamadı."
+        },
+        "network": {
+          "title": "İnternet erişimi",
+          "ok": "pub.dev, npm ve Atomvs'e ulaşılabiliyor.",
+          "fail": "{hosts} adresine ulaşılamıyor. Bağlantınızı, proxy veya güvenlik duvarını kontrol edin."
+        },
+        "project-location": {
+          "title": "Proje klasörü",
+          "ok": "Tamam.",
+          "warn": "Bu proje, eşitleme sırasında dosyaları kilitleyen ve derlemeleri bozabilen {folder} içinde. Projeleri düz bir klasörde tutun.",
+          "skip": "Kontrol için bir proje açın."
+        },
+        "project-deps": {
+          "title": "Proje paketleri",
+          "ok": "Kurulu.",
+          "warn": "Henüz kurulmadı.",
+          "skip": "Kontrol için bir proje açın."
+        }
+      }
+    },
     "privacy": {
-      "title": "Anonim Kullanım Verileri",
-      "desc": "Atomvs'i geliştirmeye yardımcı olmak için özellik kullanımı ve kilitlenme sayılarını paylaşın. Asla kod, dosya adı veya kişisel veri içermez."
+      "title": "Hata raporları gönder",
+      "desc": "Bir önizleme, Cloud Build veya ajan aracı başarısız olduğunda Atomvs, düzeltebilmemiz için hata türünü, uygulama sürümünü, işletim sistemini ve framework'ü gönderir. Kodunuz, dosya içerikleri, istemleriniz, anahtarlarınız veya e-postanız asla gönderilmez; yollar ve gizli bilgiler bilgisayarınızdan çıkmadan önce silinir.",
+      "learnMore": "Gizlilik politikası",
+      "learnMoreDesc": "Neyin gönderildiği, ne kadar saklandığı ve nasıl kapatılacağı"
     },
     "beta": {
       "devMode": "Geliştirici Modu",
@@ -496,7 +591,8 @@
     "planBuildFix": "Her şeyi planlayın, oluşturun, düzeltin",
     "emptyHint": "Dosya ve bağlam eklemek için @ · Komutlar için / · Ekranınızı göstermek için resim yapıştırın",
     "usedCredits": "{count} kredi kullanıldı",
-    "usedCredit": "1 kredi kullanıldı"
+    "usedCredit": "1 kredi kullanıldı",
+    "autoLayoutFix": "Bir yerleşim sorunu otomatik olarak düzeltiliyor…"
   },
   "preview": {
     "title": "ÖNİZLEME",
@@ -514,7 +610,11 @@
       "notCode": "Bu, uygulamanızın kodundaki bir sorun değil.",
       "openSettings": "Flutter konumunu seç",
       "retry": "Yeniden dene"
-    }
+    },
+    "autoFix": "✨ Otomatik Düzelt",
+    "autoFixWorking": "Düzeltiliyor…",
+    "zoom": "Yakınlaştırma",
+    "zoomFit": "Sığdır"
   },
   "bottomPanel": {
     "terminal": "Terminal",

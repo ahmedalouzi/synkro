@@ -1,15 +1,18 @@
 // QA Edit Injection Test - Concurrent Modification Triggered!
-import { ipcMain, dialog, app, BrowserWindow, screen, Notification } from 'electron';
+import { ipcMain, dialog, app, BrowserWindow, screen, Notification, shell } from 'electron';
 import { handleWindowOpenSafely } from '../safe-external';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
-import { IPC_CHANNELS, IPC_EVENTS, parsePreviewRuntimeReport } from '@peep/shared';
+import { DOCTOR_FIX_URLS, DOCTOR_MAIN_FIXES, IPC_CHANNELS, IPC_EVENTS, parsePreviewRuntimeReport, type DoctorFixResult, type DoctorMainFix } from '@peep/shared';
+import { runDoctor } from '../services/doctor-service';
+import { openExternalSafely } from '../safe-external';
 import type { ClaudeIdeStatus, ClaudeIdeToolResult, InlineCompletionRequest, InlineEditRequest, Settings, SshTarget } from '@peep/shared';
 import { InlineEditService } from '../services/inline-edit-service';
 import { InlineCompletionService } from '../services/inline-completion-service';
 import { DatabaseService } from '../services/db';
 import { WorkspaceManager } from '../services/workspace-manager';
 import { ProcessManager } from '../services/process-manager';
+import { bundledFontsDir, rasterizeSvg } from '../services/brand-assets';
 import { ProcessRegistry } from '../services/process-registry';
 import { ApprovalService, ApprovalStore, registerApprovalIpc } from '../services/approval-service';
 import { FlutterService } from '../services/flutter-service';
@@ -132,6 +135,9 @@ async function onProjectOpened(
   fileWatcher.watch(projectPath, mainWindow, (events) => {
     setTimeout(() => {
       const session = previewManager.getSession();
+      // Not while the agent writes files: half-written code would flash "Preview failed". The agent checks the
+      // code compiles before it restarts the preview, and the run reloads it once when it ends.
+      if (agentSvc.isRunning()) return;
       if (session && session.processId && session.status === 'running') {
         provider.reloadPreview(session.processId);
       }
@@ -231,12 +237,23 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
   platformRegistry.register(rnService);
   
   // Register the managed provider
-  platformRegistry.register(new ReactNativeManagedProvider(processManager));
+  const rnManaged = new ReactNativeManagedProvider(processManager);
+  platformRegistry.register(rnManaged);
 
   publishService = new PublishService(processManager, platformRegistry);
   agentService = new AgentService(db, workspace, platformRegistry, terminalService);
   agentService.setMainWindow(mainWindow);
   agentService.setPreviewManager(previewManager);
+  // Brand identity: signatures on this device's project records; logo PNG by Chromium; fonts bundled with Atomvs.
+  const brandDb = db;
+  agentService.setBrandDeps({
+    store: {
+      recent: (excludePath, limit) => brandDb.recentBrands(excludePath, limit),
+      save: (projectPath, sig) => brandDb.saveBrandSignature(projectPath, sig),
+    },
+    rasterize: rasterizeSvg,
+    fontsDir: bundledFontsDir(),
+  });
   agentService.setOwnedPidsProvider(() => [...processManager.pids(), ...terminalService.pids()]);
   // The approval cards: the window shows them in the chat; a desktop notification when it is not focused.
   const approvals = new ApprovalService(
@@ -790,15 +807,17 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
 
   /** Detached window size that shows the whole device frame (portrait phones and wide foldables alike). */
   const detachedWindowSize = (frame?: { width: number; height: number }) => {
-    // DetachedPreview chrome: 44px header + 32px margin on each axis.
-    const chromeW = 32;
-    const chromeH = 44 + 32;
+    // DetachedPreview chrome, tight (DetachedPreview.css): 4 px at the sides, 6 px above the 44 px header, 6 px
+    // between it and the phone, 4 px below.
+    const chromeW = 8;
+    const chromeH = 6 + 44 + 6 + 4;
     if (!frame || frame.width <= 0 || frame.height <= 0) return { width: 400, height: 820 };
     const { workArea } = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
     const maxW = workArea.width * 0.8 - chromeW;
     const maxH = workArea.height * 0.85 - chromeH;
-    // Up to the device's natural (1x) size; smaller only when the screen can't fit it.
-    const scale = Math.min(1, maxW / frame.width, maxH / frame.height);
+    // A little larger than the device's natural (1x) size when the screen has room (the frame is vectors and the
+    // app is re-laid out, so it stays sharp); smaller only when the screen can't fit it.
+    const scale = Math.min(1.15, maxW / frame.width, maxH / frame.height);
     return {
       width: Math.round(frame.width * scale + chromeW),
       height: Math.round(frame.height * scale + chromeH),
@@ -838,10 +857,13 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
       minWidth: 240,
       minHeight: 320,
       title: 'Atomvs Mobile Preview',
+      // Transparent and frameless: only the phone and its header pill float on the desktop. Outside the phone's
+      // shape the window lets clicks through (PREVIEW_CLICK_THROUGH). No window shadow: it would outline the
+      // transparent rectangle.
       backgroundColor: '#00000000',
       transparent: true,
       frame: false,
-      hasShadow: true,
+      hasShadow: false,
       webPreferences: {
         preload: path.join(__dirname, '../preload/index.js'),
         sandbox: false,
@@ -864,6 +886,14 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
         previewManager.setSession({ ...session });
       }
     });
+  });
+
+  // The detached window lets clicks through outside the phone's shape (its renderer says where the pointer is);
+  // forward keeps mouse moves coming, so it can take the mouse back over the phone. Only that window may ask.
+  ipcMain.handle(IPC_CHANNELS.PREVIEW_CLICK_THROUGH, (event, through: unknown) => {
+    if (!previewWindow || previewWindow.isDestroyed() || event.sender !== previewWindow.webContents) return;
+    if (through === true) previewWindow.setIgnoreMouseEvents(true, { forward: true });
+    else previewWindow.setIgnoreMouseEvents(false);
   });
 
   ipcMain.handle(IPC_CHANNELS.PREVIEW_ATTACH, () => {
@@ -1438,6 +1468,36 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
   };
   ipcMain.handle(IPC_CHANNELS.CLOUD_BUILD_CHECK_DEPS, async (_event, projectPath: string) => checkBuildDeps(openProject(projectPath)));
   ipcMain.handle(IPC_CHANNELS.CLOUD_BUILD_FIX_DEPS, async (_event, projectPath: string) => fixBuildDeps(openProject(projectPath)));
+
+  // ── Atomvs Doctor ──────────────────────────────────────────────────────────
+  // The checks are read-only. A fix is an id from DOCTOR_MAIN_FIXES; the action is fixed here: a Windows settings
+  // page or a download page, or the open project's dependencies (the same install the preview runs). Nothing needs
+  // admin rights, writes the registry or stops a process.
+  ipcMain.handle(IPC_CHANNELS.DOCTOR_RUN, async (_event, projectPath?: string) => runDoctor({
+    detectFlutter: () => flutter.detectSdk(),
+    gatewayUrl: resolveGatewayUrl(db!.getSettingsRaw().gatewayUrl),
+    projectPath: projectPath ? openProject(projectPath) : null,
+  }));
+  ipcMain.handle(IPC_CHANNELS.DOCTOR_FIX, async (_event, fix: DoctorMainFix, projectPath?: string): Promise<DoctorFixResult> => {
+    if (!DOCTOR_MAIN_FIXES.includes(fix)) throw new Error('Unknown Doctor fix');
+    try {
+      if (fix === 'open-developer-settings') {
+        if (process.platform !== 'win32') return { ok: false, error: 'Windows only' };
+        await shell.openExternal('ms-settings:developers');
+      } else if (fix === 'install-project-deps') {
+        const project = openProject(projectPath ?? '');
+        if (fs.existsSync(path.join(project, 'pubspec.yaml'))) await flutter.pubGet(project);
+        else if (fs.existsSync(path.join(project, 'package.json'))) await rnManaged.installAndVerify(project);
+        else return { ok: false, error: 'Not a Flutter or React Native project' };
+      } else {
+        openExternalSafely(DOCTOR_FIX_URLS[fix]);
+      }
+      return { ok: true };
+    } catch (err) {
+      const text = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: text.split(/\r?\n/).filter(Boolean).slice(-6).join('\n').slice(0, 600) };
+    }
+  });
   ipcMain.handle(IPC_CHANNELS.CLOUD_BUILD_SHORT_LINK, async (_event, id: string) => {
     if (!cloudBuildService) throw new Error('Cloud build service not initialized');
     return cloudBuildService.createShortLink(id);

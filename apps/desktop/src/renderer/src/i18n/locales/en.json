@@ -51,12 +51,12 @@
     "sdkPlaceholder": "/path/to/flutter",
     "back": "← Back",
     "continue": "Continue →",
-    "privacyTitle": "Privacy & Analytics",
-    "privacyDesc": "Help improve Atomvs by sharing anonymous usage data. This is completely optional.",
-    "enableAnalyticsTitle": "Enable analytics",
-    "enableAnalyticsDesc": "Anonymous events stored locally only. No code or personal data is ever sent.",
-    "disableAnalyticsTitle": "No thanks",
-    "disableAnalyticsDesc": "Fully offline. You can change this anytime in Settings.",
+    "consentTitle": "Error reports",
+    "consentSends": "If a preview, a Cloud Build or an agent tool fails, Atomvs can send the error type, app version, OS and framework so we can fix it.",
+    "consentNever": "It never sends your code, file contents, prompts, keys or e-mail.",
+    "consentPolicy": "Privacy policy (atomvs.com/privacy)",
+    "consentAllow": "Allow",
+    "consentNotNow": "Not now",
     "doneTitle": "You're all set!",
     "doneDesc": "Open an existing Flutter project or create a new one from a template or prompt.",
     "tip1": "Quick file open",
@@ -193,6 +193,7 @@
       "tab": "Tab",
       "rules": "Rules",
       "sdk": "Mobile SDKs",
+      "doctor": "Doctor",
       "privacy": "Privacy",
       "beta": "Beta",
       "about": "About"
@@ -311,9 +312,103 @@
       "browse": "Browse",
       "save": "Save"
     },
+    "doctor": {
+      "title": "Atomvs Doctor",
+      "intro": "Checks this computer for what Flutter and Expo need. A fix only opens a settings or download page, or installs the open project's packages.",
+      "run": "Check again",
+      "running": "Checking…",
+      "fixing": "Working…",
+      "fixFailed": "That didn't work: {error}",
+      "status": {
+        "ok": "OK",
+        "warn": "Check",
+        "fail": "Problem",
+        "skip": "Skipped"
+      },
+      "fix": {
+        "open-sdk-settings": "Set Flutter folder",
+        "retry": "Check again",
+        "open-developer-settings": "Open Windows Settings",
+        "install-git": "Download Git",
+        "install-node": "Download Node.js",
+        "long-paths-guide": "How to turn it on",
+        "install-project-deps": "Install packages"
+      },
+      "checks": {
+        "flutter-sdk": {
+          "title": "Flutter SDK",
+          "ok": "Flutter {version} found.",
+          "warn": "Flutter isn't set up. You need it for Flutter projects (not for Expo).",
+          "fail": "This is a Flutter project, but Atomvs can't find Flutter."
+        },
+        "flutter-sdk-location": {
+          "title": "Flutter folder",
+          "ok": "{path}",
+          "warn_synced": "Flutter is inside {folder}, which locks its files while it syncs. Move it to a plain folder such as C:\\src\\flutter.",
+          "warn_characters": "The Flutter folder has spaces or non-English letters, which break Flutter's Windows tools. Move it to a plain folder such as C:\\src\\flutter.",
+          "skip": "Checked once Flutter's folder is set."
+        },
+        "git": {
+          "title": "Git",
+          "ok": "Git {version}.",
+          "fail": "Git is missing. Flutter needs it."
+        },
+        "node": {
+          "title": "Node.js",
+          "ok": "Node.js {version}.",
+          "warn": "Node.js isn't installed. You need it for Expo projects (not for Flutter).",
+          "fail_missing": "This is an Expo project, but Node.js isn't installed.",
+          "fail": "Node.js {version} is too old. Expo needs version 18 or newer."
+        },
+        "windows-developer-mode": {
+          "title": "Windows Developer Mode",
+          "ok": "On. Flutter can create the links its plugins need.",
+          "warn": "Off. Flutter apps that use plugins can't build on Windows until it's on.",
+          "skip": "Windows only."
+        },
+        "windows-long-paths": {
+          "title": "Long file paths",
+          "ok": "On.",
+          "warn": "Off. Deep folders in node_modules or Gradle can fail with \"path too long\". Turning it on needs an administrator.",
+          "skip": "Windows only."
+        },
+        "home-path": {
+          "title": "User folder",
+          "ok": "OK.",
+          "warn": "Your user folder ({path}) has spaces or non-English letters, which break Flutter's package cache. Set the PUB_CACHE environment variable to a plain folder such as C:\\pub-cache.",
+          "skip": "Windows only."
+        },
+        "disk-space": {
+          "title": "Free disk space",
+          "ok": "{gb} GB free.",
+          "warn": "{gb} GB free. Builds need about 10 GB.",
+          "fail": "Only {gb} GB free. Builds fail below 5 GB.",
+          "skip": "Couldn't read the free space."
+        },
+        "network": {
+          "title": "Internet access",
+          "ok": "pub.dev, npm and Atomvs are reachable.",
+          "fail": "Can't reach {hosts}. Check your connection, proxy or firewall."
+        },
+        "project-location": {
+          "title": "Project folder",
+          "ok": "OK.",
+          "warn": "This project is inside {folder}, which locks files while it syncs and can break builds. Keep projects in a plain folder.",
+          "skip": "Open a project to check it."
+        },
+        "project-deps": {
+          "title": "Project packages",
+          "ok": "Installed.",
+          "warn": "Not installed yet.",
+          "skip": "Open a project to check it."
+        }
+      }
+    },
     "privacy": {
-      "title": "Anonymous Usage Data",
-      "desc": "Share feature usage and crash counts to help improve Atomvs. Never includes code, file names or personal data."
+      "title": "Send error reports",
+      "desc": "When a preview, a Cloud Build or an agent tool fails, Atomvs sends the error type, app version, OS and framework so we can fix it. Never your code, file contents, prompts, keys or e-mail; paths and secrets are removed before anything leaves your computer.",
+      "learnMore": "Privacy policy",
+      "learnMoreDesc": "What is sent, how long it is kept, and how to turn it off"
     },
     "beta": {
       "devMode": "Developer Mode",
@@ -496,7 +591,8 @@
     "planBuildFix": "Plan, build, fix anything",
     "emptyHint": "@ to add files and context · / for commands · paste images to show the agent your screen",
     "usedCredits": "Used {count} credits",
-    "usedCredit": "Used 1 credit"
+    "usedCredit": "Used 1 credit",
+    "autoLayoutFix": "Fixing a layout problem automatically…"
   },
   "preview": {
     "title": "PREVIEW",
@@ -514,7 +610,11 @@
       "notCode": "This isn't a problem in your app's code.",
       "openSettings": "Choose Flutter location",
       "retry": "Retry"
-    }
+    },
+    "autoFix": "✨ Auto-Fix Build",
+    "autoFixWorking": "Fixing…",
+    "zoom": "Zoom",
+    "zoomFit": "Fit"
   },
   "bottomPanel": {
     "terminal": "Terminal",

@@ -1,0 +1,266 @@
+{
+  "Inter": {
+    "dir": "inter",
+    "weights": {
+      "400": 400,
+      "600": 600,
+      "700": 700
+    },
+    "license": "OFL-1.1",
+    "source": "https://github.com/google/fonts/tree/main/ofl/inter",
+    "fetched": "2026-11-20"
+  },
+  "Manrope": {
+    "dir": "manrope",
+    "weights": {
+      "400": 400,
+      "600": 600,
+      "700": 700
+    },
+    "license": "OFL-1.1",
+    "source": "https://github.com/google/fonts/tree/main/ofl/manrope",
+    "fetched": "2026-11-20"
+  },
+  "DM Sans": {
+    "dir": "dm-sans",
+    "weights": {
+      "400": 400,
+      "600": 600,
+      "700": 700
+    },
+    "license": "OFL-1.1",
+    "source": "https://github.com/google/fonts/tree/main/ofl/dmsans",
+    "fetched": "2026-11-20"
+  },
+  "Plus Jakarta Sans": {
+    "dir": "plus-jakarta-sans",
+    "weights": {
+      "400": 400,
+      "600": 600,
+      "700": 700
+    },
+    "license": "OFL-1.1",
+    "source": "https://github.com/google/fonts/tree/main/ofl/plusjakartasans",
+    "fetched": "2026-11-20"
+  },
+  "Outfit": {
+    "dir": "outfit",
+    "weights": {
+      "400": 400,
+      "600": 600,
+      "700": 700
+    },
+    "license": "OFL-1.1",
+    "source": "https://github.com/google/fonts/tree/main/ofl/outfit",
+    "fetched": "2026-11-20"
+  },
+  "Sora": {
+    "dir": "sora",
+    "weights": {
+      "400": 400,
+      "600": 600,
+      "700": 700
+    },
+    "license": "OFL-1.1",
+    "source": "https://github.com/google/fonts/tree/main/ofl/sora",
+    "fetched": "2026-11-20"
+  },
+  "Urbanist": {
+    "dir": "urbanist",
+    "weights": {
+      "400": 400,
+      "600": 600,
+      "700": 700
+    },
+    "license": "OFL-1.1",
+    "source": "https://github.com/google/fonts/tree/main/ofl/urbanist",
+    "fetched": "2026-11-20"
+  },
+  "Figtree": {
+    "dir": "figtree",
+    "weights": {
+      "400": 400,
+      "600": 600,
+      "700": 700
+    },
+    "license": "OFL-1.1",
+    "source": "https://github.com/google/fonts/tree/main/ofl/figtree",
+    "fetched": "2026-11-20"
+  },
+  "Lexend": {
+    "dir": "lexend",
+    "weights": {
+      "400": 400,
+      "600": 600,
+      "700": 700
+    },
+    "license": "OFL-1.1",
+    "source": "https://github.com/google/fonts/tree/main/ofl/lexend",
+    "fetched": "2026-11-20"
+  },
+  "Work Sans": {
+    "dir": "work-sans",
+    "weights": {
+      "400": 400,
+      "600": 600,
+      "700": 700
+    },
+    "license": "OFL-1.1",
+    "source": "https://github.com/google/fonts/tree/main/ofl/worksans",
+    "fetched": "2026-11-20"
+  },
+  "Nunito": {
+    "dir": "nunito",
+    "weights": {
+      "400": 400,
+      "600": 600,
+      "700": 700
+    },
+    "license": "OFL-1.1",
+    "source": "https://github.com/google/fonts/tree/main/ofl/nunito",
+    "fetched": "2026-11-20"
+  },
+  "Poppins": {
+    "dir": "poppins",
+    "weights": {
+      "400": 400,
+      "600": 600,
+      "700": 700
+    },
+    "license": "OFL-1.1",
+    "source": "https://github.com/google/fonts/tree/main/ofl/poppins",
+    "fetched": "2026-11-20"
+  },
+  "Rubik": {
+    "dir": "rubik",
+    "weights": {
+      "400": 400,
+      "600": 600,
+      "700": 700
+    },
+    "license": "OFL-1.1",
+    "source": "https://github.com/google/fonts/tree/main/ofl/rubik",
+    "fetched": "2026-11-20"
+  },
+  "Space Grotesk": {
+    "dir": "space-grotesk",
+    "weights": {
+      "400": 400,
+      "600": 600,
+      "700": 700
+    },
+    "license": "OFL-1.1",
+    "source": "https://github.com/google/fonts/tree/main/ofl/spacegrotesk",
+    "fetched": "2026-11-20"
+  },
+  "Lora": {
+    "dir": "lora",
+    "weights": {
+      "400": 400,
+      "600": 600,
+      "700": 700
+    },
+    "license": "OFL-1.1",
+    "source": "https://github.com/google/fonts/tree/main/ofl/lora",
+    "fetched": "2026-11-20"
+  },
+  "Playfair Display": {
+    "dir": "playfair-display",
+    "weights": {
+      "400": 400,
+      "600": 600,
+      "700": 700
+    },
+    "license": "OFL-1.1",
+    "source": "https://github.com/google/fonts/tree/main/ofl/playfairdisplay",
+    "fetched": "2026-11-20"
+  },
+  "Fraunces": {
+    "dir": "fraunces",
+    "weights": {
+      "400": 400,
+      "600": 600,
+      "700": 700
+    },
+    "license": "OFL-1.1",
+    "source": "https://github.com/google/fonts/tree/main/ofl/fraunces",
+    "fetched": "2026-11-20"
+  },
+  "Merriweather": {
+    "dir": "merriweather",
+    "weights": {
+      "400": 400,
+      "600": 600,
+      "700": 700
+    },
+    "license": "OFL-1.1",
+    "source": "https://github.com/google/fonts/tree/main/ofl/merriweather",
+    "fetched": "2026-11-20"
+  },
+  "Josefin Sans": {
+    "dir": "josefin-sans",
+    "weights": {
+      "400": 400,
+      "600": 600,
+      "700": 700
+    },
+    "license": "OFL-1.1",
+    "source": "https://github.com/google/fonts/tree/main/ofl/josefinsans",
+    "fetched": "2026-11-20"
+  },
+  "Quicksand": {
+    "dir": "quicksand",
+    "weights": {
+      "400": 400,
+      "600": 600,
+      "700": 700
+    },
+    "license": "OFL-1.1",
+    "source": "https://github.com/google/fonts/tree/main/ofl/quicksand",
+    "fetched": "2026-11-20"
+  },
+  "Cairo": {
+    "dir": "cairo",
+    "weights": {
+      "400": 400,
+      "600": 600,
+      "700": 700
+    },
+    "license": "OFL-1.1",
+    "source": "https://github.com/google/fonts/tree/main/ofl/cairo",
+    "fetched": "2026-11-20"
+  },
+  "Tajawal": {
+    "dir": "tajawal",
+    "weights": {
+      "400": 400,
+      "600": 700,
+      "700": 700
+    },
+    "license": "OFL-1.1",
+    "source": "https://github.com/google/fonts/tree/main/ofl/tajawal",
+    "fetched": "2026-11-20"
+  },
+  "IBM Plex Sans Arabic": {
+    "dir": "ibm-plex-sans-arabic",
+    "weights": {
+      "400": 400,
+      "600": 600,
+      "700": 700
+    },
+    "license": "OFL-1.1",
+    "source": "https://github.com/google/fonts/tree/main/ofl/ibmplexsansarabic",
+    "fetched": "2026-11-20"
+  },
+  "Noto Sans": {
+    "dir": "noto-sans",
+    "weights": {
+      "400": 400,
+      "600": 600,
+      "700": 700
+    },
+    "license": "OFL-1.1",
+    "source": "https://github.com/google/fonts/tree/main/ofl/notosans",
+    "fetched": "2026-11-20"
+  }
+}

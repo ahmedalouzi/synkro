@@ -80,6 +80,7 @@ const api: IpcApi = {
   detachPreview: (deviceId?: string, frame?: { width: number; height: number }, landscape?: boolean) =>
     ipcRenderer.invoke(IPC_CHANNELS.PREVIEW_DETACH, deviceId, frame, landscape) as Promise<void>,
   attachPreview: () => ipcRenderer.invoke(IPC_CHANNELS.PREVIEW_ATTACH) as Promise<void>,
+  setPreviewClickThrough: (through: boolean) => ipcRenderer.invoke(IPC_CHANNELS.PREVIEW_CLICK_THROUGH, through === true) as Promise<void>,
   isPreviewDetached: () => ipcRenderer.invoke(IPC_CHANNELS.PREVIEW_IS_DETACHED) as Promise<boolean>,
   samplePreviewStrips: (rects: Array<{ x: number; y: number; width: number; height: number }>) =>
     ipcRenderer.invoke(IPC_CHANNELS.PREVIEW_SAMPLE_STRIPS, rects) as Promise<Array<{ luminance: number; rgb: [number, number, number] } | null>>,
@@ -214,6 +215,8 @@ const api: IpcApi = {
   getCloudBuildDownloadToken: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.CLOUD_BUILD_DOWNLOAD_TOKEN, id),
   checkBuildDependencies: (projectPath: string) => ipcRenderer.invoke(IPC_CHANNELS.CLOUD_BUILD_CHECK_DEPS, projectPath),
   fixBuildDependencies: (projectPath: string) => ipcRenderer.invoke(IPC_CHANNELS.CLOUD_BUILD_FIX_DEPS, projectPath),
+  runDoctor: (projectPath?: string) => ipcRenderer.invoke(IPC_CHANNELS.DOCTOR_RUN, projectPath),
+  fixDoctor: (fix: string, projectPath?: string) => ipcRenderer.invoke(IPC_CHANNELS.DOCTOR_FIX, fix, projectPath),
   createCloudBuildShortLink: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.CLOUD_BUILD_SHORT_LINK, id),
   onBuildLogChunk: (callback: (payload: { id: string; chunk: string }) => void) => subscribe<{ id: string; chunk: string }>(IPC_EVENTS.BUILD_LOG_CHUNK, callback),
   openSettingsWindow: (section?: string) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_OPEN_WINDOW, section),

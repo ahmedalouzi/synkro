@@ -106,7 +106,11 @@ export default async function runTest() {
   const serverChains = forbiddenChains(['packages/agent/src/server.ts']);
   assert.ok(serverChains.some((c) => c.endsWith('→ pg')), 'the walker finds pg from @peep/agent/server');
 
-  console.log('  [desktop-bundle] The build checks its own output too...');
+  console.log('  [desktop-bundle] The brand code comes from its own entry, and the build is checked too...');
+  for (const rel of ['apps/desktop/src/main/services/brand-service.ts', 'apps/desktop/src/main/services/agent-service.ts']) {
+    const src = fs.readFileSync(path.join(root, rel), 'utf8');
+    assert.doesNotMatch(src, /\b(brandProblems|finalizeBrand|setBrand|flutterBrandTheme)\b[^;]*from '@peep\/agent';/, `${rel}: brand code from @peep/agent/brand`);
+  }
   const desktopPkg = JSON.parse(fs.readFileSync(path.join(root, 'apps/desktop/package.json'), 'utf8'));
   assert.match(desktopPkg.scripts.build, /electron-vite build && node scripts\/check-main-bundle\.mjs/);
   console.log('  🟢 Passed');

@@ -18,8 +18,12 @@ import { searchContent } from './content-search';
 import { resolveMentions } from './mention-resolver';
 import { createAIGateway } from './gateway-factory';
 import { CheckpointService } from './checkpoint-service';
+import { brandContext, hardcodedStyleWarning, migrateBrandFromDesignManifest, readBrand, setBrand, type BrandDeps } from './brand-service';
 import type { ApprovalService, ApprovalStore } from './approval-service';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { readFile as readFileAsync } from 'node:fs/promises';
+import { escapedDartInterpolations, escapedInterpolationMessage } from '@peep/shared';
+import { dartStringIssues, selfCheckErrors } from '@peep/agent';
 import { loadProjectRules } from './project-rules';
 
 /** Agent tools that change a file at `args.path` (captured for checkpoints). */
@@ -27,6 +31,12 @@ const FILE_WRITING_TOOLS = new Set(['patch_file', 'propose_file_edit', 'delete_f
 
 /** Maximum bytes of run_command output forwarded to the LLM as tool result. */
 const RUN_COMMAND_LLM_OUTPUT_LIMIT = 50_000;
+
+/** App source the screens live in: Dart under lib/, TS/JS under src/ or app/ (not the generated brand theme). */
+function isUiSource(relPath: string): boolean {
+  const p = relPath.replace(/\\/g, '/');
+  return /(^|\/)(lib\/.+\.dart|(src|app)\/.+\.(tsx?|jsx?))$/.test(p) && !/(^|\/)theme\/brand\.(dart|ts)$/.test(p);
+}
 
 /** package.json "scripts" of the project, so `npm run x` is judged by what x runs. */
 function packageScripts(projectPath: string): Record<string, string> | undefined {
@@ -105,6 +115,15 @@ export class AgentService {
   setApprovals(approvals: ApprovalService, store: ApprovalStore): void {
     this.approvals = approvals;
     this.approvalStore = store;
+  }
+
+  /** Brand identity: where signatures are kept (this device's project records) and how assets are made. */
+  private brandDeps: BrandDeps | null = null;
+  /** set_brand attempts per project in this run: a too-similar new brand is refused once, then saved. */
+  private brandAttempts = new Map<string, number>();
+
+  setBrandDeps(deps: BrandDeps): void {
+    this.brandDeps = deps;
   }
 
   setPreviewManager(preview: PreviewManager): void {
@@ -202,6 +221,14 @@ export class AgentService {
 
   }
 
+  /** The run changed files after its last restart_preview: reload the preview once when it ends. */
+  private reloadAfterRun = false;
+
+  /** A run is in progress (the file watcher leaves the preview alone meanwhile). */
+  isRunning(): boolean {
+    return this.abortController !== null;
+  }
+
   cancel(): void {
     this.abortController?.abort();
     this.abortController = null;
@@ -241,7 +268,24 @@ export class AgentService {
     });
   }
 
+  /**
+   * One agent request. Whatever goes wrong while it is prepared (context, project index, manifest) is shown in the
+   * chat as an error and the run ends cleanly: an exception must never escape to ipcMain.handle('agent:send'), where it
+   * became an unhandled "Error invoking remote method 'agent:send'" in the window.
+   */
   async send(options: AgentSendOptions): Promise<void> {
+    try {
+      await this.runSend(options);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      log.error(`[Agent] send failed before the run: ${message}`);
+      this.abortController = null;
+      this.mainWindow?.webContents.send(IPC_EVENTS.AGENT_PHASE_CHANGED, { phase: 'idle', threadId: options.threadId });
+      this.emitStream({ type: 'error', content: `The request could not be prepared: ${message}` }, options.threadId);
+    }
+  }
+
+  private async runSend(options: AgentSendOptions): Promise<void> {
     const projectPath = options.projectPath;
     const settings = this.db.getSettingsRaw();
 
@@ -327,12 +371,24 @@ export class AgentService {
       }
     }
 
-    // Load Design Manifest if it exists — inject into AI context for all UI tasks
+    // Brand identity (brand.json) and the Design Manifest's layout patterns, for every UI task. An older project with
+    // colors in .peep/design.json and no brand.json gets brand.json once, from those values (design.json is kept).
     let designManifestContext = '';
+    this.brandAttempts.clear();
     if (projectPath) {
       const designManifest = await loadDesignManifest(projectPath);
+      if (designManifest && this.brandDeps) {
+        const name = projectPath.split(/[\\/]/).filter(Boolean).pop() ?? 'App';
+        await migrateBrandFromDesignManifest(projectPath, name, designManifest, this.brandDeps.store).catch(() => false);
+      }
+      const brand = await readBrand(projectPath);
+      if (brand) designManifestContext += '\n\n' + brandContext(brand) + '\n\n';
       if (designManifest) {
-        designManifestContext = '\n\n' + serializeDesignManifest(designManifest) + '\n\n';
+        // Colors and fonts come from the brand; the manifest only adds its layout patterns.
+        const layoutOnly = brand
+          ? { ...designManifest, colors: undefined, typography: { ...(designManifest as any).typography, fontFamily: undefined } }
+          : designManifest;
+        designManifestContext += '\n\n' + serializeDesignManifest(layoutOnly as any) + '\n\n';
       }
     }
 
@@ -419,9 +475,48 @@ export class AgentService {
 
 
 
+    /**
+     * Around the file tools: a NEW app (scaffold) gets its brand before any screen, and a screen that hard-codes
+     * colors or fonts gets a note telling the agent to read them from the brand theme.
+     */
+    const brandAwareExecutor = {
+      execute: async (name: string, args: Record<string, unknown>): Promise<string> => {
+        const writesFile = ['write_file', 'propose_file_edit', 'patch_file'].includes(name) && typeof args.path === 'string';
+        if (!writesFile || !projectPath) return executor.execute(name, args);
+        const rel = String(args.path);
+        const isScreenCode = isUiSource(rel);
+        if (options.scaffoldMode && isScreenCode && !(await readBrand(projectPath))) {
+          return 'Not written: this is a new app and it has no brand yet. Call set_brand first (an original identity for this app idea: name, logo, colors, font, radii, illustration style, splash motion), then build the screens on the theme it generates.';
+        }
+        const out = await executor.execute(name, args);
+        if (isScreenCode && !/^(Error|Not )/.test(out) && (await readBrand(projectPath))) {
+          const content = typeof args.content === 'string' ? args.content : executor.lastProposedContent;
+          const warning = hardcodedStyleWarning(rel, content);
+          if (warning) return `${out}\n\n${warning}`;
+        }
+        return out;
+      },
+    };
+
     const executor = {
       lastOriginalContent: '',
       lastProposedContent: '',
+      // The engine's compile check (runAgentLoop runs it before the preview starts and before the run ends):
+      // validate_project's errors (flutter analyze / tsc --noEmit) plus Dart strings with a dead `\${…}`.
+      // null when it cannot run (no project, no SDK): the run is not blocked by a check that cannot happen.
+      selfCheck: async (): Promise<string[] | null> => {
+        if (!projectPath) return null;
+        const detection = await this.registry.detect(projectPath);
+        if (!detection.provider) return null;
+        const root = detection.projectRoot;
+        try {
+          const errors = selfCheckErrors(await detection.provider.validateProject(root));
+          if (existsSync(join(root, 'pubspec.yaml'))) errors.push(...await dartStringIssues(root));
+          return errors;
+        } catch {
+          return null;
+        }
+      },
       execute: async (name: string, args: Record<string, unknown>): Promise<string> => {
         console.log(`[E2E_VERIFICATION] 7. Tool Execution Requested by LLM: ${name}`);
         if (!projectPath) {
@@ -580,8 +675,36 @@ export class AgentService {
             await fsRename(oldPath, newPath);
             return `Renamed: ${args.oldPath} → ${args.newPath}`;
           }
+          case 'set_brand': {
+            if (!this.brandDeps) return 'Error: brand identity is not available in this session.';
+            const attempt = this.brandAttempts.get(projectPath) ?? 0;
+            this.brandAttempts.set(projectPath, attempt + 1);
+            const outcome = await setBrand(projectPath, args, this.brandDeps, attempt);
+            if (outcome.status === 'invalid') return `Error: the brand is not valid: ${outcome.problems.join('; ')}`;
+            if (outcome.status === 'too-similar') return `Not saved: ${outcome.message}`;
+            const b = outcome.brand;
+            const isFlutter = outcome.files.includes('lib/theme/brand.dart');
+            return [
+              `Brand saved: ${b.name} (${b.font}, ${b.illustration_style ?? 'no preset yet'}, fingerprint ${b.fingerprint.slice(0, 15)}…).`,
+              outcome.contrastChanges.length ? `Contrast fixed for WCAG AA: ${outcome.contrastChanges.join('; ')}.` : 'All color pairs pass WCAG AA.',
+              `Files: ${outcome.files.join(', ')}.`,
+              ...outcome.warnings,
+              isFlutter
+                ? 'Next: flutter pub get, then dart run flutter_native_splash:create (native splash). Screens use Theme.of(context) and Brand.* from lib/theme/brand.dart; MaterialApp(theme: Brand.theme()).'
+                : 'Next: screens use brand.* from src/theme/brand.ts; load the fonts with useFonts(brandFonts) from expo-font before the first screen.',
+            ].join('\n');
+          }
           case 'update_design_manifest': {
-            const incoming = args.manifest as any;
+            const incoming = { ...(args.manifest as any) };
+            // brand.json is the single source of colors and fonts: they are no longer written to design.json
+            // (older design.json files keep theirs; nothing is deleted).
+            const brandOwned: string[] = [];
+            if (incoming.colors) { delete incoming.colors; brandOwned.push('colors'); }
+            if (incoming.typography && 'fontFamily' in incoming.typography) {
+              incoming.typography = { ...incoming.typography };
+              delete incoming.typography.fontFamily;
+              brandOwned.push('typography.fontFamily');
+            }
             const existing = (await loadDesignManifest(projectPath) ?? {}) as any;
             // Merge deeply, with the AI's incoming manifest winning over existing fields.
             const merged = {
@@ -598,7 +721,8 @@ export class AgentService {
               version: (existing?.version ?? 0) + 1,
             } as any;
             await saveDesignManifest(projectPath, merged);
-            return `Design Manifest saved to .peep/design.json (v${merged.version}).`;
+            return `Design Manifest saved to .peep/design.json (v${merged.version}).`
+              + (brandOwned.length ? ` Not saved there: ${brandOwned.join(', ')}; colors and fonts are the brand's, change them with set_brand.` : '');
           }
           case 'patch_file': {
             if (!args.path || typeof args.oldText !== 'string' || typeof args.newText !== 'string') {
@@ -1072,6 +1196,26 @@ export class AgentService {
         }
       },
     };
+    // After a Dart file is written: a string with `\${…}` shows that text instead of the value (the analyzer accepts
+    // it), so say so right away. And remember that the preview needs a reload after the run (see send's finally).
+    const runTool = executor.execute;
+    executor.execute = async (name: string, args: Record<string, unknown>): Promise<string> => {
+      const output = await runTool(name, args);
+      if (name === 'restart_preview') this.reloadAfterRun = false;
+      if ((name === 'propose_file_edit' || name === 'patch_file') && !/^Error/.test(output)) {
+        this.reloadAfterRun = true;
+        const rel = String(args.path ?? '');
+        if (projectPath && rel.endsWith('.dart')) {
+          try {
+            const hits = escapedDartInterpolations(await readFileAsync(this.resolvePath(projectPath, rel), 'utf8'));
+            if (hits.length) return `${output}\n\nWarning: ${escapedInterpolationMessage(rel, hits)}`;
+          } catch {
+            // The write itself succeeded; the check is only a hint.
+          }
+        }
+      }
+      return output;
+    };
 
     const isComplex = !!(
       options.scaffoldMode || 
@@ -1146,10 +1290,11 @@ export class AgentService {
             sessionToken: settings.sessionToken || '',
             threadId: options.threadId,
             logger: agentLogger,
+            framework: mobileEnv?.framework,
           },
           systemContext,
           truncatedMessages.slice(1), // Remove the system message from initialMessages since runAgentLoop re-injects it
-          executor,
+          brandAwareExecutor,
           {
             onStatus: (message) => this.emitStream({ type: 'status', content: message }, options.threadId),
             onDelta: (text) => this.emitStream({ type: 'delta', content: text }, options.threadId),
@@ -1258,6 +1403,10 @@ export class AgentService {
       // Always reset the SM so the renderer returns to 'idle' even on error/cancel.
       sm.reset();
       this.abortController = null;
+      // The file watcher does not reload the preview while a run writes files (half-written code would show
+      // "Preview failed"); one reload now if the run changed files after its last restart_preview.
+      if (this.reloadAfterRun && this.preview?.getSession()?.status === 'running') this.preview.reload();
+      this.reloadAfterRun = false;
     }
   }
 }

@@ -3,6 +3,7 @@ import type { Settings } from '@peep/shared';
 import { useI18n, SUPPORTED_LOCALES } from '../../i18n';
 import { getCommand, isCommandEnabled, runCommand } from '../../commands/commands';
 import { useWorkspaceStore } from '../../stores/workspace-store';
+import { DoctorSection } from './DoctorSection';
 import { MODELS } from '../chat/models';
 import { openWebPage } from '../../config/web';
 import './SettingsModal.css';
@@ -13,14 +14,14 @@ import './SettingsModal.css';
  * real command or IPC call; toggles read the same state as the menus (commands.ts `checked`).
  */
 
-type SectionId = 'general' | 'usage' | 'models' | 'editor' | 'tab' | 'rules' | 'sdk' | 'privacy' | 'beta' | 'about';
+type SectionId = 'general' | 'usage' | 'models' | 'editor' | 'tab' | 'rules' | 'sdk' | 'doctor' | 'privacy' | 'beta' | 'about';
 
 type Account = NonNullable<Awaited<ReturnType<typeof window.peep.authGetAccount>>>;
 
 const NAV: { group: SectionId[] }[] = [
   { group: ['general'] },
   { group: ['usage'] },
-  { group: ['models', 'editor', 'tab', 'rules', 'sdk'] },
+  { group: ['models', 'editor', 'tab', 'rules', 'sdk', 'doctor'] },
   { group: ['privacy', 'beta', 'about'] },
 ];
 
@@ -32,6 +33,7 @@ const SECTION_LABELS: Record<SectionId, string> = {
   tab: 'Tab',
   rules: 'Rules',
   sdk: 'Mobile SDKs',
+  doctor: 'Doctor',
   privacy: 'Privacy',
   beta: 'Beta',
   about: 'About',
@@ -46,6 +48,7 @@ const ICONS: Record<SectionId | 'settings', ReactNode> = {
   tab: <><path d="M3 12h14M13 8l4 4-4 4M21 5v14" /></>,
   rules: <><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z" /><path d="M8 7h8M8 11h6" /></>,
   sdk: <><rect x="7" y="2" width="10" height="20" rx="2" /><path d="M11 18h2" /></>,
+  doctor: <><path d="M3 12h4l2-5 4 10 2-5h6" /></>,
   privacy: <><rect x="4" y="11" width="16" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></>,
   beta: <><path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.7 3h10.6a2 2 0 0 0 1.7-3l-5-9V3" /></>,
   about: <><circle cx="12" cy="12" r="9" /><path d="M12 11v5M12 8h0" /></>,
@@ -591,6 +594,8 @@ export function SettingsModal({ open, onClose, initialSection, standalone }: Set
       </Card>
     ),
 
+    doctor: <DoctorSection projectPath={project?.path ?? null} query={query} onOpenSdkSettings={() => setSection('sdk')} />,
+
     privacy: (
       <Card>
         <Row
@@ -599,6 +604,9 @@ export function SettingsModal({ open, onClose, initialSection, standalone }: Set
           query={query}
         >
           <Toggle checked={telemetryEnabled} onChange={(v) => void handleTelemetry(v)} />
+        </Row>
+        <Row title={t('settings.privacy.learnMore')} description={t('settings.privacy.learnMoreDesc')} query={query}>
+          <button type="button" className="sx-btn" onClick={() => openWebPage('privacy')}>{t('settings.account.open')}</button>
         </Row>
       </Card>
     ),
