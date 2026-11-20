@@ -214,6 +214,8 @@ const api: IpcApi = {
   getCloudBuildDownloadToken: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.CLOUD_BUILD_DOWNLOAD_TOKEN, id),
   checkBuildDependencies: (projectPath: string) => ipcRenderer.invoke(IPC_CHANNELS.CLOUD_BUILD_CHECK_DEPS, projectPath),
   fixBuildDependencies: (projectPath: string) => ipcRenderer.invoke(IPC_CHANNELS.CLOUD_BUILD_FIX_DEPS, projectPath),
+  runDoctor: (projectPath?: string) => ipcRenderer.invoke(IPC_CHANNELS.DOCTOR_RUN, projectPath),
+  fixDoctor: (fix: string, projectPath?: string) => ipcRenderer.invoke(IPC_CHANNELS.DOCTOR_FIX, fix, projectPath),
   createCloudBuildShortLink: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.CLOUD_BUILD_SHORT_LINK, id),
   onBuildLogChunk: (callback: (payload: { id: string; chunk: string }) => void) => subscribe<{ id: string; chunk: string }>(IPC_EVENTS.BUILD_LOG_CHUNK, callback),
   openSettingsWindow: (section?: string) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_OPEN_WINDOW, section),

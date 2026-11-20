@@ -902,6 +902,8 @@ export const IPC_CHANNELS = {
   CLOUD_BUILD_CHECK_DEPS: 'cloudBuild:checkDeps',
   CLOUD_BUILD_FIX_DEPS: 'cloudBuild:fixDeps',
   CLOUD_BUILD_SHORT_LINK: 'cloudBuild:shortLink',
+  DOCTOR_RUN: 'doctor:run',
+  DOCTOR_FIX: 'doctor:fix',
 } as const;
 
 export interface ConnectedDevice {
@@ -1277,6 +1279,10 @@ export interface IpcApi {
   getCloudBuildDownloadToken?: (id: string) => Promise<{ token: string; downloadUrl: string; expiresAt: number }>;
   checkBuildDependencies?: (projectPath: string) => Promise<BuildDepsCheck>;
   fixBuildDependencies?: (projectPath: string) => Promise<BuildDepsCheck>;
+  /** Atomvs Doctor: checks this machine (and the open project, when given). Read-only. */
+  runDoctor?: (projectPath?: string) => Promise<import('./doctor').DoctorReport>;
+  /** Runs one of the main process's safe fixes (an id; the action itself is fixed in the main process). */
+  fixDoctor?: (fix: import('./doctor').DoctorMainFix, projectPath?: string) => Promise<import('./doctor').DoctorFixResult>;
   createCloudBuildShortLink?: (id: string) => Promise<{ url: string; expiresAt: number }>;
   onBuildLogChunk?: (callback: (payload: { id: string; chunk: string }) => void) => () => void;
   openSettingsWindow?: (section?: string) => Promise<void>;
@@ -1354,3 +1360,8 @@ export interface AIGateway {
 
 export { ProviderError } from './provider-error';
 export { syncedFolderOf, flutterEnvironmentMessage, parseFlutterEnvironmentProblem, FLUTTER_STARTUP_LOCK_LINE, type FlutterEnvironmentProblem } from './flutter-environment';
+export {
+  evaluateDoctor, DOCTOR_MAIN_FIXES, DOCTOR_FIX_URLS,
+  type DoctorCheck, type DoctorCheckId, type DoctorStatus, type DoctorFix, type DoctorUiFix, type DoctorMainFix,
+  type DoctorReport, type DoctorFixResult, type DoctorProbes,
+} from './doctor';

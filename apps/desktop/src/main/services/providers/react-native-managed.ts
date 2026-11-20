@@ -544,7 +544,7 @@ export class ReactNativeManagedProvider extends FrameworkProvider {
    * package manager's output; so does one that exits 0 without installing the packages the app needs (a
    * project created on a half-finished install showed "Cannot find module 'react-native'" everywhere).
    */
-  private async installAndVerify(projectPath: string): Promise<void> {
+  async installAndVerify(projectPath: string): Promise<void> {
     const pm = await this.detectPackageManager(projectPath);
     const installCmd = process.platform === 'win32' ? `${pm}.cmd` : pm;
     const args = pm === 'npm' ? ['install', '--no-audit', '--no-fund'] : ['install'];
@@ -557,7 +557,9 @@ export class ReactNativeManagedProvider extends FrameworkProvider {
     if (code !== 0) {
       throw new Error(`${pm} install failed (exit code ${code}).${tail ? `\n${tail}` : ''}`);
     }
-    const missing = ['expo', 'react', 'react-native', 'typescript'].filter(
+    // typescript only for a TypeScript project (Atomvs creates those; an imported JS project has none).
+    const required = ['expo', 'react', 'react-native', ...(existsSync(join(projectPath, 'tsconfig.json')) ? ['typescript'] : [])];
+    const missing = required.filter(
       (pkg) => !existsSync(join(projectPath, 'node_modules', pkg, 'package.json')),
     );
     if (missing.length > 0) {
