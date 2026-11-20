@@ -1,9 +1,11 @@
 // QA Edit Injection Test - Concurrent Modification Triggered!
-import { ipcMain, dialog, app, BrowserWindow, screen, Notification } from 'electron';
+import { ipcMain, dialog, app, BrowserWindow, screen, Notification, shell } from 'electron';
 import { handleWindowOpenSafely } from '../safe-external';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
-import { IPC_CHANNELS, IPC_EVENTS, parsePreviewRuntimeReport } from '@peep/shared';
+import { DOCTOR_FIX_URLS, DOCTOR_MAIN_FIXES, IPC_CHANNELS, IPC_EVENTS, parsePreviewRuntimeReport, type DoctorFixResult, type DoctorMainFix } from '@peep/shared';
+import { runDoctor } from '../services/doctor-service';
+import { openExternalSafely } from '../safe-external';
 import type { ClaudeIdeStatus, ClaudeIdeToolResult, InlineCompletionRequest, InlineEditRequest, Settings, SshTarget } from '@peep/shared';
 import { InlineEditService } from '../services/inline-edit-service';
 import { InlineCompletionService } from '../services/inline-completion-service';
@@ -232,7 +234,8 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
   platformRegistry.register(rnService);
   
   // Register the managed provider
-  platformRegistry.register(new ReactNativeManagedProvider(processManager));
+  const rnManaged = new ReactNativeManagedProvider(processManager);
+  platformRegistry.register(rnManaged);
 
   publishService = new PublishService(processManager, platformRegistry);
   agentService = new AgentService(db, workspace, platformRegistry, terminalService);
@@ -1449,6 +1452,36 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
   };
   ipcMain.handle(IPC_CHANNELS.CLOUD_BUILD_CHECK_DEPS, async (_event, projectPath: string) => checkBuildDeps(openProject(projectPath)));
   ipcMain.handle(IPC_CHANNELS.CLOUD_BUILD_FIX_DEPS, async (_event, projectPath: string) => fixBuildDeps(openProject(projectPath)));
+
+  // ── Atomvs Doctor ──────────────────────────────────────────────────────────
+  // The checks are read-only. A fix is an id from DOCTOR_MAIN_FIXES; the action is fixed here: a Windows settings
+  // page or a download page, or the open project's dependencies (the same install the preview runs). Nothing needs
+  // admin rights, writes the registry or stops a process.
+  ipcMain.handle(IPC_CHANNELS.DOCTOR_RUN, async (_event, projectPath?: string) => runDoctor({
+    detectFlutter: () => flutter.detectSdk(),
+    gatewayUrl: resolveGatewayUrl(db!.getSettingsRaw().gatewayUrl),
+    projectPath: projectPath ? openProject(projectPath) : null,
+  }));
+  ipcMain.handle(IPC_CHANNELS.DOCTOR_FIX, async (_event, fix: DoctorMainFix, projectPath?: string): Promise<DoctorFixResult> => {
+    if (!DOCTOR_MAIN_FIXES.includes(fix)) throw new Error('Unknown Doctor fix');
+    try {
+      if (fix === 'open-developer-settings') {
+        if (process.platform !== 'win32') return { ok: false, error: 'Windows only' };
+        await shell.openExternal('ms-settings:developers');
+      } else if (fix === 'install-project-deps') {
+        const project = openProject(projectPath ?? '');
+        if (fs.existsSync(path.join(project, 'pubspec.yaml'))) await flutter.pubGet(project);
+        else if (fs.existsSync(path.join(project, 'package.json'))) await rnManaged.installAndVerify(project);
+        else return { ok: false, error: 'Not a Flutter or React Native project' };
+      } else {
+        openExternalSafely(DOCTOR_FIX_URLS[fix]);
+      }
+      return { ok: true };
+    } catch (err) {
+      const text = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: text.split(/\r?\n/).filter(Boolean).slice(-6).join('\n').slice(0, 600) };
+    }
+  });
   ipcMain.handle(IPC_CHANNELS.CLOUD_BUILD_SHORT_LINK, async (_event, id: string) => {
     if (!cloudBuildService) throw new Error('Cloud build service not initialized');
     return cloudBuildService.createShortLink(id);

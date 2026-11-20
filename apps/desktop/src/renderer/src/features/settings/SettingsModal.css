@@ -294,6 +294,8 @@
 .sx-status { font-size: 12px; }
 .sx-status--ok { color: #22a559; }
 .sx-status--warn { color: #e5a50a; }
+.sx-status--fail { color: #e5534b; }
+.sx-status--skip { color: var(--text-secondary); }
 
 .sx-meter { width: 200px; }
 .sx-meter__text { margin-bottom: 5px; text-align: right; font-size: 12px; }
