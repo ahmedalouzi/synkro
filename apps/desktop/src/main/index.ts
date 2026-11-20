@@ -1,8 +1,10 @@
 import './migrate-user-data';
 import { app, BrowserWindow, Menu } from 'electron';
 import { handleWindowOpenSafely } from './safe-external';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
+import { release } from 'node:os';
+import { failureFingerprint, failureTags, scrubEvent, setFailureReporter } from '@peep/shared';
 import { cleanupServices, processRegistry, registerIpcHandlers, setMainWindow } from './ipc';
 import { stopLeftoverProcesses } from './services/process-registry';
 import { config } from 'dotenv';
@@ -54,56 +56,58 @@ function readSavedTelemetryOptIn(): boolean {
 
 let telemetryEnabled = readSavedTelemetryOptIn();
 
+const REPORT_ENV = { appVersion: app.getVersion(), os: `${process.platform} ${release()} ${process.arch}` };
+
+// Turning reports off stops ALL sending. The gate is on the transport, the one way out: events, sessions, minidumps
+// and the envelopes the windows pass straight through (which skip beforeSend) all stop there. There is no disk
+// queue (the SDK's default offline transport sends saved events at the next start, whatever the setting), so nothing
+// captured before is sent later; a queue left by an older version is deleted.
+try {
+  rmSync(join(app.getPath('userData'), 'sentry', 'queue'), { recursive: true, force: true });
+} catch {
+  // ignore
+}
+
 Sentry.init({
   dsn: resolveSentryDsn(),
   enabled: telemetryEnabled,
-  beforeSend(event: any) {
-    if (!telemetryEnabled) {
-      return null;
-    }
-
-    if (event.request && event.request.data) {
-      delete event.request.data;
-    }
-    
-    const tokenRegex = /(Bearer\s+|session_token=)([a-zA-Z0-9\-_]+)/g;
-    const apiKeyRegex = /AIza[0-9A-Za-z\-_]{35}|sk-[a-zA-Z0-9]{48}|sk-ant-[a-zA-Z0-9\-_]{90,}/g;
-
-    const scrubString = (str: string) => {
-      if (!str) return str;
-      let res = str.replace(tokenRegex, '$1[REDACTED]');
-      res = res.replace(apiKeyRegex, '[REDACTED_API_KEY]');
-      res = res.replace(/(?:[A-Z]:\\[^\s]+|\/[^\s]+)[\\/]([^\s\\/]+)/g, '[REDACTED]/$1');
-      return res;
+  transport: (options) => {
+    const net = Sentry.makeElectronTransport(options);
+    return {
+      send: (envelope) => (telemetryEnabled ? net.send(envelope) : Promise.resolve({})),
+      flush: (timeout) => net.flush(timeout),
     };
-
-    if (event.breadcrumbs) {
-      event.breadcrumbs.forEach((bc: any) => {
-        if (bc.message) bc.message = scrubString(bc.message);
-        if (bc.data) {
-          for (const key in bc.data) {
-            if (typeof bc.data[key] === 'string') {
-              bc.data[key] = scrubString(bc.data[key]);
-            }
-          }
-        }
-      });
-    }
-
-    if (event.exception && event.exception.values) {
-      event.exception.values.forEach((val: any) => {
-        if (val.value) val.value = scrubString(val.value);
-      });
-    }
-    
-    return event;
+  },
+  release: `atomvs-desktop@${app.getVersion()}`,
+  environment: app.isPackaged ? 'production' : 'development',
+  sendDefaultPii: false,
+  initialScope: { tags: { app_version: REPORT_ENV.appVersion, os: REPORT_ENV.os } },
+  // Every event, from the main process and the windows, goes through the shared scrubber (packages/shared).
+  beforeSend(event: any) {
+    if (!telemetryEnabled) return null;
+    return scrubEvent(event);
   },
   beforeBreadcrumb(breadcrumb: any) {
-    if (!telemetryEnabled) {
-      return null;
-    }
+    if (!telemetryEnabled) return null;
     return breadcrumb;
   },
+});
+
+// Categorized failures (preview, agent tool crashes): fixed tags so they group by kind, framework, version and OS.
+setFailureReporter((report) => {
+  if (!telemetryEnabled) return;
+  Sentry.withScope((scope) => {
+    scope.setTags(failureTags(report, REPORT_ENV));
+    scope.setFingerprint(failureFingerprint(report));
+    if (report.extra) scope.setExtras(report.extra);
+    if (report.error instanceof Error) {
+      scope.setExtra('title', report.title);
+      Sentry.captureException(report.error);
+    } else {
+      if (report.error !== undefined) scope.setExtra('detail', String(report.error));
+      Sentry.captureMessage(report.title, 'error');
+    }
+  });
 });
 
 log.info(`[SENTRY] Initialized successfully (opt-in: ${telemetryEnabled})`);

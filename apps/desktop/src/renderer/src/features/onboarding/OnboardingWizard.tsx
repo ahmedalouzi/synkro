@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useI18n } from '../../i18n';
+import { openWebPage } from '../../config/web';
 import './OnboardingWizard.css';
 
 interface OnboardingWizardProps {
@@ -164,45 +165,27 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
           </div>
         )}
 
-        {/* ── Step: Telemetry ── */}
+        {/* ── Step: Error reports (consent; off until the user allows it) ── */}
         {step === 'telemetry' && (
           <div className="onboarding-step">
-            <h2>{t('onboarding.privacyTitle')}</h2>
-            <p className="onboarding-desc">
-              {t('onboarding.privacyDesc')}
-            </p>
-            <div className="onboarding-telemetry-cards">
-              <button
-                className={`telemetry-card ${telemetryChoice === true ? 'selected' : ''}`}
-                onClick={() => setTelemetryChoice(true)}
-              >
-                <span className="tc-icon">✓</span>
-                <div>
-                  <strong>{t('onboarding.enableAnalyticsTitle')}</strong>
-                  <p>{t('onboarding.enableAnalyticsDesc')}</p>
-                </div>
+            <h2>{t('onboarding.consentTitle')}</h2>
+            <p className="onboarding-desc">{t('onboarding.consentSends')}</p>
+            <p className="onboarding-desc">{t('onboarding.consentNever')}</p>
+            <button type="button" className="onboarding-link" onClick={() => openWebPage('privacy')}>
+              {t('onboarding.consentPolicy')}
+            </button>
+            {/* Two equal choices: same style, same size, nothing preselected. */}
+            <div className="onboarding-consent-choices">
+              <button type="button" className="onboarding-consent-btn" onClick={() => { setTelemetryChoice(true); setStep('done'); }}>
+                {t('onboarding.consentAllow')}
               </button>
-              <button
-                className={`telemetry-card ${telemetryChoice === false ? 'selected' : ''}`}
-                onClick={() => setTelemetryChoice(false)}
-              >
-                <span className="tc-icon">✗</span>
-                <div>
-                  <strong>{t('onboarding.disableAnalyticsTitle')}</strong>
-                  <p>{t('onboarding.disableAnalyticsDesc')}</p>
-                </div>
+              <button type="button" className="onboarding-consent-btn" onClick={() => { setTelemetryChoice(false); setStep('done'); }}>
+                {t('onboarding.consentNotNow')}
               </button>
             </div>
             <div className="onboarding-actions">
               <button className="onboarding-btn-ghost" onClick={() => setStep('sdk')}>
                 {t('onboarding.back')}
-              </button>
-              <button
-                className="onboarding-btn-primary"
-                onClick={() => setStep('done')}
-                disabled={telemetryChoice === null}
-              >
-                {t('onboarding.continue')}
               </button>
             </div>
           </div>

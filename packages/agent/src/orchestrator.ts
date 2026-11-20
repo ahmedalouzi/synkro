@@ -1,6 +1,6 @@
 import { OPENAI_TOOLS } from './tools/definitions';
 import { packagesAdded } from './tools/safety';
-import { ProviderError } from '@peep/shared';
+import { ProviderError, reportFailure } from '@peep/shared';
 import type { ChatMessage } from './types';
 
 import type { AIGateway, CapabilityTier, AgentTimelineActivity, AgentTimelineActivityType } from '@peep/shared';
@@ -20,6 +20,8 @@ export interface AgentConfig {
   threadId?: string;
   runId?: string;
   manualModel?: string;
+  /** The project's framework ('flutter', 'react-native'), for error reports. */
+  framework?: string;
 }
 
 export interface AgentCallbacks {
@@ -540,6 +542,8 @@ export async function runAgentLoop(
             const output = await executor.execute(singleCallName, singleCallArgs);
             return { role: 'tool' as const, tool_call_id: call.id, name: singleCallName, content: output };
           } catch (error) {
+            // A tool that throws crashed (an expected failure comes back as an "Error: …" result): report it.
+            reportFailure({ category: 'agent-tool', title: 'Agent tool crashed', framework: config.framework, stage: singleCallName, error });
             const message = error instanceof Error ? error.message : String(error);
             return { role: 'tool' as const, tool_call_id: call.id, name: singleCallName, content: `Error: ${message}` };
           }
