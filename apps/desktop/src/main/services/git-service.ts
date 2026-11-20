@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { access } from 'node:fs/promises';
 import { join } from 'node:path';
-import simpleGit, { type SimpleGit, type StatusResult } from 'simple-git';
+import { simpleGit, type SimpleGit, type StatusResult } from 'simple-git';
 import type { GitDiffResult, GitFileChange, GitStatusResult } from '@peep/shared';
 
 function mapStatus(file: StatusResult['files'][number]): GitFileChange {
