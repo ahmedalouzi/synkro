@@ -8,14 +8,14 @@
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
-    "build": "electron-vite build",
+    "build": "electron-vite build && node scripts/check-main-bundle.mjs",
     "preview": "electron-vite preview",
     "frame-lab": "vite --config frame-lab.vite.config.mts",
-    "package": "electron-vite build && electron-builder",
-    "publish:app": "electron-vite build && electron-builder --publish always",
-    "build:win": "electron-vite build && electron-builder --win",
-    "build:mac": "electron-vite build && electron-builder --mac",
-    "build:linux": "electron-vite build && electron-builder --linux",
+    "package": "electron-vite build && node scripts/check-main-bundle.mjs && electron-builder",
+    "publish:app": "electron-vite build && node scripts/check-main-bundle.mjs && electron-builder --publish always",
+    "build:win": "electron-vite build && node scripts/check-main-bundle.mjs && electron-builder --win",
+    "build:mac": "electron-vite build && node scripts/check-main-bundle.mjs && electron-builder --mac",
+    "build:linux": "electron-vite build && node scripts/check-main-bundle.mjs && electron-builder --linux",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json"
   },
   "dependencies": {
