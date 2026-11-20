@@ -51,12 +51,12 @@
     "sdkPlaceholder": "/path/to/flutter",
     "back": "← Geri",
     "continue": "Devam Et →",
-    "privacyTitle": "Gizlilik ve Analitik",
-    "privacyDesc": "Anonim kullanım verilerini paylaşarak Atomvs'i geliştirmemize yardımcı olun. Bu tamamen isteğe bağlıdır.",
-    "enableAnalyticsTitle": "Analitiği etkinleştir",
-    "enableAnalyticsDesc": "Yalnızca yerel olarak depolanan anonim olaylar. Hiçbir kod veya kişisel veri gönderilmez.",
-    "disableAnalyticsTitle": "Hayır, teşekkürler",
-    "disableAnalyticsDesc": "Tamamen çevrimdışı. Bunu Ayarlar'dan istediğiniz zaman değiştirebilirsiniz.",
+    "consentTitle": "Hata raporları",
+    "consentSends": "Bir önizleme, Cloud Build veya ajan aracı başarısız olursa Atomvs, düzeltebilmemiz için hata türünü, uygulama sürümünü, işletim sistemini ve framework'ü gönderebilir.",
+    "consentNever": "Kodunuzu, dosya içeriklerini, istemlerinizi, anahtarlarınızı veya e-postanızı asla göndermez.",
+    "consentPolicy": "Gizlilik politikası (atomvs.com/privacy)",
+    "consentAllow": "İzin ver",
+    "consentNotNow": "Şimdi değil",
     "doneTitle": "Her şey hazır!",
     "doneDesc": "Mevcut bir Flutter projesini açın veya bir şablon ya da istemle yeni bir proje oluşturun.",
     "tip1": "Hızlı dosya açma",
@@ -312,8 +312,10 @@
       "save": "Kaydet"
     },
     "privacy": {
-      "title": "Anonim Kullanım Verileri",
-      "desc": "Atomvs'i geliştirmeye yardımcı olmak için özellik kullanımı ve kilitlenme sayılarını paylaşın. Asla kod, dosya adı veya kişisel veri içermez."
+      "title": "Hata raporları gönder",
+      "desc": "Bir önizleme, Cloud Build veya ajan aracı başarısız olduğunda Atomvs, düzeltebilmemiz için hata türünü, uygulama sürümünü, işletim sistemini ve framework'ü gönderir. Kodunuz, dosya içerikleri, istemleriniz, anahtarlarınız veya e-postanız asla gönderilmez; yollar ve gizli bilgiler bilgisayarınızdan çıkmadan önce silinir.",
+      "learnMore": "Gizlilik politikası",
+      "learnMoreDesc": "Neyin gönderildiği, ne kadar saklandığı ve nasıl kapatılacağı"
     },
     "beta": {
       "devMode": "Geliştirici Modu",
