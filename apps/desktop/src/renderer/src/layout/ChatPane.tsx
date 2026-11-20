@@ -343,6 +343,9 @@ export function ChatPane({ onOpenSettings: _onOpenSettings }: ChatPaneProps) {
   /* ── Sending ── */
   useEffect(() => {
     const handleTriggerAgent = (e: Event) => {
+      // Like the composer: nothing is sent while the agent is still working (a second Auto-Fix click sent the same
+      // request twice in a row).
+      if (useChatStore.getState().isStreaming) return;
       const customEvent = e as CustomEvent<{ message: string; previewError?: string }>;
       const { message, previewError } = customEvent.detail;
 

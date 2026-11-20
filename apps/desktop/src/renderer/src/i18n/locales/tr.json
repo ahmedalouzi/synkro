@@ -514,7 +514,9 @@
       "notCode": "Bu, uygulamanızın kodundaki bir sorun değil.",
       "openSettings": "Flutter konumunu seç",
       "retry": "Yeniden dene"
-    }
+    },
+    "autoFix": "✨ Otomatik Düzelt",
+    "autoFixWorking": "Düzeltiliyor…"
   },
   "bottomPanel": {
     "terminal": "Terminal",

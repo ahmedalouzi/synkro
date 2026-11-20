@@ -250,7 +250,12 @@ export function pageShim(
     const media = root.querySelectorAll('img,svg,canvas,video').length;
     const state = {
       type: 'atomvs:runtime',
-      errors: runtimeErrors.slice(),
+      errors: (() => {
+        // A Flutter app: its preview entrypoint's FlutterError reports (window.__atomvsFlutterErrors).
+        const f = (window as any).__atomvsFlutterErrors;
+        const flutter = Array.isArray(f) ? f.filter((m: unknown) => typeof m === 'string').slice(-8).map((m: string) => ({ kind: 'flutter-error', message: m.slice(0, 1500) })) : [];
+        return [...runtimeErrors, ...flutter].slice(-12);
+      })(),
       rendered: root.childElementCount > 0 && (text.length > 0 || media > 0),
       textChars: text.length,
       overlay: OVERLAY.test(text) ? text.slice(0, 1500) : '',

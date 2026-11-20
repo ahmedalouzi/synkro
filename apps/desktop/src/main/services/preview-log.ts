@@ -1,4 +1,5 @@
 import type { PreviewSession, PreviewRuntimeReport } from '@peep/shared';
+import { describeFlutterError } from '@peep/shared';
 
 /** The preview's recent output (Expo/Metro, Flutter), kept so the agent can read it. Capped, oldest dropped. */
 export class PreviewLog {
@@ -72,7 +73,7 @@ export function formatPreviewReport(
         : 'Page: visible content NO: the screen is empty (blank or black).');
       if (runtime.errors.length) {
         parts.push(`Runtime errors in the page (${runtime.errors.length}, most recent last):\n`
-          + runtime.errors.map((e) => `[${e.kind}] ${e.message}`).join('\n'));
+          + runtime.errors.map((e) => `[${e.kind}] ${e.kind === 'flutter-error' ? describeFlutterError(e.message) : e.message}`).join('\n'));
       } else {
         parts.push('No runtime errors in the page.');
       }

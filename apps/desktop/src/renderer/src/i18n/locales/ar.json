@@ -514,7 +514,9 @@
       "notCode": "هذه ليست مشكلة في كود تطبيقك.",
       "openSettings": "اختر موقع Flutter",
       "retry": "إعادة المحاولة"
-    }
+    },
+    "autoFix": "✨ إصلاح تلقائي",
+    "autoFixWorking": "جارٍ الإصلاح…"
   },
   "bottomPanel": {
     "terminal": "الطرفية",

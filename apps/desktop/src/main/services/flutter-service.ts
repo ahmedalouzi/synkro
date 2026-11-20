@@ -1,7 +1,7 @@
 import { access, mkdir, readdir, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { FLUTTER_STARTUP_LOCK_LINE, flutterEnvironmentMessage, syncedFolderOf, type Diagnostic, type MobileEnvironment } from '@peep/shared';
+import { FLUTTER_STARTUP_LOCK_LINE, flutterEnvironmentMessage, parseFlutterEnvironmentProblem, syncedFolderOf, type Diagnostic, type MobileEnvironment, type ValidationResult } from '@peep/shared';
 import { getTemplate, parseFlutterAnalyze } from '@peep/flutter-adapter';
 import type { ProcessManager } from './process-manager';
 import { writePreviewEntry } from './flutter-preview-entry';
@@ -342,8 +342,45 @@ void main() {
     return 'This is a Flutter project running in a local environment.';
   }
 
-  async validateProject(_projectPath: string): Promise<any> {
-    return { success: true, framework: 'flutter', environment: 'local', checks: [], blockingErrors: 0, warnings: 0, errorCategory: 'success' };
+  /**
+   * `flutter analyze` on the project: its errors block (the app would not compile), warnings and infos do not.
+   * Throws when Flutter itself cannot run (no SDK, a locked or synced SDK), which is not the code's fault.
+   */
+  async validateProject(projectPath: string): Promise<ValidationResult> {
+    const root = await this.findFlutterRoot(projectPath);
+    let output: string;
+    let exitCode = 0;
+    try {
+      output = await this.runCommand(['analyze'], root);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      // Not the analyzer's report: Flutter could not run at all.
+      if (message === FLUTTER_SDK_NOT_FOUND_MSG || parseFlutterEnvironmentProblem(message)) throw error;
+      output = message;
+      exitCode = 1;
+    }
+    const diagnostics = parseFlutterAnalyze(output);
+    const errors = diagnostics.filter((d) => d.severity === 'error');
+    const lines = errors.map((d) => `${d.file}:${d.line}:${d.column}: error: ${d.message}`);
+    // A failed run that printed no diagnostics (e.g. pub get failed): its output is the error.
+    const unexplained = exitCode !== 0 && diagnostics.length === 0;
+    const ok = errors.length === 0 && !unexplained;
+    return {
+      success: ok,
+      framework: 'flutter',
+      environment: 'local',
+      checks: [{
+        type: 'flutter analyze',
+        success: ok,
+        exitCode,
+        stdout: lines.length ? lines.join('\n') : unexplained ? output.trim().split(/\r?\n/).slice(-15).join('\n') : 'No errors.',
+        stderr: '',
+        errors: lines,
+      }],
+      blockingErrors: unexplained ? 1 : errors.length,
+      warnings: diagnostics.filter((d) => d.severity === 'warning').length,
+      errorCategory: ok ? 'success' : 'compile_error',
+    };
   }
 
   stopPreview(processId: number): void {
