@@ -612,7 +612,9 @@
       "retry": "Retry"
     },
     "autoFix": "✨ Auto-Fix Build",
-    "autoFixWorking": "Fixing…"
+    "autoFixWorking": "Fixing…",
+    "zoom": "Zoom",
+    "zoomFit": "Fit"
   },
   "bottomPanel": {
     "terminal": "Terminal",

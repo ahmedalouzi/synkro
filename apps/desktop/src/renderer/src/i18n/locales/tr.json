@@ -612,7 +612,9 @@
       "retry": "Yeniden dene"
     },
     "autoFix": "✨ Otomatik Düzelt",
-    "autoFixWorking": "Düzeltiliyor…"
+    "autoFixWorking": "Düzeltiliyor…",
+    "zoom": "Yakınlaştırma",
+    "zoomFit": "Sığdır"
   },
   "bottomPanel": {
     "terminal": "Terminal",
