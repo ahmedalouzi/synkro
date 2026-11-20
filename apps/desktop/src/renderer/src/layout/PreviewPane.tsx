@@ -6,7 +6,9 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { usePreviewStore } from '../stores/preview-store';
 import { useWorkspaceStore } from '../stores/workspace-store';
 import { PreviewAssembly } from '../features/preview/PreviewAssembly';
-import { DEVICES, deviceFinish, deviceGeometry, deviceTitle, fitZoom, type DeviceType } from '../features/preview/devices';
+import { DEVICES, deviceFinish, deviceGeometry, deviceTitle, type DeviceType } from '../features/preview/devices';
+import { ZOOM_MODES, loadZoomMode, previewZoom, saveZoomMode, type PreviewZoomMode } from '../features/preview/frame-svg';
+import { useDevicePixelRatio } from '../features/preview/useDevicePixelRatio';
 import { usePreviewSafeArea } from '../features/preview/usePreviewSafeArea';
 import { useComposerStore } from '../stores/composer-store';
 import './PreviewPane.css';
@@ -55,10 +57,28 @@ function getStoppedMsg(p: string) {
   return 'Preview stopped.';
 }
 
+/** localStorage, or null where it is blocked (reading it can throw). */
+function safeLocalStorage(): Storage | null {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
 export function PreviewPane() {
   const { t } = useI18n();
   const project = useWorkspaceStore((s) => s.project);
   const [scale, setScale] = useState(0.55);
+  // Fit (about 92 % of the stage height), 100 % or 125 %: the user's choice, remembered on this machine.
+  const [zoomMode, setZoomModeState] = useState<PreviewZoomMode>(() => loadZoomMode(safeLocalStorage()));
+  const zoomModeRef = useRef(zoomMode);
+  const dpr = useDevicePixelRatio();
+  const setZoomMode = (mode: PreviewZoomMode) => {
+    zoomModeRef.current = mode;
+    setZoomModeState(mode);
+    saveZoomMode(safeLocalStorage(), mode);
+  };
   const [connectedDevices, setConnectedDevices] = useState<any[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>('browser');
 
@@ -211,8 +231,13 @@ Please modify the selected element and its corresponding component files as foll
     const availW = el.clientWidth - 24;
     const availH = el.clientHeight - 28 - 26;
     if (availW < 10 || availH < 10) return;
-    setScale(fitZoom(deviceGeometry(d, landscapeRef.current), availW, availH, window.devicePixelRatio || 1));
+    setScale(previewZoom(zoomModeRef.current, deviceGeometry(d, landscapeRef.current), availW, availH, window.devicePixelRatio || 1));
   }, []);
+
+  // Another zoom mode, or another display scaling (the window moved to a 150 % screen): fit again.
+  useEffect(() => {
+    fitScale();
+  }, [zoomMode, dpr, fitScale]);
 
   useEffect(() => {
     fitScale();
@@ -543,7 +568,7 @@ Please modify the selected element and its corresponding component files as foll
               </button>
             </div>
           ) : (
-            <div className="preview-stage">
+            <div className={`preview-stage${zoomMode === 'fit' ? '' : ' is-zoomed'}`}>
               <div className="preview-device-label">
                 {/* The device picker, where the eye already is: the name above the phone (the toolbar's select is hidden). */}
                 <label className="preview-device-picker" title={t('titlebar.device')}>
@@ -562,6 +587,22 @@ Please modify the selected element and its corresponding component files as foll
                   </select>
                 </label>
                 {/* Finishes of this model (iPhones): small swatches, the choice remembered per model. */}
+                {/* Size of the phone: Fit / 100 % / 125 % (remembered). */}
+                <span className="preview-zoom" role="radiogroup" aria-label={t('preview.zoom')}>
+                  {ZOOM_MODES.map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      role="radio"
+                      aria-checked={zoomMode === m}
+                      className={`preview-zoom__opt${zoomMode === m ? ' is-on' : ''}`}
+                      data-testid={`preview-zoom-${m}`}
+                      onClick={() => setZoomMode(m)}
+                    >
+                      {m === 'fit' ? t('preview.zoomFit') : `${m}%`}
+                    </button>
+                  ))}
+                </span>
                 {device.finishes && (
                   <span className="preview-finish-picker" role="radiogroup" aria-label={t('titlebar.frameFinish')}>
                     {device.finishes.map((f) => (
@@ -580,16 +621,14 @@ Please modify the selected element and its corresponding component files as foll
                   </span>
                 )}
               </div>
-              {/* CSS zoom (not transform: scale): Chromium re-renders the iframe at the
-                  zoomed size so the app stays sharp, while it still sees the device's
-                  logical width (e.g. 393px). transform would stretch a 1x bitmap. */}
+              {/* The phone at its final size: the frame is drawn as vectors at width × height (no scaled bitmap,
+                  no transform); only the app inside uses CSS zoom, which Chromium re-renders at that size. */}
               <div className={`phone-scale-container${isRunning ? ' is-running' : ''}`} style={{
-                width: geometry.frame.width,
-                height: geometry.frame.height,
-                zoom: scale,
+                width: geometry.frame.width * scale,
+                height: geometry.frame.height * scale,
                 flexShrink: 0,
               }}>
-                <PreviewAssembly device={device} landscape={landscape} tone={tone} background={background} finish={frameFinish}>
+                <PreviewAssembly device={device} landscape={landscape} tone={tone} background={background} finish={frameFinish} zoom={scale} dpr={dpr}>
                   {session?.status === 'starting' && (
                     <div className="preview-placeholder">
                       <span className="preview-placeholder__icon preview-placeholder__spinner">⏳</span>

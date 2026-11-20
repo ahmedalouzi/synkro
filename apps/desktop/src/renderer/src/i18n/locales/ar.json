@@ -612,7 +612,9 @@
       "retry": "إعادة المحاولة"
     },
     "autoFix": "✨ إصلاح تلقائي",
-    "autoFixWorking": "جارٍ الإصلاح…"
+    "autoFixWorking": "جارٍ الإصلاح…",
+    "zoom": "التكبير",
+    "zoomFit": "ملاءمة"
   },
   "bottomPanel": {
     "terminal": "الطرفية",

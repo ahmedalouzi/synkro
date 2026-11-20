@@ -864,6 +864,7 @@ export const IPC_CHANNELS = {
   PREVIEW_GET_SESSION: 'preview:getSession',
   PREVIEW_DETACH: 'preview:detach',
   PREVIEW_ATTACH: 'preview:attach',
+  PREVIEW_CLICK_THROUGH: 'preview:clickThrough',
   PREVIEW_IS_DETACHED: 'preview:isDetached',
   PREVIEW_SAMPLE_STRIPS: 'preview:sampleStrips',
   PREVIEW_RUNTIME_REPORT: 'preview:runtimeReport',
@@ -1141,6 +1142,8 @@ export interface IpcApi {
   /** `frame` is the device frame size in CSS px, used to size the window to the device. */
   detachPreview: (deviceId?: string, frame?: { width: number; height: number }, landscape?: boolean) => Promise<void>;
   attachPreview: () => Promise<void>;
+  /** Detached preview window only: let clicks through to the desktop outside the phone's shape. */
+  setPreviewClickThrough?: (through: boolean) => Promise<void>;
   isPreviewDetached: () => Promise<boolean>;
   /**
    * The rendered pixels of strips of the calling window (CSS px, viewport coordinates), e.g. the preview's

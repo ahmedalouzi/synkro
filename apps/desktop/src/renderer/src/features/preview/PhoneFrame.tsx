@@ -2,9 +2,10 @@ import './PhoneFrame.css';
 // Inter (SIL Open Font License), Latin, weight 500 only: the iOS status bar's time (Inter's 500 has about the stroke
 // weight of SF's Semibold, measured against the Simulator). Bundled with the app; no Apple fonts.
 import '@fontsource/inter/latin-500.css';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useId } from 'react';
 import type { DeviceConfig, DeviceGeometry, Finish } from './devices';
-import { bandRings, statusBarTime } from './frame-geometry';
+import { statusBarTime } from './frame-geometry';
+import { metalPalette, squirclePath, type FrameArt } from './frame-svg';
 import type { SystemBarTones } from './usePreviewSafeArea';
 
 export type { DeviceType } from './devices';
@@ -76,7 +77,6 @@ export function BatteryIcon({ level = 1 }: { level?: number }) {
   );
 }
 
-const btn = (b?: [number, number]) => (b ? { top: b[0], height: b[1] } : undefined);
 
 /** Space kept free at the outer end of each status-bar "ear" (the screen's rounded corner), in points. */
 const EAR_OUTER_INSET = 10;
@@ -85,88 +85,116 @@ const EAR_OUTER_INSET = 10;
 const DEFAULT_ISLAND = { width: 126, height: 37.33, top: 11.33 };
 
 /**
- * The chassis behind the screen, in portrait coordinates (the assembly rotates it for landscape):
- * the body, the side buttons and, on the iPhone SE, the speaker, camera and home button in the bezels.
+ * The device frame as one inline SVG at its final size (frame-svg.ts computes every shape in final CSS px): the
+ * body and the metal band, the black glass with the screen's opening, the side buttons, the Dynamic Island, the
+ * camera hole, and the SE's bezel parts. Each edge is drawn once, at the screen's resolution. Laid out in portrait;
+ * `art.rotate` turns it for landscape. Over the screen (the opening overlaps the app's edge by under a device pixel),
+ * never catching the pointer. Our own drawing: no Apple artwork.
  */
-export function ChassisBack({ device, geometry, finish }: { device: DeviceConfig; geometry: DeviceGeometry; finish?: Finish }) {
-  const { frame, screen } = geometry;
-  const side = device.os === 'ios' ? 'ios' : 'android';
-  const band = device.band ?? 0;
+export function FrameSvg({ art, finish }: { art: FrameArt; finish?: Finish }) {
+  const uid = useId().replace(/[^a-zA-Z0-9_-]/g, '');
+  const id = (name: string) => `pf-${uid}-${name}`;
+  const metal = art.band > 0;
+  const pal = metalPalette(finish);
+  const { width: W, height: H } = art.portrait;
+  const R = art.outerRadius;
+  const band = art.band;
+  // Lines a hair wider than a device pixel stay solid at any zoom.
+  const hairline = 0.9;
+  const lens = `url(#${id('lens')})`;
   return (
-    <div
-      className={`pf-body pf-body--${device.id}${band > 0 ? ' pf-body--metal' : ''}${finish?.dark ? ' pf-body--dark-metal' : ''}`}
-      style={{
-        width: frame.width, height: frame.height, borderRadius: device.frameRadius,
-        ...(finish ? { ['--pf-metal' as string]: finish.metal } : {}),
-        ...(band > 0 ? { ['--pf-band' as string]: `${band}px`, ['--pf-rings' as string]: bandRings(band) } : {}),
-      }}
-      data-finish={finish?.id}
-    >
-      {/* iPhones: a thin light metal band around a black glass border; the band is the body, this is the glass. */}
-      {band > 0 && (
-        <div className="pf-glass" style={{ inset: band, borderRadius: device.frameRadius - band }}>
-          {/* Earpiece: a long, faint slit where the glass meets the band at the top (Dynamic Island iPhones). */}
-          {device.cutout === 'dynamic-island' && <div className="pf-receiver" />}
-        </div>
-      )}
-      {side === 'ios' ? (
-        <>
-          {!device.homeButton && <div className="pf-btn pf-btn--mute" style={btn(device.buttons?.action)} />}
-          <div className="pf-btn pf-btn--vol-up" style={device.homeButton ? { top: 170 } : btn(device.buttons?.volUp)} />
-          <div className="pf-btn pf-btn--vol-down" style={device.homeButton ? { top: 240 } : btn(device.buttons?.volDown)} />
-          <div className="pf-btn pf-btn--power" style={device.homeButton ? { top: 170 } : btn(device.buttons?.power)} />
-        </>
-      ) : (
-        <>
-          <div className="pf-btn pf-btn--android-power" />
-          <div className="pf-btn pf-btn--android-vol-up" />
-          {!device.fold && <div className="pf-btn pf-btn--android-vol-down" />}
-        </>
-      )}
+    <svg className="pf-svg" width={art.width} height={art.height} viewBox={`0 0 ${art.width} ${art.height}`} aria-hidden="true" focusable="false">
+      <defs>
+        {/* The band's light: brighter top-left, falling off to the bottom-right (around the perimeter). */}
+        <linearGradient id={id('band')} x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor={pal.hi} />
+          <stop offset="0.28" stopColor={pal.lit} />
+          <stop offset="0.55" stopColor={pal.base} />
+          <stop offset="0.8" stopColor={pal.lit} />
+          <stop offset="1" stopColor={pal.lo} />
+        </linearGradient>
+        {/* A thin specular line along the top edge. */}
+        <linearGradient id={id('spec')} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#fff" stopOpacity={finish?.dark ? 0.35 : 0.55} />
+          <stop offset="0.06" stopColor="#fff" stopOpacity="0" />
+        </linearGradient>
+        <linearGradient id={id('btn-l')} x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stopColor={metal ? pal.base : '#2a2a2c'} />
+          <stop offset="0.45" stopColor={metal ? pal.hi : '#1e1e20'} />
+          <stop offset="1" stopColor={metal ? pal.lit : '#1a1a1c'} />
+        </linearGradient>
+        <linearGradient id={id('btn-r')} x1="1" y1="0" x2="0" y2="0">
+          <stop offset="0" stopColor={metal ? pal.base : '#2a2a2c'} />
+          <stop offset="0.45" stopColor={metal ? pal.hi : '#1e1e20'} />
+          <stop offset="1" stopColor={metal ? pal.lit : '#1a1a1c'} />
+        </linearGradient>
+        <radialGradient id={id('lens')} cx="0.38" cy="0.34" r="0.7">
+          <stop offset="0" stopColor="#0a2a4a" />
+          <stop offset="0.35" stopColor="#061420" />
+          <stop offset="0.6" stopColor="#020808" />
+          <stop offset="1" stopColor="#010404" />
+        </radialGradient>
+        <linearGradient id={id('hinge')} x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stopColor="#000" stopOpacity="0" />
+          <stop offset="0.5" stopColor="#000" stopOpacity="0.07" />
+          <stop offset="1" stopColor="#000" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <g transform={art.rotate || undefined}>
+        {/* Side buttons first: the body covers their inner ends. */}
+        {art.buttons.map((b, i) => (
+          <rect key={i} x={b.x} y={b.y} width={b.width} height={b.height}
+            rx={Math.min(b.width / 2, metal ? 1.25 : 3)} fill={`url(#${id(b.side === 'left' ? 'btn-l' : 'btn-r')})`} />
+        ))}
 
-      {device.homeButton && (
-        <>
-          {/* Earpiece and front camera above the screen. */}
-          <div className="pf-se-top" style={{ left: 0, right: 0, top: 0, height: screen.y }}>
-            <div className="pf-se-cam" />
-            <div className="pf-se-speaker" />
-          </div>
-          {/* Home button below the screen. */}
-          <div className="pf-se-bottom" style={{ left: 0, right: 0, top: screen.y + screen.height, bottom: 0 }}>
-            <div className="pf-se-home-ring" />
-          </div>
-        </>
-      )}
+        {/* The body (with the screen's opening). */}
+        <path className="pf-hit" d={art.body + art.opening} fillRule="evenodd" fill={metal ? pal.deep : '#111113'} />
+        {metal && (
+          <>
+            {/* The metal band: one gradient stroke along its centre line, then the crest, the bevel into the glass,
+                the outer edge and the specular line, each a single path. */}
+            <path d={art.bandPath} fill="none" stroke={`url(#${id('band')})`} strokeWidth={band} />
+            <path d={squirclePath(band * 0.45, band * 0.45, W - band * 0.9, H - band * 0.9, Math.max(0, R - band * 0.45))}
+              fill="none" stroke={pal.hi} strokeOpacity={finish?.dark ? 0.45 : 0.7} strokeWidth={band * 0.18} />
+            <path d={squirclePath(band * 0.86, band * 0.86, W - band * 1.72, H - band * 1.72, Math.max(0, R - band * 0.86))}
+              fill="none" stroke={pal.fall} strokeWidth={band * 0.28} />
+            <path d={art.body} fill="none" stroke={pal.edge} strokeWidth={hairline} />
+            <path d={art.body} fill="none" stroke={`url(#${id('spec')})`} strokeWidth={hairline * 1.4} />
+          </>
+        )}
+        {!metal && <path d={art.body} fill="none" stroke="#2a2a2c" strokeWidth={hairline} />}
 
-      {device.fold && <div className="pf-fold-cam" style={{ top: screen.y / 2, left: frame.width - screen.x / 2 - 40 }} />}
-    </div>
-  );
-}
+        {/* The black glass around the screen, with its faint 1 px edge. */}
+        {metal && (
+          <>
+            <path d={art.glass + art.opening} fillRule="evenodd" fill="#000" />
+            <path d={art.glass} fill="none" stroke="rgba(255,255,255,0.17)" strokeWidth={0.75} />
+          </>
+        )}
+        {art.receiver && <rect {...art.receiver} rx={art.receiver.height / 2} fill="#000" />}
 
-/** Cut-outs over the screen, in portrait coordinates: Dynamic Island, punch-hole camera, the foldable's crease. */
-export function ChassisFront({ device, geometry }: { device: DeviceConfig; geometry: DeviceGeometry }) {
-  const { frame, screen, safe } = geometry;
-  const island = device.island ?? DEFAULT_ISLAND;
-  return (
-    <div style={{ position: 'relative', width: frame.width, height: frame.height }}>
-      {device.cutout === 'dynamic-island' && (
-        <div
-          className="pf-dynamic-island"
-          style={{
-            width: island.width, height: island.height, borderRadius: island.height / 2,
-            left: screen.x + (screen.width - island.width) / 2, top: screen.y + island.top,
-          }}
-        >
-          <div className="pf-di-cam" />
-        </div>
-      )}
-      {device.cutout === 'punch-hole' && (
-        <div className="pf-punchhole" style={{ left: screen.x + screen.width / 2 - 6.5, top: screen.y + safe.top / 2 - 6.5 }} />
-      )}
-      {device.fold && (
-        <div className="pf-fold-hinge" style={{ left: screen.x + screen.width / 2 - 8, top: screen.y, height: screen.height }} />
-      )}
-    </div>
+        {art.se && (
+          <>
+            <rect {...art.se.speaker} rx={art.se.speaker.height / 2} fill="#151517" stroke="#1f1f22" strokeWidth={hairline} />
+            <circle {...art.se.camera} fill={lens} stroke="#000" strokeWidth={hairline} />
+            <circle {...art.se.home} fill="#050506" stroke="#3a3a3e" strokeWidth={Math.max(1, art.se.home.r / 15)} />
+          </>
+        )}
+        {art.island && (
+          <>
+            <rect x={art.island.x} y={art.island.y} width={art.island.width} height={art.island.height} rx={art.island.height / 2} fill="#000" />
+            <circle {...art.island.camera} fill={lens} />
+          </>
+        )}
+        {art.punchHole && <circle {...art.punchHole} fill={lens} stroke="#000" strokeWidth={art.punchHole.r * 0.3} />}
+        {art.fold && (
+          <>
+            <rect {...art.fold.hinge} fill={`url(#${id('hinge')})`} />
+            <circle {...art.fold.camera} fill={lens} />
+          </>
+        )}
+      </g>
+    </svg>
   );
 }
 

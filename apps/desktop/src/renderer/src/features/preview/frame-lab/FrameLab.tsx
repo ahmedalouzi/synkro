@@ -107,8 +107,8 @@ export function FrameLab() {
 
   const frame = (
     <div className="fl-frame" style={{ width: g.frame.width * zoom, height: g.frame.height * zoom }}>
-      <div style={{ zoom }}>
-        <PreviewAssembly device={device} landscape={landscape} tone={{ top: tone, bottom: tone }} background={appBg} finish={finish}
+      <div>
+        <PreviewAssembly device={device} landscape={landscape} zoom={zoom} tone={{ top: tone, bottom: tone }} background={appBg} finish={finish}
           statusOverride={params.get('time') || params.get('signal') ? { time: params.get('time') ?? undefined, signal: (params.get('signal') as 'none' | 'full' | null) ?? undefined } : undefined}>
           {APP_URL ? <AppFrame url={APP_URL} device={device} geometry={g} /> : (
             <div className="fl-app" style={{ background: appBg, color: tone === 'dark' ? '#000' : '#fff' }}>
