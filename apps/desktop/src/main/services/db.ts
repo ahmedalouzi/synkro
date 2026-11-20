@@ -131,11 +131,32 @@ export class DatabaseService {
   async upsertProject(project: ProjectInfo): Promise<void> {
     const index = this.data.projects.findIndex((p) => p.path === project.path);
     if (index >= 0) {
-      this.data.projects[index] = project;
+      // Merge: opening a project must not drop what is stored on its record (e.g. its brand signature).
+      this.data.projects[index] = { ...this.data.projects[index], ...project };
     } else {
       this.data.projects.push(project);
     }
     await this.persist();
+  }
+
+  /** The brand signatures of this device's projects, newest brand first, without `excludePath`. */
+  recentBrands(excludePath: string, limit = 20): Array<{ projectPath: string; projectName: string; fingerprint: string; font: string; hue: number; updatedAt: string }> {
+    return this.data.projects
+      .filter((p) => p.path !== excludePath && p.brandFingerprint && p.brandFont && typeof p.brandHue === 'number')
+      .sort((a, b) => (b.brandUpdatedAt ?? '').localeCompare(a.brandUpdatedAt ?? ''))
+      .slice(0, limit)
+      .map((p) => ({ projectPath: p.path, projectName: p.name, fingerprint: p.brandFingerprint!, font: p.brandFont!, hue: p.brandHue!, updatedAt: p.brandUpdatedAt ?? '' }));
+  }
+
+  /** Stores a project's brand signature on its record (fire and forget: the brand itself is in brand.json). */
+  saveBrandSignature(projectPath: string, sig: { fingerprint: string; font: string; hue: number }): void {
+    const project = this.data.projects.find((p) => p.path === projectPath);
+    if (!project) return;
+    project.brandFingerprint = sig.fingerprint;
+    project.brandFont = sig.font;
+    project.brandHue = sig.hue;
+    project.brandUpdatedAt = new Date().toISOString();
+    void this.persist();
   }
 
   getRecentProjects(limit = 10): ProjectInfo[] {

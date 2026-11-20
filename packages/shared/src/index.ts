@@ -14,6 +14,14 @@ export interface ProjectInfo {
   name: string;
   lastOpened: string;
   platform: PlatformTarget;
+  /**
+   * The project's brand signature (brand.json), kept on this device to keep brands apart (the last 20). Same format
+   * a server sync would use: fingerprint "v1:<sha256 hex>", font family, primary hue 0-359, ISO time.
+   */
+  brandFingerprint?: string;
+  brandFont?: string;
+  brandHue?: number;
+  brandUpdatedAt?: string;
 }
 
 export interface RnProjectInfo {
