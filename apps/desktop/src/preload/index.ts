@@ -80,6 +80,7 @@ const api: IpcApi = {
   detachPreview: (deviceId?: string, frame?: { width: number; height: number }, landscape?: boolean) =>
     ipcRenderer.invoke(IPC_CHANNELS.PREVIEW_DETACH, deviceId, frame, landscape) as Promise<void>,
   attachPreview: () => ipcRenderer.invoke(IPC_CHANNELS.PREVIEW_ATTACH) as Promise<void>,
+  setPreviewClickThrough: (through: boolean) => ipcRenderer.invoke(IPC_CHANNELS.PREVIEW_CLICK_THROUGH, through === true) as Promise<void>,
   isPreviewDetached: () => ipcRenderer.invoke(IPC_CHANNELS.PREVIEW_IS_DETACHED) as Promise<boolean>,
   samplePreviewStrips: (rects: Array<{ x: number; y: number; width: number; height: number }>) =>
     ipcRenderer.invoke(IPC_CHANNELS.PREVIEW_SAMPLE_STRIPS, rects) as Promise<Array<{ luminance: number; rgb: [number, number, number] } | null>>,

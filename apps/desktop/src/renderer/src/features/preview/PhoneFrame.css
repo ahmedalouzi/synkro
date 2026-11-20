@@ -1,96 +1,37 @@
 /* ═══════════════════════════════════════════════════════════════════
    DEVICE FRAMES
    Geometry (viewport, safe areas, bezels) comes from devices.ts; this file only draws.
-   Chassis layers are laid out in portrait and rotated by PreviewAssembly for landscape.
+   The chassis is one SVG at its final size (FrameSvg, frame-svg.ts); this file styles the screen's overlays.
 ═══════════════════════════════════════════════════════════════════ */
 
-/* ── Chassis body ────────────────────────────────────────────────── */
-.pf-body {
-  position: relative;
-  background: #000;
-  box-shadow: 0 0 0 1px #2a2a2c, 0 18px 50px rgba(0, 0, 0, 0.55);
+/* ── The frame: one SVG at its final size (PhoneFrame.tsx FrameSvg, shapes from frame-svg.ts) ──────────────
+   No CSS boxes, rings or transforms for the chassis: each edge is a path, drawn once at the screen's resolution. */
+.pf-svg {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 2;
+  overflow: visible;
+  pointer-events: none;
 }
 
-/* ── iPhones: the metal band (the body) around the black glass ─────────────────────────────────
-   Everything derives from one colour, --pf-metal (the finish, devices.ts), with color-mix:
-   - across the band's thickness, a rounded profile: dark outer edge → bright crest → mid tone → inner edge;
-   - around the perimeter, faint environment reflections (a conic gradient), lighter at the top left;
-   - a thin specular highlight along the top edge, a hairline outline, and soft layered shadows for the dark IDE:
-     contact + ambient, plus a faint purple/blue rim light from the scene.
-   All static (no animated filters or blur), vector, crisp at any zoom. */
-.pf-body--metal {
-  --pf-metal: #bdb7ad;
-  --pf-band: 5px;
-  --pf-m-hi: color-mix(in oklab, var(--pf-metal), #fff3e2 68%);
-  --pf-m-fall: color-mix(in oklab, var(--pf-metal), black 48%);
-  --pf-m-deep: color-mix(in oklab, var(--pf-metal), black 80%);
-  --pf-m-lit: color-mix(in oklab, var(--pf-metal), #fff3e2 30%);
-  --pf-m-lo: color-mix(in oklab, var(--pf-metal), black 22%);
-  --pf-m-edge: color-mix(in oklab, var(--pf-metal), black 45%);
-  --pf-spec: rgba(255, 255, 255, 0.5);
-  --pf-rim: rgba(132, 118, 255, 0.10);
-  /* The band itself: concentric rings (--pf-rings, from bandRings() in PhoneFrame.tsx) that follow the rounded
-     corners exactly; the dark centre is covered by the glass. */
-  background: var(--pf-m-deep);
-  box-shadow:
-    inset 0 0.75px 0 0 var(--pf-spec),            /* specular line along the top edge */
-    var(--pf-rings, inset 0 0 0 var(--pf-band) var(--pf-metal)),
-    0 0 0 0.5px rgba(0, 0, 0, 0.25),              /* hairline against any background */
-    0 0 0 1px var(--pf-rim),                      /* rim light from the scene */
-    0 1px 1.5px rgba(0, 0, 0, 0.55),              /* contact shadow */
-    0 8px 18px -6px rgba(0, 0, 0, 0.55),
-    0 30px 60px -18px rgba(0, 0, 0, 0.75),        /* ambient shadow */
-    0 0 48px -8px rgba(110, 96, 255, 0.10);       /* faint scene glow */
-}
-
-/* Light from above and faint environment reflections around the perimeter, over the band, under the glass. */
-.pf-body--metal::before {
-  content: '';
+/* Soft shadows under the body, for the dark IDE (blurred: their own rounded box never shows). */
+.pf-shadow {
   position: absolute;
   inset: 0;
-  border-radius: inherit;
+  z-index: 0;
   pointer-events: none;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0) 10%,
-      rgba(0, 0, 0, 0) 88%, rgba(0, 0, 0, 0.12) 100%),
-    conic-gradient(from 225deg at 50% 50%,
-      rgba(255, 255, 255, 0.10) 0deg, rgba(255, 255, 255, 0) 40deg,
-      rgba(0, 0, 0, 0.06) 95deg, rgba(0, 0, 0, 0) 140deg,
-      rgba(255, 255, 255, 0.06) 185deg, rgba(255, 255, 255, 0) 230deg,
-      rgba(0, 0, 0, 0.08) 285deg, rgba(0, 0, 0, 0) 330deg, rgba(255, 255, 255, 0.10) 360deg);
+  box-shadow: 0 0 0 1px #2a2a2c, 0 18px 50px rgba(0, 0, 0, 0.55);
 }
-
-/* Dark finishes: a softer, cooler specular; the outline still separates them from the dark IDE. */
-.pf-body--dark-metal {
-  --pf-m-hi: color-mix(in oklab, var(--pf-metal), white 38%);
-  --pf-m-lit: color-mix(in oklab, var(--pf-metal), white 18%);
-  --pf-m-edge: color-mix(in oklab, var(--pf-metal), black 55%);
-  --pf-spec: rgba(255, 255, 255, 0.5);
-  --pf-rim: rgba(140, 128, 255, 0.24);
+.pf-shadow--compact {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
 }
-
-.pf-glass {
-  position: absolute;
-  background: #000;
-  /* As measured on the Simulator's frame: the band falls off into a dark edge, then a faint grey 1 px glass edge;
-     ~4 pt further in, an even fainter line where the display panel starts. */
+.pf-shadow--metal {
   box-shadow:
-    0 0 0 0.75px color-mix(in oklab, var(--pf-metal, #888), black 82%),   /* the band's dark inner edge */
-    inset 0 0 0 0.75px rgba(255, 255, 255, 0.17),                         /* 1 px edge of the cover glass */
-    inset 0 0 0 4px #000,
-    inset 0 0 0 4.75px rgba(255, 255, 255, 0.05);                         /* display border under the glass */
-}
-
-/* Earpiece slit along the top, between glass and band (a dark line breaking the band's bright inner edge). */
-.pf-receiver {
-  position: absolute;
-  top: -1.25px;
-  left: 31%;
-  right: 31%;
-  height: 2px;
-  border-radius: 1px;
-  background: #000;
-  box-shadow: 0 0.5px 0 rgba(255, 255, 255, 0.06);
+    0 1px 1.5px rgba(0, 0, 0, 0.55),
+    0 8px 18px -6px rgba(0, 0, 0, 0.55),
+    0 30px 60px -18px rgba(0, 0, 0, 0.75),
+    0 0 48px -8px rgba(110, 96, 255, 0.10);
 }
 
 /* Cover glass over the screen: a very faint diagonal reflection from the top left, and a 1 px inner edge.
@@ -107,151 +48,6 @@
 .pf-glare--landscape {
   background: linear-gradient(208deg,
     rgba(255, 255, 255, 0.03) 0%, rgba(255, 255, 255, 0.01) 20%, rgba(255, 255, 255, 0) 34%);
-}
-
-/* ── Side buttons ────────────────────────────────────────────────── */
-.pf-btn {
-  position: absolute;
-  background: linear-gradient(180deg, #2a2a2c 0%, #1e1e20 30%, #1a1a1c 50%, #1e1e20 70%, #2a2a2c 100%);
-}
-
-/* iPhones: slim buttons in the band's metal, each with its own highlight (lit top and outer face) and shadow
-   (cast onto the band). */
-.pf-body--metal .pf-btn {
-  width: 2.25px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.35) 0%, rgba(255, 255, 255, 0) 30%, rgba(0, 0, 0, 0) 70%, rgba(0, 0, 0, 0.25) 100%),
-    linear-gradient(90deg, var(--pf-metal) 0%, var(--pf-m-hi) 40%, var(--pf-m-hi) 70%, var(--pf-m-lit) 100%);
-}
-.pf-body--metal .pf-btn--mute,
-.pf-body--metal .pf-btn--vol-up,
-.pf-body--metal .pf-btn--vol-down {
-  left: -2.25px;
-  border-radius: 1.25px 0 0 1.25px;
-  box-shadow: -0.5px 0 1px rgba(0, 0, 0, 0.45), inset 0 0.5px 0 rgba(255, 255, 255, 0.5);
-}
-.pf-body--metal .pf-btn--power {
-  right: -2.25px;
-  border-radius: 0 1.25px 1.25px 0;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.35) 0%, rgba(255, 255, 255, 0) 30%, rgba(0, 0, 0, 0) 70%, rgba(0, 0, 0, 0.25) 100%),
-    linear-gradient(270deg, var(--pf-metal) 0%, var(--pf-m-hi) 40%, var(--pf-m-hi) 70%, var(--pf-m-lit) 100%);
-  box-shadow: 0.5px 0 1px rgba(0, 0, 0, 0.45), inset 0 0.5px 0 rgba(255, 255, 255, 0.5);
-}
-
-.pf-btn--mute,
-.pf-btn--vol-up,
-.pf-btn--vol-down,
-.pf-btn--android-vol-up,
-.pf-btn--android-vol-down {
-  left: -5px;
-  width: 5px;
-  border-radius: 3px 0 0 3px;
-  box-shadow: inset 1px 0 0 rgba(255,255,255,0.08), -1px 0 3px rgba(0,0,0,0.5);
-}
-
-.pf-btn--power,
-.pf-btn--android-power {
-  right: -5px;
-  width: 5px;
-  border-radius: 0 3px 3px 0;
-  box-shadow: inset -1px 0 0 rgba(255,255,255,0.08), 1px 0 3px rgba(0,0,0,0.5);
-}
-
-.pf-btn--mute { top: 112px; height: 32px; }
-.pf-btn--vol-up { top: 164px; height: 60px; }
-.pf-btn--vol-down { top: 236px; height: 60px; }
-.pf-btn--power { top: 188px; height: 86px; }
-.pf-btn--android-power { top: 142px; height: 58px; }
-.pf-btn--android-vol-up { top: 112px; height: 50px; }
-.pf-btn--android-vol-down { top: 170px; height: 50px; }
-
-/* ── iPhone SE bezels: earpiece + camera above the screen, home button below ── */
-.pf-se-top,
-.pf-se-bottom {
-  position: absolute;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.pf-se-top {
-  gap: 18px;
-}
-
-.pf-se-speaker {
-  width: 60px;
-  height: 6px;
-  border-radius: 3px;
-  background: #151517;
-  box-shadow: inset 0 1.5px 3px rgba(0, 0, 0, 0.9), 0 0 0 1px #1f1f22;
-}
-
-.pf-se-cam {
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 38% 34%, #0a2a4a 0%, #040c14 50%, #020808 100%);
-  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.07), 0 0 0 1px rgba(0,0,0,0.9);
-}
-
-.pf-se-home-ring {
-  width: 60px;
-  height: 60px;
-  border-radius: 50%;
-  background: #050506;
-  box-shadow:
-    inset 0 0 0 2px #3a3a3e,
-    inset 0 2px 6px rgba(0, 0, 0, 0.9),
-    0 1px 2px rgba(255, 255, 255, 0.04);
-}
-
-/* ── Pixel Fold: camera in the bezel, faint crease down the middle ── */
-.pf-fold-cam {
-  position: absolute;
-  width: 8px;
-  height: 8px;
-  margin-top: -4px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 38% 34%, #0a2a4a 0%, #030c14 60%, #010608 100%);
-}
-
-.pf-fold-hinge {
-  position: absolute;
-  width: 16px;
-  background: linear-gradient(90deg,
-    transparent 0%, rgba(0, 0, 0, 0.035) 35%, rgba(0, 0, 0, 0.07) 50%, rgba(0, 0, 0, 0.035) 65%, transparent 100%);
-}
-
-/* ── Dynamic Island ── */
-.pf-dynamic-island {
-  position: absolute;
-  border-radius: 19px;
-  background: #000;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  /* Front camera ~17 pt from the island's right end (measured, iPhone 17 Pro). */
-  padding-right: 11.5px;
-  box-sizing: border-box;
-}
-
-.pf-di-cam {
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 38% 34%, #0a2a4a 0%, #061420 35%, #020808 60%, #010404 100%);
-  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.06), 0 0 0 1px rgba(0, 0, 0, 0.9);
-}
-
-/* ── Punch-hole camera (Android) ── */
-.pf-punchhole {
-  position: absolute;
-  width: 13px;
-  height: 13px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 38% 34%, #0a2a4a 0%, #030c14 50%, #010608 100%);
-  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.95), 0 0 0 3px rgba(255, 255, 255, 0.04);
 }
 
 /* ── System bars inside the screen ───────────────────────────────── */

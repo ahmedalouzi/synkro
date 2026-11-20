@@ -125,27 +125,24 @@ export default async function run() {
   assert.match(css, /\.pf-glare \{[^}]*pointer-events: none/s, 'glare ignores the pointer');
   assert.match(css, /\.pf-glare \{[^}]*rgba\(255, 255, 255, 0\.0[0-9]+\)/s, 'glare is faint');
   assert.doesNotMatch(css, /filter:|backdrop-filter|@keyframes/, 'no filters or keyframe animations on the frame');
-  assert.match(css, /--pf-metal/, 'band colours from the finish');
+  assert.match(frameTsx, /const pal = metalPalette\(finish\);/, 'band colours from the finish');
   const assembly = read('src/renderer/src/features/preview/PreviewAssembly.tsx');
   const anim = /el\.animate\(\s*\[([^\]]*)\]/s.exec(assembly)?.[1] ?? '';
-  assert.ok(anim && !/width|height|left|top|filter/.test(anim), 'the morph animates only opacity and transform');
+  assert.ok(anim && !/width|height|left|top|filter|transform|scale/.test(anim), 'the morph animates only opacity (no scaling of the frame)');
   assert.match(assembly, /duration: 200/);
   assert.match(assembly, /prefers-reduced-motion/);
   assert.match(frameTsx, /60_000 - /, 'the clock updates on the minute, not every second');
 
-  console.log('  [ios-frame] Status bar time like iOS, band rings follow the corners...');
-  const { statusBarTime, bandRings } = await import('../../../apps/desktop/src/renderer/src/features/preview/frame-geometry');
+  console.log('  [ios-frame] Status bar time like iOS; the band is one gradient stroke, not stacked rings...');
+  const { statusBarTime } = await import('../../../apps/desktop/src/renderer/src/features/preview/frame-geometry');
   assert.equal(statusBarTime(new Date(2026, 0, 1, 9, 41), false), '9:41');
   assert.equal(statusBarTime(new Date(2026, 0, 1, 14, 5), false), '2:05');
   assert.equal(statusBarTime(new Date(2026, 0, 1, 0, 7), false), '12:07');
   assert.equal(statusBarTime(new Date(2026, 0, 1, 9, 41), true), '09:41');
   assert.equal(statusBarTime(new Date(2026, 0, 1, 23, 59), true), '23:59');
-  const rings = bandRings(9).split(/, (?=inset)/);
-  assert.equal(rings.length, 18, 'one ring every half point across a 9 pt band');
-  assert.ok(rings.every((r) => /^inset 0 0 0 [\d.]+px (var\(--pf-m-[a-z]+\)|var\(--pf-metal\)|color-mix\(in oklab, var\(--pf-[a-z-]+\) \d+%, var\(--pf-[a-z-]+\)\))$/.test(r)), rings[0]);
-  assert.match(rings[0], /--pf-m-edge|--pf-m-lo/, 'dark outer edge');
-  assert.match(rings[rings.length - 1], /--pf-m-deep\)$/, 'deep bevel into the glass');
-  assert.match(css, /var\(--pf-rings/, 'the band is drawn from the rings');
+  assert.doesNotMatch(css + frameTsx, /bandRings|--pf-rings/, 'no stacked box-shadow rings (they made the corners jagged)');
+  assert.ok((css.match(/inset 0 0 0/g) ?? []).length <= 1, 'at most the single glare hairline');
+  assert.match(frameTsx, /<path d=\{art\.bandPath\} fill="none" stroke=\{`url\(#\$\{id\('band'\)\}\)`\} strokeWidth=\{band\} \/>/, 'the band: one gradient stroke');
 
   console.log('  [ios-frame] The frame lab is dev only...');
   assert.ok(fs.existsSync(path.join(desktop, 'src/renderer/frame-lab.html')));

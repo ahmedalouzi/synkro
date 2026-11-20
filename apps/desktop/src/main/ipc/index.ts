@@ -790,15 +790,17 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
 
   /** Detached window size that shows the whole device frame (portrait phones and wide foldables alike). */
   const detachedWindowSize = (frame?: { width: number; height: number }) => {
-    // DetachedPreview chrome: 44px header + 32px margin on each axis.
-    const chromeW = 32;
-    const chromeH = 44 + 32;
+    // DetachedPreview chrome, tight (DetachedPreview.css): 4 px at the sides, 6 px above the 44 px header, 6 px
+    // between it and the phone, 4 px below.
+    const chromeW = 8;
+    const chromeH = 6 + 44 + 6 + 4;
     if (!frame || frame.width <= 0 || frame.height <= 0) return { width: 400, height: 820 };
     const { workArea } = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
     const maxW = workArea.width * 0.8 - chromeW;
     const maxH = workArea.height * 0.85 - chromeH;
-    // Up to the device's natural (1x) size; smaller only when the screen can't fit it.
-    const scale = Math.min(1, maxW / frame.width, maxH / frame.height);
+    // A little larger than the device's natural (1x) size when the screen has room (the frame is vectors and the
+    // app is re-laid out, so it stays sharp); smaller only when the screen can't fit it.
+    const scale = Math.min(1.15, maxW / frame.width, maxH / frame.height);
     return {
       width: Math.round(frame.width * scale + chromeW),
       height: Math.round(frame.height * scale + chromeH),
@@ -838,10 +840,13 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
       minWidth: 240,
       minHeight: 320,
       title: 'Atomvs Mobile Preview',
+      // Transparent and frameless: only the phone and its header pill float on the desktop. Outside the phone's
+      // shape the window lets clicks through (PREVIEW_CLICK_THROUGH). No window shadow: it would outline the
+      // transparent rectangle.
       backgroundColor: '#00000000',
       transparent: true,
       frame: false,
-      hasShadow: true,
+      hasShadow: false,
       webPreferences: {
         preload: path.join(__dirname, '../preload/index.js'),
         sandbox: false,
@@ -864,6 +869,14 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
         previewManager.setSession({ ...session });
       }
     });
+  });
+
+  // The detached window lets clicks through outside the phone's shape (its renderer says where the pointer is);
+  // forward keeps mouse moves coming, so it can take the mouse back over the phone. Only that window may ask.
+  ipcMain.handle(IPC_CHANNELS.PREVIEW_CLICK_THROUGH, (event, through: unknown) => {
+    if (!previewWindow || previewWindow.isDestroyed() || event.sender !== previewWindow.webContents) return;
+    if (through === true) previewWindow.setIgnoreMouseEvents(true, { forward: true });
+    else previewWindow.setIgnoreMouseEvents(false);
   });
 
   ipcMain.handle(IPC_CHANNELS.PREVIEW_ATTACH, () => {

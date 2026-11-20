@@ -1,6 +1,7 @@
-import React, { useEffect, useRef } from 'react';
-import { ChassisBack, ChassisFront, SystemBars, type StatusOverride } from './PhoneFrame';
+import React, { useEffect, useMemo, useRef } from 'react';
+import { FrameSvg, SystemBars, type StatusOverride } from './PhoneFrame';
 import { deviceGeometry, type DeviceConfig, type Finish } from './devices';
+import { frameArt } from './frame-svg';
 import type { SystemBarTones } from './usePreviewSafeArea';
 
 interface PreviewAssemblyProps {
@@ -14,101 +15,77 @@ interface PreviewAssemblyProps {
   finish?: Finish;
   /** Frame lab only: fixed status-bar time and signal for repeatable captures. */
   statusOverride?: StatusOverride;
+  /** Device points → CSS px (Fit / 100 % / 125 %, from previewZoom). The frame is drawn at this size. */
+  zoom?: number;
+  /** window.devicePixelRatio: small parts (Dynamic Island, cameras) sit on whole device pixels. */
+  dpr?: number;
+  /** A small contact shadow only (the detached window is tight around the phone; a large shadow would be cut). */
+  compactShadow?: boolean;
   /** The app (iframe or placeholder). It fills the whole screen. */
   children: React.ReactNode;
 }
 
 const DEFAULT_TONES: SystemBarTones = { top: 'light', bottom: 'light' };
 
-/** How far the bezel reaches over the screen's edge (CSS px), so its anti-aliased edge never shows. */
-const BEZEL_OVERLAP = 2;
-/** How far the bezel ring reaches outward, over the chassis (same colour), to cover any sub-pixel gap. */
-const BEZEL_OUTSET = 2;
-
 /**
- * A device frame at its natural size (the frame's CSS px; the caller zooms it to fit), edge to edge like a
- * simulator: the app fills the screen, and the status bar, home indicator, Dynamic Island and camera hole are
- * drawn over it. The chassis art is laid out in portrait and rotated as a whole for landscape.
+ * A device frame at its final on-screen size, edge to edge like a simulator:
+ * - the frame is one SVG drawn at zoom × the device's size (frame-svg.ts), over the screen;
+ * - the screen is clipped with the same continuous-corner path the frame's opening uses;
+ * - inside it, the app and the system bars are laid out in the device's points and scaled with CSS zoom, which
+ *   Chromium re-renders at the final size (sharp text, the page still sees e.g. 402 px), never a stretched bitmap.
+ * No transform or will-change on the frame.
  */
-export function PreviewAssembly({ device, landscape = false, tone = DEFAULT_TONES, background, finish, statusOverride, children }: PreviewAssemblyProps) {
+export function PreviewAssembly({
+  device, landscape = false, tone = DEFAULT_TONES, background, finish, statusOverride, zoom = 1, dpr, compactShadow = false, children,
+}: PreviewAssemblyProps) {
   const finishUsed = finish ?? device.finishes?.[0];
+  const ratio = dpr ?? (typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1);
   const rootRef = useRef<HTMLDivElement>(null);
   const first = useRef(true);
-  // A subtle 200 ms morph when the model or finish changes: opacity and scale only (compositor, 60 fps), on the
-  // existing element, so the app's iframe is not remounted. None with reduced motion.
+  // A subtle 200 ms fade when the model or finish changes: opacity only (no scaling of the frame), on the existing
+  // element, so the app's iframe is not remounted. None with reduced motion.
   useEffect(() => {
     if (first.current) { first.current = false; return; }
     const el = rootRef.current;
     if (!el?.animate || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
-    el.animate(
-      [{ opacity: 0.55, transform: 'scale(0.985)' }, { opacity: 1, transform: 'none' }],
-      { duration: 200, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)' },
-    );
+    el.animate([{ opacity: 0.55 }, { opacity: 1 }], { duration: 200, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)' });
   }, [device.id, finishUsed?.id]);
+
+  const art = useMemo(() => frameArt(device, landscape, zoom, ratio), [device, landscape, zoom, ratio]);
   const g = deviceGeometry(device, landscape);
-  const portrait = deviceGeometry(device, false);
-  const r = device.screenRadius;
   const underlay = background || '#000';
 
-  // The chassis art in portrait coordinates, turned a quarter to the left for landscape.
-  const art = (layer: React.ReactNode, z: number) => (
-    <div style={{
-      position: 'absolute',
-      width: portrait.frame.width,
-      height: portrait.frame.height,
-      left: (g.frame.width - portrait.frame.width) / 2,
-      top: (g.frame.height - portrait.frame.height) / 2,
-      transform: landscape ? 'rotate(-90deg)' : undefined,
-      pointerEvents: 'none',
-      zIndex: z,
-    }}>
-      {layer}
-    </div>
-  );
-
   return (
-    <div ref={rootRef} className="device-assembly" style={{ position: 'relative', width: g.frame.width, height: g.frame.height }}>
-      {art(<ChassisBack device={device} geometry={portrait} finish={finishUsed} />, 0)}
+    <div ref={rootRef} className="device-assembly" style={{ position: 'relative', width: art.width, height: art.height }}>
+      {/* Soft shadows under the body (blurred, so their own corner shape does not show). */}
+      <div className={`pf-shadow${compactShadow ? ' pf-shadow--compact' : art.band > 0 ? ' pf-shadow--metal' : ''}`} style={{ borderRadius: art.outerRadius }} aria-hidden="true" />
 
-      {/* The screen: the app edge to edge, the system bars over it. */}
+      {/* The screen: clipped with the frame opening's own path, so there is one edge around the app. */}
       <div className="screen-mask" style={{
         position: 'absolute',
-        left: g.screen.x,
-        top: g.screen.y,
-        width: g.screen.width,
-        height: g.screen.height,
+        left: art.screen.x,
+        top: art.screen.y,
+        width: art.screen.width,
+        height: art.screen.height,
         overflow: 'hidden',
-        borderRadius: r,
-        clipPath: `inset(0 round ${r}px)`,
+        clipPath: `path('${art.screen.clip}')`,
         background: underlay,
         ['--preview-app-bg' as string]: underlay,
         zIndex: 1,
       }}>
-        <div className="screen-app" style={{ position: 'absolute', inset: 0, overflow: 'hidden' }}>
-          {children}
+        <div className="screen-zoom" style={{ position: 'relative', width: g.screen.width, height: g.screen.height, zoom }}>
+          <div className="screen-app" style={{ position: 'absolute', inset: 0, overflow: 'hidden' }}>
+            {children}
+          </div>
+          <SystemBars device={device} geometry={g} landscape={landscape} tone={tone} override={statusOverride} />
+          {/* The cover glass: a very faint diagonal reflection, over everything, never catching the pointer. */}
+          {device.os === 'ios' && (
+            <div className={`pf-glare${landscape ? ' pf-glare--landscape' : ''}`} style={{ borderRadius: device.screenRadius }} aria-hidden="true" />
+          )}
         </div>
-        <SystemBars device={device} geometry={g} landscape={landscape} tone={tone} override={statusOverride} />
-        {/* The cover glass: a very faint diagonal reflection and a 1 px inner edge, over everything, never
-            catching the pointer. Static, so it costs nothing per frame. */}
-        {device.os === 'ios' && <div className={`pf-glare${landscape ? ' pf-glare--landscape' : ''}`} aria-hidden="true" />}
       </div>
 
-      {/* The bezel's inner edge, laid over the screen's edge: a ring in the chassis colour, concentric with
-          the screen's corners, covering the last BEZEL_OVERLAP px of the screen so no seam shows there. */}
-      <div className="screen-bezel-edge" style={{
-        position: 'absolute',
-        left: g.screen.x - BEZEL_OUTSET,
-        top: g.screen.y - BEZEL_OUTSET,
-        width: g.screen.width + 2 * BEZEL_OUTSET,
-        height: g.screen.height + 2 * BEZEL_OUTSET,
-        boxSizing: 'border-box',
-        border: `${BEZEL_OUTSET + BEZEL_OVERLAP}px solid #000`,
-        borderRadius: r > 0 ? r + BEZEL_OUTSET : 0,
-        pointerEvents: 'none',
-        zIndex: 2,
-      }} />
-
-      {art(<ChassisFront device={device} geometry={portrait} />, 2)}
+      <FrameSvg art={art} finish={finishUsed} />
     </div>
   );
 }
