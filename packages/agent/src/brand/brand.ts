@@ -20,6 +20,14 @@ export const CURATED_FONTS = [
   'Josefin Sans', 'Quicksand', 'Cairo', 'Tajawal', 'IBM Plex Sans Arabic', 'Noto Sans',
 ] as const;
 
+/**
+ * The folder of a curated font in the desktop app's bundle (apps/desktop/resources/brand-fonts/<slug>/), e.g.
+ * "Plus Jakarta Sans" -> "plus-jakarta-sans". scripts/fetch-brand-fonts.mjs uses the same rule.
+ */
+export function fontSlug(family: string): string {
+  return family.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
 /** The six art-direction presets for illustrations and imagery. */
 export const ILLUSTRATION_PRESETS = {
   'flat-geometric': 'Flat geometric shapes, bold solid fills, no outlines',

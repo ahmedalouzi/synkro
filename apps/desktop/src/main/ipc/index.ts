@@ -10,7 +10,7 @@ import { InlineCompletionService } from '../services/inline-completion-service';
 import { DatabaseService } from '../services/db';
 import { WorkspaceManager } from '../services/workspace-manager';
 import { ProcessManager } from '../services/process-manager';
-import { fetchGoogleFont, rasterizeSvg } from '../services/brand-assets';
+import { bundledFontsDir, rasterizeSvg } from '../services/brand-assets';
 import { ProcessRegistry } from '../services/process-registry';
 import { ApprovalService, ApprovalStore, registerApprovalIpc } from '../services/approval-service';
 import { FlutterService } from '../services/flutter-service';
@@ -238,7 +238,7 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
   agentService = new AgentService(db, workspace, platformRegistry, terminalService);
   agentService.setMainWindow(mainWindow);
   agentService.setPreviewManager(previewManager);
-  // Brand identity: signatures on this device's project records; logo PNG by Chromium; fonts from Google Fonts.
+  // Brand identity: signatures on this device's project records; logo PNG by Chromium; fonts bundled with Atomvs.
   const brandDb = db;
   agentService.setBrandDeps({
     store: {
@@ -246,7 +246,7 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
       save: (projectPath, sig) => brandDb.saveBrandSignature(projectPath, sig),
     },
     rasterize: rasterizeSvg,
-    fetchFont: fetchGoogleFont,
+    fontsDir: bundledFontsDir(),
   });
   agentService.setOwnedPidsProvider(() => [...processManager.pids(), ...terminalService.pids()]);
   // The approval cards: the window shows them in the chat; a desktop notification when it is not focused.

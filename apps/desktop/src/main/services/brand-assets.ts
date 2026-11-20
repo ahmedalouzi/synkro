@@ -1,4 +1,5 @@
-import { BrowserWindow } from 'electron';
+import { app, BrowserWindow } from 'electron';
+import { join } from 'node:path';
 
 /**
  * The brand's logo as a PNG, square, transparent, the mark centred at 70% (room for Android 12's round splash
@@ -33,36 +34,10 @@ export async function rasterizeSvg(svg: string, size: number): Promise<Buffer> {
   }
 }
 
-/** The TTF URL of each weight in a Google Fonts css2 stylesheet. Exported for tests. */
-export function ttfUrls(css: string): Map<number, string> {
-  const urls = new Map<number, string>();
-  for (const block of css.split('@font-face').slice(1)) {
-    const weight = Number(/font-weight:\s*(\d+)/.exec(block)?.[1]);
-    const url = /src:\s*url\((https:\/\/fonts\.gstatic\.com\/[^)\s]+\.ttf)\)/.exec(block)?.[1];
-    // The first block per weight is the full (latin) set when the stylesheet has no unicode-range splits.
-    if (weight && url && !urls.has(weight)) urls.set(weight, url);
-  }
-  return urls;
-}
-
-const MAX_FONT_BYTES = 5 * 1024 * 1024;
-
 /**
- * One weight of a Google Font as TTF (OFL / Apache licensed), for bundling in the app. Only the family name is
- * sent. A plain user agent makes Google Fonts serve TTF, which Flutter and expo-font load.
+ * The fonts bundled with Atomvs (resources/brand-fonts, see scripts/fetch-brand-fonts.mjs): inside the installed app
+ * they are next to app.asar (electron-builder extraResources); in development they are in apps/desktop/resources.
  */
-export async function fetchGoogleFont(family: string, weight: number): Promise<Buffer> {
-  const query = `family=${encodeURIComponent(family).replace(/%20/g, '+')}:wght@${weight}`;
-  const res = await fetch(`https://fonts.googleapis.com/css2?${query}`, { headers: { 'User-Agent': 'Mozilla/4.0' } });
-  if (!res.ok) throw new Error(`Google Fonts answered ${res.status}`);
-  const url = ttfUrls(await res.text()).get(weight);
-  if (!url) throw new Error(`no TTF for weight ${weight}`);
-  const font = await fetch(url);
-  if (!font.ok) throw new Error(`font download answered ${font.status}`);
-  const data = Buffer.from(await font.arrayBuffer());
-  if (data.length === 0 || data.length > MAX_FONT_BYTES) throw new Error('unexpected font size');
-  // TrueType / OpenType signatures.
-  const magic = data.subarray(0, 4).toString('hex');
-  if (!['00010000', '4f54544f', '74727565'].includes(magic)) throw new Error('not a TTF/OTF file');
-  return data;
+export function bundledFontsDir(): string {
+  return app.isPackaged ? join(process.resourcesPath, 'brand-fonts') : join(app.getAppPath(), 'resources', 'brand-fonts');
 }

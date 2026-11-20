@@ -5,7 +5,7 @@ import { inflateSync } from 'node:zlib';
 import path from 'node:path';
 import {
   CURATED_FONTS, brandFingerprint, brandFromDesignManifest, brandProblems, brandSignature, closestTooSimilar,
-  contrastFailures, contrastRatio, fallbackLogoPng, finalizeBrand, fixContrast, fixPaletteContrast, flutterBrandTheme, hue,
+  contrastFailures, contrastRatio, fallbackLogoPng, finalizeBrand, fontSlug, fixContrast, fixPaletteContrast, flutterBrandTheme, hue,
   hueDistance, logoProblem, mergeBrand, pubspecWithBrand, reactNativeBrandTheme, tooSimilar, type Brand,
 } from '../src/brand/brand';
 import { classifyCommand } from '../src/tools/safety';
@@ -15,7 +15,6 @@ import { OPENAI_TOOLS } from '../src/tools/definitions';
 import {
   brandContext, hardcodedStyleWarning, migrateBrandFromDesignManifest, readBrand, setBrand, type BrandStore, type StoredBrand,
 } from '../../../apps/desktop/src/main/services/brand-service';
-import { ttfUrls } from '../../../apps/desktop/src/main/services/brand-assets';
 import { TerminalService } from '../../../apps/desktop/src/main/services/terminal-service';
 
 /**
@@ -23,6 +22,7 @@ import { TerminalService } from '../../../apps/desktop/src/main/services/termina
  * direction, splash motion); the theme files are generated from it and screens only read the theme.
  */
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '../../..');
+const BUNDLE = path.join(root, 'apps/desktop/resources/brand-fonts');
 const LOGO = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><circle cx="32" cy="32" r="28" fill="#1B6E5A"/><path d="M20 36 L32 18 L44 36 Z" fill="#F4EFE6"/></svg>';
 const GOOD = {
   name: 'Fernleaf', tagline: 'Plant care, gently timed.', logo_svg: LOGO,
@@ -187,7 +187,8 @@ flutter:
     const stored: StoredBrand[] = [{ projectPath: '/other', projectName: 'Leafy', fingerprint: `v1:${'a'.repeat(64)}`, font: 'Fraunces', hue: hue('#1E7A60'), updatedAt: '2026-11-01' }];
     const saved: string[] = [];
     const store: BrandStore = { recent: (ex) => stored.filter((s) => s.projectPath !== ex), save: (p, s) => saved.push(`${p}|${s.fingerprint}`) };
-    const deps = { store, rasterize: async () => Buffer.from('89504e47', 'hex'), fetchFont: async () => Buffer.from('00010000', 'hex') };
+    // The real fonts bundled with the desktop app.
+    const deps = { store, rasterize: async () => Buffer.from('89504e47', 'hex'), fontsDir: BUNDLE };
 
     const flutterApp = path.join(tmp, 'fernleaf');
     fs.mkdirSync(path.join(flutterApp, 'lib'), { recursive: true });
@@ -230,22 +231,24 @@ flutter:
     assert.equal(await migrateBrandFromDesignManifest(oldApp, 'Bloom Fit', manifest, store), false, 'only once');
     assert.match(brandContext(await readBrand(oldApp)), /PROJECT BRAND — brand\.json/);
 
-    console.log('  [brand] Offline / failures: fonts fall back to the platform font, the logo to a plain PNG, nothing breaks...');
+    console.log('  [brand] Fonts come from the bundle (no network); a missing file falls back to the platform font, a failed logo to a plain PNG...');
+    const sora = await setBrand(path.join(tmp, 'expo-app'), { font: 'Sora' }, deps, 0);
+    assert.equal(sora.status, 'saved');
+    assert.deepEqual(fs.readFileSync(path.join(tmp, 'expo-app/assets/fonts/brand-600.ttf')), fs.readFileSync(path.join(BUNDLE, 'sora/600.ttf')),
+      'the bundled file, copied as it is');
     const offlineApp = path.join(tmp, 'offline-app');
     fs.mkdirSync(path.join(offlineApp, 'lib'), { recursive: true });
     fs.writeFileSync(path.join(offlineApp, 'pubspec.yaml'), pubspec);
-    const failing = {
-      store, fontTimeoutMs: 200,
-      rasterize: async () => { throw new Error('GPU process crashed'); },
-      fetchFont: async () => { throw new Error('getaddrinfo ENOTFOUND fonts.googleapis.com https://fonts.gstatic.com/s/x.ttf?key=SECRET123'); },
-    };
+    const emptyBundle = path.join(tmp, 'no-fonts');
+    fs.mkdirSync(emptyBundle);
+    const failing = { store, fontsDir: emptyBundle, rasterize: async () => { throw new Error('GPU process crashed at https://x.example/?token=SECRET123'); } };
     const offline = await setBrand(offlineApp, { ...GOOD, font: 'Sora', illustration_style: 'isometric' }, failing, 0);
-    assert.equal(offline.status, 'saved', 'a failed font or logo never fails the brand');
+    assert.equal(offline.status, 'saved', 'a missing font file or a failed logo never fails the brand');
     if (offline.status !== 'saved') throw new Error('not saved');
     assert.equal((await readBrand(offlineApp))?.font, 'Sora', 'brand.json keeps the font');
-    assert.ok(offline.warnings.some((w) => /The Sora font could not be downloaded .*platform's default font for now, and set_brand will try again/.test(w)), offline.warnings.join(' | '));
-    assert.ok(offline.warnings.some((w) => /The logo could not be drawn \(GPU process crashed\); a plain circle in the primary color/.test(w)));
-    assert.ok(!offline.warnings.join(' ').includes('SECRET123') && !offline.warnings.join(' ').includes('https://'), 'no URLs (or keys) in the warning');
+    assert.ok(offline.warnings.some((w) => /The Sora font files are missing from this Atomvs installation \(weight 400, 600, 700\); the app uses the platform's default font for now, and set_brand will try again/.test(w)), offline.warnings.join(' | '));
+    assert.ok(offline.warnings.some((w) => /The logo could not be drawn \(GPU process crashed at <url>\); a plain circle in the primary color/.test(w)), offline.warnings.join(' | '));
+    assert.ok(!offline.warnings.join(' ').includes('SECRET123'), 'no URLs (or tokens) in the warnings');
     assert.equal(fs.existsSync(path.join(offlineApp, 'assets/fonts/brand-400.ttf')), false);
     const offlinePubspec = fs.readFileSync(path.join(offlineApp, 'pubspec.yaml'), 'utf8');
     assert.doesNotMatch(offlinePubspec, /BrandFont|brand-400\.ttf/, 'no missing font files declared (the build would fail)');
@@ -253,27 +256,22 @@ flutter:
     assert.match(fs.readFileSync(path.join(offlineApp, 'lib/theme/brand.dart'), 'utf8'), /static const String\? fontFamily = null;/);
     const fallbackPng = fs.readFileSync(path.join(offlineApp, 'assets/brand/logo.png'));
     assert.equal(fallbackPng.subarray(0, 8).toString('hex'), '89504e470d0a1a0a', 'logo.png exists and is a PNG');
-    // The next run, online again: the font is downloaded and declared.
-    const online = await setBrand(offlineApp, { tagline: 'Plants, on time.' }, deps, 0);
-    assert.equal(online.status, 'saved');
-    if (online.status === 'saved') assert.ok(online.files.includes('assets/fonts/brand-400.ttf'), 'retried and downloaded');
+    // The next run, with the fonts in place: copied and declared.
+    const next = await setBrand(offlineApp, { tagline: 'Plants, on time.' }, deps, 0);
+    assert.equal(next.status, 'saved');
+    if (next.status === 'saved') assert.ok(next.files.includes('assets/fonts/brand-400.ttf'), 'tried again and copied');
     assert.match(fs.readFileSync(path.join(offlineApp, 'pubspec.yaml'), 'utf8'), /- family: BrandFont/);
     assert.match(fs.readFileSync(path.join(offlineApp, 'lib/theme/brand.dart'), 'utf8'), /fontFamily = 'BrandFont';/);
-    // One weight failing: none is kept (no half font), and the old font's files are removed.
-    let calls = 0;
-    const partial = { ...deps, fetchFont: async (_f: string, w: number) => { calls++; if (w === 600) throw new Error('HTTP 503'); return Buffer.from('00010000', 'hex'); } };
-    const switched = await setBrand(offlineApp, { font: 'Manrope' }, partial, 0);
+    // One weight missing: none is used (no half font), and the old font's files are removed.
+    const partialBundle = path.join(tmp, 'partial');
+    fs.mkdirSync(path.join(partialBundle, 'manrope'), { recursive: true });
+    for (const w of [400, 700]) fs.copyFileSync(path.join(BUNDLE, 'manrope', `${w}.ttf`), path.join(partialBundle, 'manrope', `${w}.ttf`));
+    const switched = await setBrand(offlineApp, { font: 'Manrope' }, { ...deps, fontsDir: partialBundle }, 0);
     assert.equal(switched.status, 'saved');
-    assert.equal(calls, 3);
+    assert.ok(switched.status === 'saved' && switched.warnings.some((w) => /\(weight 600\)/.test(w)));
     assert.equal(fs.existsSync(path.join(offlineApp, 'assets/fonts/brand-400.ttf')), false, 'no stale Sora files under the new name');
     assert.doesNotMatch(fs.readFileSync(path.join(offlineApp, 'pubspec.yaml'), 'utf8'), /BrandFont/, 'the family is removed again');
-    // A download that hangs: the timeout ends it.
-    const t0 = Date.now();
-    const hung = await setBrand(offlineApp, { font: 'Outfit' }, { ...deps, fontTimeoutMs: 150, fetchFont: () => new Promise<Buffer>(() => {}) }, 0);
-    assert.equal(hung.status, 'saved');
-    assert.ok(Date.now() - t0 < 3000, 'a hanging download does not hang set_brand');
-    assert.ok(hung.status === 'saved' && hung.warnings.some((w) => /timed out/.test(w)));
-    // React Native offline: no require() of missing font files (Metro would fail).
+    // React Native with a missing file: no require() of missing font files (Metro would fail).
     const rnOffline = path.join(tmp, 'rn-offline');
     fs.mkdirSync(rnOffline);
     fs.writeFileSync(path.join(rnOffline, 'package.json'), '{"name":"y"}');
@@ -302,8 +300,37 @@ flutter:
   assert.match(hardcodedStyleWarning('src/screens/Home.tsx', "backgroundColor: '#ff0000'")!, /brand\.colors/);
   assert.equal(hardcodedStyleWarning('lib/screens/home.dart', 'color: Theme.of(context).colorScheme.primary, Colors.transparent'), null);
   assert.equal(hardcodedStyleWarning('lib/theme/brand.dart', 'Color(0xFF123456)'), null, 'the theme itself');
-  assert.equal(ttfUrls("@font-face {\n  font-family: 'Sora';\n  font-weight: 600;\n  src: url(https://fonts.gstatic.com/s/sora/v12/abc.ttf) format('truetype');\n}\n").get(600), 'https://fonts.gstatic.com/s/sora/v12/abc.ttf');
-  assert.equal(ttfUrls("@font-face { font-weight: 400; src: url(https://evil.example/a.ttf) }").size, 0, 'only fonts.gstatic.com');
+  // Reading the font from the theme is right, not a hard-coded font (a false warning found in the real Expo check).
+  assert.equal(hardcodedStyleWarning('src/App.tsx', 'title: { fontFamily: brand.font.bold, color: brand.colors.ink }'), null);
+  assert.equal(hardcodedStyleWarning('lib/screens/home.dart', 'TextStyle(fontFamily: Brand.fontFamily)'), null);
+  assert.match(hardcodedStyleWarning('src/App.tsx', 'title: { fontFamily: "Roboto" }')!, /hard-codes/);
+
+  console.log('  [brand] The font bundle: every curated family has its 3 weights and OFL.txt; packaged with the app...');
+  const manifestJson = JSON.parse(fs.readFileSync(path.join(BUNDLE, 'manifest.json'), 'utf8'));
+  assert.deepEqual(Object.keys(manifestJson).sort(), [...CURATED_FONTS].sort(), 'the manifest lists exactly the curated fonts');
+  const folders = fs.readdirSync(BUNDLE, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).sort();
+  assert.deepEqual(folders, CURATED_FONTS.map(fontSlug).sort(), 'one folder per curated font, no extra ones');
+  for (const family of CURATED_FONTS) {
+    const dir = path.join(BUNDLE, fontSlug(family));
+    assert.equal(manifestJson[family].dir, fontSlug(family), `${family}: manifest folder`);
+    assert.equal(manifestJson[family].license, 'OFL-1.1', `${family}: OFL`);
+    const ofl = fs.readFileSync(path.join(dir, 'OFL.txt'), 'utf8');
+    assert.match(ofl, /SIL OPEN FONT LICENSE/i, `${family}: OFL.txt is the license`);
+    for (const w of [400, 600, 700]) {
+      const ttf = fs.readFileSync(path.join(dir, `${w}.ttf`));
+      assert.ok(ttf.length > 10_000, `${family} ${w}: a real font file`);
+      assert.ok(['00010000', '4f54544f', '74727565'].includes(ttf.subarray(0, 4).toString('hex')), `${family} ${w}: TrueType/OpenType`);
+    }
+  }
+  assert.equal(manifestJson.Tajawal.weights['600'], 700, 'Tajawal has no 600: its 700 is used, and recorded');
+  const builder = fs.readFileSync(path.join(root, 'apps/desktop/electron-builder.yml'), 'utf8');
+  assert.match(builder, /extraResources:\n {2}- from: resources\/brand-fonts\n {4}to: brand-fonts/, 'in the installer, next to app.asar');
+  const assets = fs.readFileSync(path.join(root, 'apps/desktop/src/main/services/brand-assets.ts'), 'utf8');
+  assert.match(assets, /app\.isPackaged \? join\(process\.resourcesPath, 'brand-fonts'\) : join\(app\.getAppPath\(\), 'resources', 'brand-fonts'\)/);
+  const service = fs.readFileSync(path.join(root, 'apps/desktop/src/main/services/brand-service.ts'), 'utf8');
+  for (const code of [assets, service]) assert.doesNotMatch(code, /fetch\(|googleapis|gstatic/, 'no network for fonts');
+  const script = fs.readFileSync(path.join(root, 'scripts/fetch-brand-fonts.mjs'), 'utf8');
+  assert.match(script, /export const CURATED_FONTS = \\\[/, 'the script reads the list from brand.ts');
 
   console.log('  [brand] The agent: brand first, theme only, launch flow, changes through set_brand...');
   const tool = OPENAI_TOOLS.find((t) => t.function.name === 'set_brand');

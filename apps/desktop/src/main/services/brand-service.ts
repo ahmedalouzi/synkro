@@ -1,7 +1,7 @@
-import { access, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, copyFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import {
-  BRAND_FILE, FONT_WEIGHTS, brandFromDesignManifest, fallbackLogoPng, brandProblems, brandSignature, closestTooSimilar, finalizeBrand,
+  BRAND_FILE, FONT_WEIGHTS, brandFromDesignManifest, fallbackLogoPng, fontSlug, brandProblems, brandSignature, closestTooSimilar, finalizeBrand,
   flutterBrandTheme, mergeBrand, pubspecWithBrand, reactNativeBrandTheme, type Brand, type BrandSignature,
 } from '@peep/agent';
 
@@ -22,26 +22,17 @@ export interface BrandDeps {
   store: BrandStore;
   /** The logo as a square PNG (transparent background, the mark centred). */
   rasterize: (svg: string, size: number) => Promise<Buffer>;
-  /** One weight of a Google Font as TTF. */
-  fetchFont: (family: string, weight: number) => Promise<Buffer>;
-  /** How long a font weight may take (default FONT_TIMEOUT_MS). */
-  fontTimeoutMs?: number;
+  /**
+   * The folder of the fonts bundled with the desktop app (resources/brand-fonts: <slug>/{400,600,700}.ttf and OFL.txt
+   * for every curated family). Fonts are copied from here into the project; there is no network call for fonts.
+   */
+  fontsDir: string;
 }
 
 export type BrandOutcome =
   | { status: 'saved'; brand: Brand; files: string[]; contrastChanges: string[]; warnings: string[] }
   | { status: 'too-similar'; similarTo: StoredBrand; message: string }
   | { status: 'invalid'; problems: string[] };
-
-/** How long one font weight may take to download. */
-export const FONT_TIMEOUT_MS = 15_000;
-
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`timed out after ${ms / 1000} s`)), ms);
-    promise.then((v) => { clearTimeout(timer); resolve(v); }, (e) => { clearTimeout(timer); reject(e); });
-  });
-}
 
 /** A failure's reason for a warning: one short line, without URLs (they could carry keys or tokens). */
 function short(err: unknown): string {
@@ -133,21 +124,27 @@ export async function setBrand(
     await write('assets/brand/logo.png', fallbackLogoPng(brand.colors.primary));
   }
 
-  // The font files: all three weights or none. A failed download (offline, timeout, blocked) never fails the brand:
-  // the app uses the platform's default font, brand.json keeps the font, and the next set_brand downloads it again.
+  // The font files, copied from the fonts bundled with Atomvs: all three weights or none. A file that is somehow
+  // missing never fails the brand or the build: the app uses the platform's default font, brand.json keeps the font,
+  // and the next set_brand copies it again.
   const fontFile = (w: number) => join(projectPath, `assets/fonts/brand-${w}.ttf`);
   const haveFonts = async () => (await Promise.all(FONT_WEIGHTS.map((w) => exists(fontFile(w))))).every(Boolean);
   let fontsOk = framework ? await haveFonts() : false;
   if (framework && (!existing || existing.font !== brand.font || !fontsOk)) {
-    try {
-      const downloaded = await Promise.all(FONT_WEIGHTS.map((w) => withTimeout(deps.fetchFont(brand.font, w), deps.fontTimeoutMs ?? FONT_TIMEOUT_MS)));
-      for (const [i, w] of FONT_WEIGHTS.entries()) await write(`assets/fonts/brand-${w}.ttf`, downloaded[i]);
+    const bundled = (w: number) => join(deps.fontsDir, fontSlug(brand.font), `${w}.ttf`);
+    const missing = (await Promise.all(FONT_WEIGHTS.map(async (w) => ((await exists(bundled(w))) ? null : w)))).filter((w) => w !== null);
+    if (missing.length === 0) {
+      for (const w of FONT_WEIGHTS) {
+        await mkdir(dirname(fontFile(w)), { recursive: true });
+        await copyFile(bundled(w), fontFile(w));
+        files.push(`assets/fonts/brand-${w}.ttf`);
+      }
       fontsOk = true;
-    } catch (err) {
+    } else {
       // No stale files from a previous font: they would show the wrong typeface under the new name.
       await Promise.all(FONT_WEIGHTS.map((w) => rm(fontFile(w), { force: true })));
       fontsOk = false;
-      warnings.push(`The ${brand.font} font could not be downloaded (${short(err)}); the app uses the platform's default font for now, and set_brand will try again next time.`);
+      warnings.push(`The ${brand.font} font files are missing from this Atomvs installation (weight ${missing.join(', ')}); the app uses the platform's default font for now, and set_brand will try again next time.`);
     }
   }
 
@@ -211,8 +208,9 @@ illustration style: ${brand.illustration_style ?? '(not set)'} · splash: ${bran
 Screens read colors, font and radii from ${theme}; never hard-code them. To change the identity, call set_brand.`;
 }
 
-const DART_LITERALS = /\bColor\(0x[0-9a-fA-F]{8}\)|\bColors\.(?!transparent\b)[a-z]\w*|\bfontFamily\s*:/;
-const TS_LITERALS = /['"`]#[0-9a-fA-F]{3,8}['"`]|\brgba?\(|\bfontFamily\s*:/;
+// A literal color or font NAME (fontFamily: 'Roboto'); fontFamily: Brand.fontFamily / brand.font.bold is the theme.
+const DART_LITERALS = /\bColor\(0x[0-9a-fA-F]{8}\)|\bColors\.(?!transparent\b)[a-z]\w*|\bfontFamily\s*:\s*['"]/;
+const TS_LITERALS = /['"`]#[0-9a-fA-F]{3,8}['"`]|\brgba?\(|\bfontFamily\s*:\s*['"`]/;
 
 /**
  * A screen that hard-codes colors or fonts instead of reading the brand theme, or null. For the agent's file tools:

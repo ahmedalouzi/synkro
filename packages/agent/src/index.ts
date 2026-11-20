@@ -27,6 +27,6 @@ export {
   BRAND_FILE, CURATED_FONTS, ILLUSTRATION_PRESETS, COLOR_KEYS, CONTRAST_PAIRS, FONT_WEIGHTS, NATIVE_SPLASH_VERSION,
   brandProblems, finalizeBrand, mergeBrand, fixContrast, fixPaletteContrast, contrastFailures, contrastRatio, luminance, hue,
   hueDistance, brandFingerprint, brandSignature, tooSimilar, closestTooSimilar, brandFromDesignManifest, logoProblem,
-  flutterBrandTheme, reactNativeBrandTheme, nativeSplashConfig, pubspecWithBrand, fallbackLogoPng,
+  flutterBrandTheme, reactNativeBrandTheme, nativeSplashConfig, pubspecWithBrand, fallbackLogoPng, fontSlug,
   type Brand, type BrandColors, type BrandSignature, type IllustrationPreset,
 } from './brand/brand';
