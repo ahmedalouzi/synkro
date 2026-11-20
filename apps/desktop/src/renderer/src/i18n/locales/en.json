@@ -514,7 +514,9 @@
       "notCode": "This isn't a problem in your app's code.",
       "openSettings": "Choose Flutter location",
       "retry": "Retry"
-    }
+    },
+    "zoom": "Zoom",
+    "zoomFit": "Fit"
   },
   "bottomPanel": {
     "terminal": "Terminal",

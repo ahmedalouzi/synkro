@@ -200,6 +200,39 @@
   background: transparent;
 }
 
+/* 100 % / 125 %: the phone can be larger than the stage; it scrolls, centred while it fits. */
+.preview-stage.is-zoomed {
+  overflow: auto;
+  justify-content: safe center;
+  align-items: safe center;
+}
+
+/* Zoom: Fit / 100 % / 125 %, a small segmented control next to the device name. */
+.preview-zoom {
+  display: inline-flex;
+  gap: 2px;
+  padding: 1px;
+  border-radius: 6px;
+  background: color-mix(in oklab, var(--text-primary, #e8eaf0) 7%, transparent);
+}
+.preview-zoom__opt {
+  padding: 1px 6px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-secondary, #9aa0aa);
+  font: inherit;
+  font-size: 10.5px;
+  line-height: 16px;
+  cursor: pointer;
+}
+.preview-zoom__opt:hover { color: var(--text-primary, #e8eaf0); }
+.preview-zoom__opt.is-on {
+  background: color-mix(in oklab, var(--text-primary, #e8eaf0) 16%, transparent);
+  color: var(--text-primary, #e8eaf0);
+}
+.preview-zoom__opt:focus-visible { outline: 2px solid var(--accent, #7c83ff); outline-offset: 1px; }
+
 .preview-platform-badge { display: none; }
 .preview-device-select  { display: none; }
 

@@ -1,7 +1,9 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { PreviewAssembly } from './PreviewAssembly';
 import './DetachedPreview.css';
-import { DEVICES, deviceFinish, deviceGeometry, fitZoom, type DeviceType } from './devices';
+import { DEVICES, deviceFinish, deviceGeometry, type DeviceType } from './devices';
+import { exactZoom } from './frame-svg';
+import { useDevicePixelRatio } from './useDevicePixelRatio';
 import { usePreviewStore } from '../../stores/preview-store';
 import { usePreviewSafeArea } from './usePreviewSafeArea';
 
@@ -18,6 +20,8 @@ export function DetachedPreview() {
   const [iframeKey, setIframeKey]   = useState(0);
   const [scale, setScale]           = useState(0.6);
   const bodyRef = useRef<HTMLDivElement>(null);
+  // Re-fit when the window moves to a screen with another display scaling (no resize event follows).
+  const dpr = useDevicePixelRatio();
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const FRAME_W = geometry.frame.width;
@@ -35,12 +39,13 @@ export function DetachedPreview() {
   const computeScale = useCallback(() => {
     const el = bodyRef.current;
     if (!el) return;
-    const availW = el.clientWidth  - 32;
-    const availH = el.clientHeight - 32;
+    // The window is sized tightly to the phone (ipc detachedWindowSize): fill the body.
+    const availW = el.clientWidth;
+    const availH = el.clientHeight;
     if (availW <= 0 || availH <= 0) return;
-    // zoom keeps the app sharp at any size, so it can grow beyond 1x.
-    setScale(fitZoom(geometry, availW, availH, window.devicePixelRatio || 1, 0.2, 2));
-  }, [deviceId, landscape]);
+    // The frame is vectors drawn at the final size and the app is re-laid out there, so it can grow beyond 1x.
+    setScale(exactZoom(Math.min(2, availW / FRAME_W, availH / FRAME_H), geometry, window.devicePixelRatio || 1));
+  }, [deviceId, landscape, dpr]);
 
   useEffect(() => {
     computeScale();
@@ -48,6 +53,34 @@ export function DetachedPreview() {
     if (bodyRef.current) ro.observe(bodyRef.current);
     return () => ro.disconnect();
   }, [computeScale]);
+
+  // Outside the phone's shape the window lets clicks through to the desktop: the element under the pointer decides
+  // (the stage, body and slot have pointer-events: none; the header, the screen and the body path take it).
+  useEffect(() => {
+    let through = false;
+    const onMove = (e: MouseEvent) => {
+      const hit = document.elementFromPoint(e.clientX, e.clientY);
+      const next = !hit || hit === document.documentElement || hit === document.body || !!hit.closest('.detached-body, .detached-stage') && !hit.closest('.detached-header, .screen-mask, .pf-hit');
+      if (next !== through) {
+        through = next;
+        void window.peep.setPreviewClickThrough?.(next);
+      }
+    };
+    const onLeave = () => {
+      // Back to normal when the pointer leaves, so the window never stays unclickable.
+      if (through) { through = false; void window.peep.setPreviewClickThrough?.(false); }
+    };
+    window.addEventListener('mousemove', onMove);
+    // Entering the app's iframe fast: the page sees the iframe element's mouseover even when no move lands outside it.
+    window.addEventListener('mouseover', onMove);
+    document.addEventListener('mouseleave', onLeave);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseover', onMove);
+      document.removeEventListener('mouseleave', onLeave);
+      void window.peep.setPreviewClickThrough?.(false);
+    };
+  }, []);
 
   const isRunning = session?.status === 'running' && session.url;
   const { tone, background, onFrameLoad } = usePreviewSafeArea(iframeRef, session?.url, device, geometry);
@@ -84,21 +117,14 @@ export function DetachedPreview() {
 
       {/* Body: phone frame centered */}
       <div className="detached-body" ref={bodyRef}>
-        {/* CSS zoom (not transform: scale): the iframe is re-rendered at the zoomed
-            size, so the app stays sharp while still seeing the device's logical width. */}
+        {/* The live preview (an iframe, never a captured image), as in the docked pane: the frame drawn as vectors
+            at its final size, the app re-laid out there with CSS zoom. */}
         <div
           className="detached-phone-slot"
           style={{ width: FRAME_W * scale, height: FRAME_H * scale }}
         >
-          <div
-            className="detached-phone-transform"
-            style={{
-              width: FRAME_W,
-              height: FRAME_H,
-              zoom: scale,
-            }}
-          >
-            <PreviewAssembly device={device} landscape={landscape} tone={tone} background={background} finish={frameFinish}>
+          <div className="detached-phone-transform">
+            <PreviewAssembly device={device} landscape={landscape} tone={tone} background={background} finish={frameFinish} zoom={scale} dpr={dpr} compactShadow>
               {session?.status === 'starting' && (
                 <div className="preview-placeholder">
                   <span className="preview-placeholder__icon preview-placeholder__spinner">⏳</span>
