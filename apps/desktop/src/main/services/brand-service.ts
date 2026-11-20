@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path';
 import {
   BRAND_FILE, FONT_WEIGHTS, brandFromDesignManifest, fallbackLogoPng, fontSlug, brandProblems, brandSignature, closestTooSimilar, finalizeBrand,
   flutterBrandTheme, mergeBrand, pubspecWithBrand, reactNativeBrandTheme, type Brand, type BrandSignature,
-} from '@peep/agent';
+} from '@peep/agent/brand';
 
 /** A project's stored brand signature (the project record in the desktop's local store). */
 export interface StoredBrand extends BrandSignature {
