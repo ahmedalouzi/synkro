@@ -591,7 +591,8 @@
     "planBuildFix": "Plan, build, fix anything",
     "emptyHint": "@ to add files and context · / for commands · paste images to show the agent your screen",
     "usedCredits": "Used {count} credits",
-    "usedCredit": "Used 1 credit"
+    "usedCredit": "Used 1 credit",
+    "autoLayoutFix": "Fixing a layout problem automatically…"
   },
   "preview": {
     "title": "PREVIEW",
@@ -609,7 +610,9 @@
       "notCode": "This isn't a problem in your app's code.",
       "openSettings": "Choose Flutter location",
       "retry": "Retry"
-    }
+    },
+    "autoFix": "✨ Auto-Fix Build",
+    "autoFixWorking": "Fixing…"
   },
   "bottomPanel": {
     "terminal": "Terminal",

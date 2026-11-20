@@ -135,6 +135,9 @@ async function onProjectOpened(
   fileWatcher.watch(projectPath, mainWindow, (events) => {
     setTimeout(() => {
       const session = previewManager.getSession();
+      // Not while the agent writes files: half-written code would flash "Preview failed". The agent checks the
+      // code compiles before it restarts the preview, and the run reloads it once when it ends.
+      if (agentSvc.isRunning()) return;
       if (session && session.processId && session.status === 'running') {
         provider.reloadPreview(session.processId);
       }

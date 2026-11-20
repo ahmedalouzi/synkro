@@ -27,6 +27,9 @@ interface ChatState {
   agentPhase: AgentPhase;
 
   ipcError: string | null;
+  /** The last run was stopped by the user or ended in an error (no automatic fixes until the user sends again). */
+  lastRunInterrupted: boolean;
+  setLastRunInterrupted: (value: boolean) => void;
 
   setInput: (input: string) => void;
   addMessage: (message: AgentMessage) => void;
@@ -184,11 +187,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
   selectedRunId: null,
   agentPhase: 'idle',
   ipcError: null,
+  lastRunInterrupted: false,
 
   selectRun: (runId) => set({ selectedRunId: runId }),
   setInput: (input) => set({ input }),
   setAgentTask: (task) => set({ agentTask: task }),
   setIpcError: (ipcError) => set({ ipcError }),
+  setLastRunInterrupted: (lastRunInterrupted) => set({ lastRunInterrupted }),
   addMessage: (message) =>
     set((state) => {
       // A message is added once: a second add with the same id (a re-sent event) would show it twice.

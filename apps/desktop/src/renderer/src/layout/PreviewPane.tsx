@@ -1,5 +1,7 @@
 import { useI18n } from '../i18n';
-import { parseFlutterEnvironmentProblem } from '@peep/shared';
+import { FailureGate, OncePerFailure, autoFixBlocked, parseFlutterEnvironmentProblem, runtimeFixMessage, type PreviewRuntimeReport } from '@peep/shared';
+import { useApprovalStore } from '../stores/approval-store';
+import { useChatStore } from '../stores/chat-store';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { usePreviewStore } from '../stores/preview-store';
 import { useWorkspaceStore } from '../stores/workspace-store';
@@ -303,8 +305,72 @@ Please modify the selected element and its corresponding component files as foll
   useEffect(() => {
     if (isDetached) lastDetachedKeyRef.current = detachedKey;
   }, [isDetached]);
+  // Auto-Fix Build: one request per failure (a second click, a double click, or a click while the agent works send
+  // nothing). A new failure (Retry, or a later error) allows it again.
+  const agentBusy = useChatStore((s) => s.isStreaming);
+  const fixGate = useRef(new FailureGate());
+  const [, setFixState] = useState(0);
+  const failedError = session?.status === 'error' ? session.error ?? '' : null;
+  useEffect(() => {
+    if (failedError === null) return;
+    fixGate.current.noteFailure();
+    setFixState((n) => n + 1);
+    // Keyed on the status and the error text, not the session object: the same failure reported twice is one.
+  }, [failedError, session?.status]);
+  const fixSent = fixGate.current.sent;
+
+  // Flutter errors the running preview reports (a RenderFlex overflow, an unbounded height): to the agent once
+  // each, at most 3 per project, and only while it is idle; the latest report wins (a fixed error is not sent).
+  const runtimeFixes = useRef(new OncePerFailure(3));
+  const [runtimeErrors, setRuntimeErrors] = useState<string[]>([]);
+  useEffect(() => {
+    runtimeFixes.current.reset();
+    setRuntimeErrors([]);
+  }, [project?.path]);
+  useEffect(() => {
+    const onRuntime = (e: Event) => {
+      const report = (e as CustomEvent<PreviewRuntimeReport>).detail;
+      setRuntimeErrors(report.errors.filter((x) => x.kind === 'flutter-error').map((x) => x.message));
+    };
+    window.addEventListener('peep:preview-runtime', onRuntime);
+    return () => window.removeEventListener('peep:preview-runtime', onRuntime);
+  }, []);
+  // They use the user's credits: never with none left, never into a run that waits for an approval or that the user
+  // stopped or that failed (see autoFixBlocked). A blocked send is not counted, and the chat shows one short line.
+  useEffect(() => {
+    if (!project || agentBusy || runtimeErrors.length === 0) return;
+    let cancelled = false;
+    void (async () => {
+      if (runtimeFixes.current.fresh(runtimeErrors).length === 0) return;
+      let creditsRemaining: number | undefined;
+      try {
+        creditsRemaining = (await window.peep.authGetAccount())?.creditsRemaining;
+      } catch {
+        creditsRemaining = undefined;
+      }
+      const chat = useChatStore.getState();
+      const blocked = autoFixBlocked({
+        agentBusy: chat.isStreaming,
+        pendingApprovals: useApprovalStore.getState().pending.length,
+        lastRunInterrupted: chat.lastRunInterrupted,
+        creditsRemaining,
+      });
+      if (cancelled || blocked) return;
+      const fresh = runtimeFixes.current.claimAll(runtimeErrors);
+      if (fresh.length === 0) return;
+      const { agentPaneOpen, toggleAgentPane } = useWorkspaceStore.getState();
+      if (!agentPaneOpen) toggleAgentPane();
+      window.dispatchEvent(new CustomEvent('peep:trigger-agent', {
+        detail: { message: runtimeFixMessage(fresh), display: t('chat.autoLayoutFix') },
+      }));
+    })();
+    return () => { cancelled = true; };
+  }, [runtimeErrors, agentBusy, project]);
+
   const handleAutoHeal = () => {
     if (!project || !session?.error) return;
+    if (!fixGate.current.claim(useChatStore.getState().isStreaming)) return;
+    setFixState((n) => n + 1);
     const { agentPaneOpen, toggleAgentPane } = useWorkspaceStore.getState();
     if (!agentPaneOpen) {
       toggleAgentPane();
@@ -604,10 +670,10 @@ Please modify the selected element and its corresponding component files as foll
                       <button type="button" className="preview-retry-btn"
                         onClick={handleStart} disabled={!project}>Retry</button>
                       <button type="button" className="preview-retry-btn"
-                        onClick={handleAutoHeal} disabled={!project}
+                        onClick={handleAutoHeal} disabled={!project || agentBusy || fixSent}
                         style={{ marginLeft: '8px', background: 'var(--gold)', color: '#000', borderColor: 'var(--gold)' }}
                       >
-                        ✨ Auto-Fix Build
+                        {fixSent || agentBusy ? t('preview.autoFixWorking') : t('preview.autoFix')}
                       </button>
                     </div>
                   ) : null}

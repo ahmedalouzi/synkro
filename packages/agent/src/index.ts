@@ -23,3 +23,4 @@ export * from './memory/index';
 export * from './models/index';
 export * from './error-recovery/diagnostics';
 export * from './models/zip-validator';
+export { selfCheckErrors, dartStringIssues } from './verification/self-check';

@@ -46,7 +46,41 @@ import 'package:${packageName}/main.dart' as app;
 
 void main() {
   _AtomvsPreviewBinding();
+  _atomvsCaptureFlutterErrors();
   app.main(${takesArgs ? 'const <String>[]' : ''});
+}
+
+// FlutterError reports (a RenderFlex overflow, an unbounded height, an exception in build): one line each, with the
+// app file it points at, for the preview shim, which reports them to the agent. Flutter still prints them as usual.
+final List<String> _atomvsErrors = <String>[];
+
+void _atomvsCaptureFlutterErrors() {
+  final previous = FlutterError.onError;
+  FlutterError.onError = (FlutterErrorDetails details) {
+    try {
+      final summary = details.exceptionAsString().split('\\n').first.trim();
+      final text = details.toString();
+      String? where;
+      for (final m in RegExp(r'(?:package:[A-Za-z0-9_]+/|lib/)[A-Za-z0-9_/]+\\.dart:\\d+(?::\\d+)?').allMatches(text)) {
+        final hit = m.group(0)!;
+        // The app's file, not the framework's (packages/flutter/lib/src/...).
+        if (hit.startsWith('lib/src/') || hit.startsWith('package:flutter/')) continue;
+        where = hit;
+        break;
+      }
+      final entry = where == null ? summary : '$summary ($where)';
+      if (summary.isNotEmpty && !_atomvsErrors.contains(entry)) {
+        _atomvsErrors.add(entry);
+        if (_atomvsErrors.length > 8) _atomvsErrors.removeAt(0);
+        globalContext['__atomvsFlutterErrors'] = _atomvsErrors.jsify();
+        globalContext.callMethod('dispatchEvent'.toJS,
+            (globalContext['Event'] as JSFunction).callAsConstructor<JSObject>('atomvs:flutter-layout'.toJS));
+      }
+    } catch (_) {
+      // Never break the app over a report.
+    }
+    (previous ?? FlutterError.presentError)(details);
+  };
 }
 
 class _AtomvsPreviewBinding extends WidgetsFlutterBinding {
@@ -106,6 +140,14 @@ class _AtomvsSafeAreaState extends State<_AtomvsSafeArea> {
     globalContext.callMethod('removeEventListener'.toJS, 'message'.toJS, onMessage);
     probe?.cancel();
     super.dispose();
+  }
+
+  @override
+  void reassemble() {
+    super.reassemble();
+    // Hot reload keeps globals: the errors recorded before it belong to the old code.
+    _atomvsErrors.clear();
+    globalContext['__atomvsFlutterErrors'] = _atomvsErrors.jsify();
   }
 
   void _probe() {
