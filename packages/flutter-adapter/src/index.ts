@@ -9,8 +9,9 @@ export type { ProjectTemplate, TemplateFile } from './templates';
 export function parseFlutterAnalyze(output: string): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
   const patterns = [
-    /^(error|warning|info)\s*•\s*(.+?)\s*•\s*(.+?):(\d+):(\d+)\s*•/gm,
-    /^(error|warning|info)\s*•\s*(.+?)\s*•\s*(.+?):(\d+):(\d+)\s*$/gm,
+    // `flutter analyze` right-aligns the severity: "  error • …", "warning • …" (Flutter 3.44), so leading spaces.
+    /^[ \t]*(error|warning|info)\s*•\s*(.+?)\s*•\s*(.+?):(\d+):(\d+)\s*•/gm,
+    /^[ \t]*(error|warning|info)\s*•\s*(.+?)\s*•\s*(.+?):(\d+):(\d+)\s*$/gm,
   ];
 
   for (const pattern of patterns) {

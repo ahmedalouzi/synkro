@@ -42,7 +42,8 @@ export interface PreviewSession {
 
 /** What the app in the preview iframe hit at runtime, and whether it shows anything (for the agent's checks). */
 export interface PreviewRuntimeReport {
-  errors: Array<{ kind: 'exception' | 'unhandled-rejection' | 'console.error'; message: string }>;
+  /** flutter-error: a FlutterError report from the Flutter preview entrypoint (overflow, unbounded size, build exception). */
+  errors: Array<{ kind: 'exception' | 'unhandled-rejection' | 'console.error' | 'flutter-error'; message: string }>;
   /** Visible content after load: text, images or a canvas in the app's root. */
   rendered: boolean;
   textChars: number;
@@ -181,7 +182,7 @@ export function parseProposedEditsPayload(payload: unknown): { edits: ProposedEd
   return { edits: edits as ProposedEdit[], ...(typeof threadId === 'string' ? { threadId } : {}) };
 }
 
-const RUNTIME_ERROR_KINDS = new Set(['exception', 'unhandled-rejection', 'console.error']);
+const RUNTIME_ERROR_KINDS = new Set(['exception', 'unhandled-rejection', 'console.error', 'flutter-error']);
 
 /**
  * A PreviewRuntimeReport from untrusted input (the app's page, then the renderer over IPC), or null:
@@ -1354,3 +1355,8 @@ export interface AIGateway {
 
 export { ProviderError } from './provider-error';
 export { syncedFolderOf, flutterEnvironmentMessage, parseFlutterEnvironmentProblem, FLUTTER_STARTUP_LOCK_LINE, type FlutterEnvironmentProblem } from './flutter-environment';
+export {
+  escapedDartInterpolations, escapedInterpolationMessage, flutterErrorHint, describeFlutterError, failureSignature,
+  OncePerFailure, FailureGate, runtimeFixMessage, autoFixBlocked, DART_PRICE_PATTERN, type EscapedInterpolation,
+  type AutoFixContext, type AutoFixBlock,
+} from './generation-checks';

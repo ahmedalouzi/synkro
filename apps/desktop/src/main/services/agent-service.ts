@@ -19,7 +19,10 @@ import { resolveMentions } from './mention-resolver';
 import { createAIGateway } from './gateway-factory';
 import { CheckpointService } from './checkpoint-service';
 import type { ApprovalService, ApprovalStore } from './approval-service';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { readFile as readFileAsync } from 'node:fs/promises';
+import { escapedDartInterpolations, escapedInterpolationMessage } from '@peep/shared';
+import { dartStringIssues, selfCheckErrors } from '@peep/agent';
 import { loadProjectRules } from './project-rules';
 
 /** Agent tools that change a file at `args.path` (captured for checkpoints). */
@@ -200,6 +203,14 @@ export class AgentService {
     this.pendingEdits = this.pendingEdits.filter((e) => !editIds.includes(e.id));
     this.emitEdits();
 
+  }
+
+  /** The run changed files after its last restart_preview: reload the preview once when it ends. */
+  private reloadAfterRun = false;
+
+  /** A run is in progress (the file watcher leaves the preview alone meanwhile). */
+  isRunning(): boolean {
+    return this.abortController !== null;
   }
 
   cancel(): void {
@@ -422,6 +433,22 @@ export class AgentService {
     const executor = {
       lastOriginalContent: '',
       lastProposedContent: '',
+      // The engine's compile check (runAgentLoop runs it before the preview starts and before the run ends):
+      // validate_project's errors (flutter analyze / tsc --noEmit) plus Dart strings with a dead `\${…}`.
+      // null when it cannot run (no project, no SDK): the run is not blocked by a check that cannot happen.
+      selfCheck: async (): Promise<string[] | null> => {
+        if (!projectPath) return null;
+        const detection = await this.registry.detect(projectPath);
+        if (!detection.provider) return null;
+        const root = detection.projectRoot;
+        try {
+          const errors = selfCheckErrors(await detection.provider.validateProject(root));
+          if (existsSync(join(root, 'pubspec.yaml'))) errors.push(...await dartStringIssues(root));
+          return errors;
+        } catch {
+          return null;
+        }
+      },
       execute: async (name: string, args: Record<string, unknown>): Promise<string> => {
         console.log(`[E2E_VERIFICATION] 7. Tool Execution Requested by LLM: ${name}`);
         if (!projectPath) {
@@ -1072,6 +1099,26 @@ export class AgentService {
         }
       },
     };
+    // After a Dart file is written: a string with `\${…}` shows that text instead of the value (the analyzer accepts
+    // it), so say so right away. And remember that the preview needs a reload after the run (see send's finally).
+    const runTool = executor.execute;
+    executor.execute = async (name: string, args: Record<string, unknown>): Promise<string> => {
+      const output = await runTool(name, args);
+      if (name === 'restart_preview') this.reloadAfterRun = false;
+      if ((name === 'propose_file_edit' || name === 'patch_file') && !/^Error/.test(output)) {
+        this.reloadAfterRun = true;
+        const rel = String(args.path ?? '');
+        if (projectPath && rel.endsWith('.dart')) {
+          try {
+            const hits = escapedDartInterpolations(await readFileAsync(this.resolvePath(projectPath, rel), 'utf8'));
+            if (hits.length) return `${output}\n\nWarning: ${escapedInterpolationMessage(rel, hits)}`;
+          } catch {
+            // The write itself succeeded; the check is only a hint.
+          }
+        }
+      }
+      return output;
+    };
 
     const isComplex = !!(
       options.scaffoldMode || 
@@ -1258,6 +1305,10 @@ export class AgentService {
       // Always reset the SM so the renderer returns to 'idle' even on error/cancel.
       sm.reset();
       this.abortController = null;
+      // The file watcher does not reload the preview while a run writes files (half-written code would show
+      // "Preview failed"); one reload now if the run changed files after its last restart_preview.
+      if (this.reloadAfterRun && this.preview?.getSession()?.status === 'running') this.preview.reload();
+      this.reloadAfterRun = false;
     }
   }
 }

@@ -204,7 +204,11 @@ export function usePreviewSafeArea(
       else if (data.type === 'atomvs:runtime') {
         // Relayed for the agent's get_preview_logs (main validates it again).
         const report = parsePreviewRuntimeReport(data);
-        if (report) window.peep?.reportPreviewRuntime?.(report);
+        if (report) {
+          window.peep?.reportPreviewRuntime?.(report);
+          // For the Preview pane: Flutter errors on screen go to the agent once (see PreviewPane).
+          window.dispatchEvent(new CustomEvent('peep:preview-runtime', { detail: report }));
+        }
       }
       else if (data.type === 'atomvs:status-bar') {
         const tone = data.declared;

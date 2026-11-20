@@ -103,7 +103,7 @@ function toolNameToActivityType(name: string): AgentTimelineActivityType {
 export const NOT_RUN = /^(BLOCKED: |Not run: |Command was rejected by user|File deletion rejected by user|Command error: Command not allowed)/;
 
 /** A check's output that shows a problem. */
-const CHECK_FAILED = /Error lines in the output \(|^Preview: (error|not running)|Start error:|Runtime errors in the page \(|visible content NO|Error overlay on screen|"success": false|error TS\d+|exited with code [1-9]|^Error:|^BLOCKED:/m;
+const CHECK_FAILED = /Error lines in the output \(|^Preview: (error|not running)|Start error:|Runtime errors in the page \(|visible content NO|Error overlay on screen|Layout problems on screen \(|"success": false|error TS\d+|exited with code [1-9]|^Error:|^BLOCKED:/m;
 
 const CHANGE_TOOLS = new Set(['propose_file_edit', 'patch_file', 'delete_file', 'rename_file', 'bootstrap_project']);
 const PACKAGE_COMMAND = /\b(npm|pnpm|yarn|bun)\s+(install|i|ci|add|remove|uninstall|rm)\b|\bexpo\s+install\b/i;
@@ -214,6 +214,33 @@ export interface AgentToolExecutor {
   execute: (name: string, args: Record<string, unknown>) => Promise<string>;
   lastOriginalContent?: string;
   lastProposedContent?: string;
+  /**
+   * The engine's own compile check of the project (flutter analyze / tsc --noEmit, plus cheap generated-code checks):
+   * the errors, [] when clean, or null when it cannot run (no SDK, no project). See runAgentLoop's self-check.
+   */
+  selfCheck?: () => Promise<string[] | null>;
+}
+
+/** How many times one run checks the code and hands the errors back before it lets the preview start anyway. */
+export const SELF_CHECK_MAX_ROUNDS = 3;
+
+/** The errors, listed for the model (at most 25). Exported for tests. */
+export function selfCheckErrorList(errors: string[]): string {
+  const shown = errors.slice(0, 25).map((e) => `- ${e}`).join('\n');
+  return errors.length > 25 ? `${shown}\n- … and ${errors.length - 25} more` : shown;
+}
+
+/** restart_preview refused: the code does not compile yet. Starts with "Not run: " (the timeline shows it as blocked). */
+export function selfCheckBlockedPreview(errors: string[], round: number): string {
+  return `Not run: the preview was not started because the project does not compile (${errors.length} error(s); `
+    + `check ${round} of ${SELF_CHECK_MAX_ROUNDS}). The user must never see a preview that fails on a compile error. `
+    + `Fix every error below in the files, then call restart_preview again.\n${selfCheckErrorList(errors)}`;
+}
+
+/** The run wanted to end with the code not compiling. */
+export function selfCheckUnfinished(errors: string[], round: number): string {
+  return `[Atomvs] Not done yet: the project does not compile (${errors.length} error(s); check ${round} of `
+    + `${SELF_CHECK_MAX_ROUNDS}). Fix every error below, then call restart_preview and read its report.\n${selfCheckErrorList(errors)}`;
 }
 
 const MAX_ITERATIONS = 50;
@@ -456,6 +483,31 @@ export async function runAgentLoop(
   let reminded = false;
   let gaveCheckTurn = false;
 
+  // Self-check: before the preview starts and before the run ends, after the code changed, the engine itself checks
+  // that the project compiles and hands the errors back to the model (at most SELF_CHECK_MAX_ROUNDS times a run), so
+  // the user never sees "Preview failed" for a simple compile error.
+  let selfCheckRounds = 0;
+  let selfCheckClean = false;
+  const runSelfCheck = async (): Promise<string[] | null> => {
+    if (!executor.selfCheck || !verification.hasChanges || selfCheckClean || selfCheckRounds >= SELF_CHECK_MAX_ROUNDS) return null;
+    callbacks.onStatus('Checking the code…');
+    let errors: string[] | null;
+    try {
+      errors = await executor.selfCheck();
+    } catch {
+      errors = null;
+    }
+    if (errors === null) return null;
+    if (errors.length === 0) {
+      selfCheckClean = true;
+      verification.record('typecheck', 'Self-check: no errors.');
+      return null;
+    }
+    selfCheckRounds++;
+    verification.record('typecheck', `Error: ${errors.length} compile error(s)\n${errors.join('\n')}`);
+    return errors;
+  };
+
   for (let i = 0; i < MAX_ITERATIONS; i++) {
     if (signal.aborted) throw new Error('Cancelled');
 
@@ -536,6 +588,12 @@ export async function runAgentLoop(
           const singleCallName = call.function.name;
           const singleCallArgs = args;
           callbacks.onStatus(inProgressMsg);
+          if (singleCallName === 'restart_preview') {
+            const errors = await runSelfCheck();
+            if (errors) {
+              return { role: 'tool' as const, tool_call_id: call.id, name: singleCallName, content: selfCheckBlockedPreview(errors, selfCheckRounds) };
+            }
+          }
           try {
             const output = await executor.execute(singleCallName, singleCallArgs);
             return { role: 'tool' as const, tool_call_id: call.id, name: singleCallName, content: output };
@@ -547,7 +605,11 @@ export async function runAgentLoop(
 
         toolResultMessages.push(singleCallMsg);
 
-        verification.record(verificationRole(name, args), singleCallMsg.content);
+        const role = verificationRole(name, args);
+        verification.record(role, singleCallMsg.content);
+        // The code changed: check it again. The model's own clean type check counts as one.
+        if (role === 'change' || role === 'deps') selfCheckClean = false;
+        else if (role === 'typecheck' && !CHECK_FAILED.test(singleCallMsg.content)) selfCheckClean = true;
 
         // Determine outcome. A command that was refused did not run: "Blocked", never "Ran".
         const toolBlocked = NOT_RUN.test(singleCallMsg.content);
@@ -585,6 +647,17 @@ export async function runAgentLoop(
     }
 
     const text = assistantMessage.content?.trim();
+    if (text) {
+      // It wants to finish: the code must compile first.
+      const errors = await runSelfCheck();
+      if (errors) {
+        accumulatedResponseText += `${text}\n\n`;
+        callbacks.onDelta('\n\n');
+        conversationHistory.push({ role: 'assistant', content: text });
+        conversationHistory.push({ role: 'user', content: selfCheckUnfinished(errors, selfCheckRounds) });
+        continue;
+      }
+    }
     const gaps = verification.gaps();
     if (text && gaps.length > 0 && !gaveCheckTurn) {
       // It answered with a check missing or failing: one more turn to check and fix (its answer is already on screen).
