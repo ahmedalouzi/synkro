@@ -268,7 +268,24 @@ export class AgentService {
     });
   }
 
+  /**
+   * One agent request. Whatever goes wrong while it is prepared (context, project index, manifest) is shown in the
+   * chat as an error and the run ends cleanly: an exception must never escape to ipcMain.handle('agent:send'), where it
+   * became an unhandled "Error invoking remote method 'agent:send'" in the window.
+   */
   async send(options: AgentSendOptions): Promise<void> {
+    try {
+      await this.runSend(options);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      log.error(`[Agent] send failed before the run: ${message}`);
+      this.abortController = null;
+      this.mainWindow?.webContents.send(IPC_EVENTS.AGENT_PHASE_CHANGED, { phase: 'idle', threadId: options.threadId });
+      this.emitStream({ type: 'error', content: `The request could not be prepared: ${message}` }, options.threadId);
+    }
+  }
+
+  private async runSend(options: AgentSendOptions): Promise<void> {
     const projectPath = options.projectPath;
     const settings = this.db.getSettingsRaw();
 
