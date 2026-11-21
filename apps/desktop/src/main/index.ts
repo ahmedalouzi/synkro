@@ -2,7 +2,9 @@ import './migrate-user-data';
 import { app, BrowserWindow, Menu } from 'electron';
 import { handleWindowOpenSafely } from './safe-external';
 import { existsSync, readFileSync } from 'node:fs';
+import { userInfo } from 'node:os';
 import { join } from 'node:path';
+import { scrubPiiString, scrubSentryBreadcrumb, scrubSentryEvent, scrubValue } from '@peep/shared';
 import { cleanupServices, processRegistry, registerIpcHandlers, setMainWindow } from './ipc';
 import { stopLeftoverProcesses } from './services/process-registry';
 import { config } from 'dotenv';
@@ -54,6 +56,14 @@ function readSavedTelemetryOptIn(): boolean {
 
 let telemetryEnabled = readSavedTelemetryOptIn();
 
+const osUsername = (() => {
+  try {
+    return userInfo().username;
+  } catch {
+    return process.env.USERNAME || process.env.USER || null;
+  }
+})();
+
 Sentry.init({
   dsn: resolveSentryDsn(),
   enabled: telemetryEnabled,
@@ -61,48 +71,13 @@ Sentry.init({
     if (!telemetryEnabled) {
       return null;
     }
-
-    if (event.request && event.request.data) {
-      delete event.request.data;
-    }
-    
-    const tokenRegex = /(Bearer\s+|session_token=)([a-zA-Z0-9\-_]+)/g;
-    const apiKeyRegex = /AIza[0-9A-Za-z\-_]{35}|sk-[a-zA-Z0-9]{48}|sk-ant-[a-zA-Z0-9\-_]{90,}/g;
-
-    const scrubString = (str: string) => {
-      if (!str) return str;
-      let res = str.replace(tokenRegex, '$1[REDACTED]');
-      res = res.replace(apiKeyRegex, '[REDACTED_API_KEY]');
-      res = res.replace(/(?:[A-Z]:\\[^\s]+|\/[^\s]+)[\\/]([^\s\\/]+)/g, '[REDACTED]/$1');
-      return res;
-    };
-
-    if (event.breadcrumbs) {
-      event.breadcrumbs.forEach((bc: any) => {
-        if (bc.message) bc.message = scrubString(bc.message);
-        if (bc.data) {
-          for (const key in bc.data) {
-            if (typeof bc.data[key] === 'string') {
-              bc.data[key] = scrubString(bc.data[key]);
-            }
-          }
-        }
-      });
-    }
-
-    if (event.exception && event.exception.values) {
-      event.exception.values.forEach((val: any) => {
-        if (val.value) val.value = scrubString(val.value);
-      });
-    }
-    
-    return event;
+    return scrubSentryEvent(event, { username: osUsername });
   },
   beforeBreadcrumb(breadcrumb: any) {
     if (!telemetryEnabled) {
       return null;
     }
-    return breadcrumb;
+    return scrubSentryBreadcrumb(breadcrumb, { username: osUsername });
   },
 });
 
@@ -115,6 +90,44 @@ export function syncSentryOptIn(enabled: boolean) {
     (client.getOptions() as any).enabled = enabled;
   }
   log.info(`[SENTRY] Telemetry ${enabled ? 'enabled' : 'disabled'}`);
+}
+
+/**
+ * Reports a desktop main-process failure (e.g. preview startup failure) to Sentry when opted in.
+ * All paths, usernames, and tokens are scrubbed before capture.
+ */
+export function reportDesktopFailureToSentry(
+  source: string,
+  errorOrMessage: unknown,
+  extra?: Record<string, unknown>,
+  tags?: Record<string, string>,
+): void {
+  if (!telemetryEnabled) return;
+  try {
+    const scrubOpts = { username: osUsername };
+    const scrubbedErr =
+      errorOrMessage instanceof Error
+        ? Object.assign(new Error(scrubPiiString(errorOrMessage.message, scrubOpts)), {
+            name: errorOrMessage.name,
+            stack: errorOrMessage.stack ? scrubPiiString(errorOrMessage.stack, scrubOpts) : undefined,
+          })
+        : new Error(scrubPiiString(String(errorOrMessage ?? 'Unknown desktop failure'), scrubOpts));
+
+    Sentry.withScope((scope) => {
+      scope.setTag('source', source);
+      if (tags) {
+        for (const [k, v] of Object.entries(tags)) {
+          scope.setTag(k, scrubPiiString(v, scrubOpts));
+        }
+      }
+      if (extra) {
+        scope.setExtras(scrubValue(extra, scrubOpts));
+      }
+      Sentry.captureException(scrubbedErr);
+    });
+  } catch {
+    // Never let telemetry crash the desktop app
+  }
 }
 
 // Suppress harmless Chromium GPU cache permission errors on Windows
@@ -212,7 +225,7 @@ app.whenReady().then(() => {
       : null,
   );
 
-  void registerIpcHandlers({ syncSentryOptIn }).then((services) => {
+  void registerIpcHandlers({ syncSentryOptIn, reportDesktopFailureToSentry }).then((services) => {
     appServices = services;
     createWindow();
     setupPoCIpc(mainWindow);

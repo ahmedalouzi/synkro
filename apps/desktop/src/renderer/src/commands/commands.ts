@@ -471,6 +471,18 @@ const commandList: Command[] = [
   { id: 'workbench.action.terminal.kill', category: 'Terminal', title: 'Kill Terminal', run: () => terminalAction('kill'), enabled: hasProject },
 
   // Help
+  {
+    id: 'peep.runDoctor',
+    category: 'Help',
+    title: 'Atomvs Doctor',
+    run: () => {
+      if (window.peep?.openSettingsWindow) {
+        void window.peep.openSettingsWindow('sdk');
+      } else {
+        emit('peep:open-settings', { section: 'sdk' });
+      }
+    },
+  },
   { id: 'workbench.action.keybindingsReference', category: 'Help', title: 'Keyboard Shortcuts Reference', keybinding: 'Ctrl+K Ctrl+R', run: () => emit('peep:open-keyboard-help') },
   { id: 'workbench.action.toggleDevTools', category: 'Developer', title: 'Toggle Developer Tools', keybinding: 'Ctrl+Shift+I', run: () => window.peep.toggleDevTools() },
   { id: 'workbench.action.reloadWindow', category: 'Developer', title: 'Reload Window', run: () => window.peep.reloadWindow() },

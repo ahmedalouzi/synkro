@@ -1,4 +1,4 @@
-import type { PreviewSession, PreviewRuntimeReport } from '@peep/shared';
+import { classifyFailure, type PreviewSession, type PreviewRuntimeReport } from '@peep/shared';
 
 /** The preview's recent output (Expo/Metro, Flutter), kept so the agent can read it. Capped, oldest dropped. */
 export class PreviewLog {
@@ -84,6 +84,19 @@ export function formatPreviewReport(
           + runtime.layout.map((l) => `[${l.kind}] ${l.message}`).join('\n'));
       }
     }
+  }
+  const classification = classifyFailure({
+    error: session.error?.replace(ANSI, ''),
+    logs: clean,
+    layout: runtime?.layout,
+    runtimeErrors: runtime?.errors,
+  });
+  if (classification) {
+    parts.push(
+      `Detected failure class: [${classification.classId}/${classification.subKind}] ${classification.title}\n`
+      + `Summary: ${classification.plainMessage}\n`
+      + `Agent rule: ${classification.agentRule}`,
+    );
   }
   const tail = clean.length > tailChars ? `…${clean.slice(-tailChars)}` : clean;
   parts.push(`Output (end):\n${tail.trim() || '(no output yet)'}`);

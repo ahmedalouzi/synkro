@@ -1,4 +1,4 @@
-import type { NormalizedError, RecoveryErrorCategory } from '@peep/shared';
+import { classifyFailure, type NormalizedError, type RecoveryErrorCategory } from '@peep/shared';
 import type { ProjectIndexer } from '../intelligence/indexer';
 
 const DANGEROUS_COMMANDS = ['rm -rf /', 'format c:', 'sudo rm -rf', 'mkfs'];
@@ -16,9 +16,18 @@ export function classifyError(
 
   let category: RecoveryErrorCategory = 'unrecoverable';
 
+  const failureClass = classifyFailure({
+    error: rawError,
+    logs: `${stdout || ''}\n${stderr || ''}`,
+  });
+
   // Check dangerous commands first
   if (DANGEROUS_COMMANDS.some(d => cmd.includes(d))) {
     category = 'unrecoverable';
+  } else if (failureClass && !failureClass.canAgentFixInCode) {
+    category = 'unrecoverable';
+  } else if (failureClass?.classId === 'dependency-peers') {
+    category = 'missing_dependency';
   } else if (
     text.includes('cannot find module') ||
     text.includes('module_not_found') ||
@@ -42,6 +51,8 @@ export function classifyError(
   ) {
     category = 'missing_file';
   } else if (
+    failureClass?.classId === 'platform-folders' ||
+    failureClass?.classId === 'layout' ||
     text.includes('expo preview error') ||
     text.includes('eaddrinuse') ||
     text.includes('port occupied') ||
@@ -121,11 +132,29 @@ export function selectRecoveryStrategy(
       // Ignore graph resolution errors during recovery selection
     }
   }
+  const failureClass = classifyFailure({
+    error: error.message,
+    logs: `${error.stdout || ''}\n${error.stderr || ''}`,
+  });
+  if (failureClass && !failureClass.canAgentFixInCode) {
+    return {
+      strategy: failureClass.title,
+      actionHint: failureClass.agentRule,
+      isRecoverable: false,
+    };
+  }
   if (currentAttempt >= maxRetries || error.category === 'unrecoverable') {
     return {
       strategy: 'Strategy limits exhausted',
       actionHint: 'Mark step failed and halt retries for this strategy.',
       isRecoverable: false
+    };
+  }
+  if (failureClass && failureClass.canAgentFixInCode) {
+    return {
+      strategy: failureClass.title,
+      actionHint: failureClass.agentRule,
+      isRecoverable: true,
     };
   }
 

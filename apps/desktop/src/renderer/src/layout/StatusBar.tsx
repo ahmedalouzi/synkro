@@ -117,6 +117,14 @@ export function StatusBar() {
         )}
         <div
           className="status-item"
+          style={{ cursor: 'pointer' }}
+          title="Atomvs Doctor — check local SDKs, locks & disk space"
+          onClick={() => runCommand('peep.runDoctor')}
+        >
+          🩺 Doctor
+        </div>
+        <div
+          className="status-item"
           style={{ cursor: 'pointer', color: aiCompletions ? 'var(--accent)' : 'var(--text-muted)' }}
           title={aiCompletions ? 'AI Tab autocomplete is on (click to turn off)' : 'AI Tab autocomplete is off (click to turn on)'}
           onClick={toggleAICompletions}

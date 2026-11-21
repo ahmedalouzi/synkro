@@ -219,6 +219,10 @@ const api: IpcApi = {
   openSettingsWindow: (section?: string) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_OPEN_WINDOW, section),
   onSettingsUpdated: (callback: (settings: Partial<Settings>) => void) => subscribe<Partial<Settings>>(IPC_EVENTS.SETTINGS_UPDATED, callback),
   onSettingsSection: (callback: (section: string) => void) => subscribe<string>('peep:settings-section', callback),
+  runDoctor: (projectPath?: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.DOCTOR_RUN, projectPath) as Promise<import('@peep/shared').DoctorReport>,
+  fixDoctorCheck: (fixKind: import('@peep/shared').DoctorFixKind, projectPath?: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.DOCTOR_FIX, fixKind, projectPath) as Promise<import('@peep/shared').DoctorFixResult>,
 };
 
 // The window loads this preload in sub-frames too (nodeIntegrationInSubFrames), for the preview iframe's

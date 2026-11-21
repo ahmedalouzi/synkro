@@ -94,3 +94,27 @@ export async function usesNpm(projectRoot: string): Promise<boolean> {
   }
   return true;
 }
+
+/**
+ * Blocks `--legacy-peer-deps` and `--force` package installs inside Expo projects.
+ * Those flags hide peer conflicts locally that later fail Cloud Build (`npm ci` / ERESOLVE).
+ * Exported as a pure helper without altering `toExpoInstall()` or `classifyCommand()`.
+ */
+export function checkExpoPeerDepsCommand(
+  command: string,
+  isExpo: boolean,
+): { blocked: boolean; reason?: string } {
+  if (!isExpo) return { blocked: false };
+  const isPkgInstall = /\b(?:npm|pnpm|yarn)\s+(?:i|install|add)\b|\bnpx\s+expo\s+install\b/i.test(command);
+  const hasBypassFlag = /(?:^|\s)(?:--legacy-peer-deps|--force)(?:\s|$)/i.test(command);
+  if (isPkgInstall && hasBypassFlag) {
+    return {
+      blocked: true,
+      reason:
+        'BLOCKED: Do not use --legacy-peer-deps or --force in an Expo project. '
+        + 'It hides peer dependency conflicts locally that later fail Cloud Build (npm ci / ERESOLVE). '
+        + 'Use "npx expo install <package>" or "npx expo install --fix" and verify with "npm ls --depth=0".',
+    };
+  }
+  return { blocked: false };
+}

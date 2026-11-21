@@ -66,7 +66,8 @@ import { ProjectIndexer, ProjectRetrieval, MemoryManager, MemoryRetrieval } from
 import type { PlatformRegistry } from './platform-registry';
 import type { PreviewManager } from './preview-manager';
 import { formatPreviewReport, waitForBundle } from './preview-log';
-import { EXPO_DEPS_CHECK, NPM_PEERS_CHECK, changesDependencies, isExpoProject, toExpoInstall, usesNpm } from './expo-deps';
+import { EXPO_DEPS_CHECK, NPM_PEERS_CHECK, changesDependencies, checkExpoPeerDepsCommand, isExpoProject, toExpoInstall, usesNpm } from './expo-deps';
+export { checkExpoPeerDepsCommand };
 
 export class AgentService {
   private pendingEdits: ProposedEdit[] = [];
@@ -461,6 +462,10 @@ export class AgentService {
             // In an Expo project, adding packages goes through expo install (versions that match the SDK).
             const expoProject = !!projectPath && await isExpoProject(projectPath);
             const requested = String(args.command);
+            const peerGuard = checkExpoPeerDepsCommand(requested, expoProject);
+            if (peerGuard.blocked) {
+              return peerGuard.reason!;
+            }
             const rewritten = expoProject ? toExpoInstall(requested) : null;
             const commandStr = rewritten ?? requested;
             const rewriteNote = rewritten ? `Rewrote "${requested}" to "${rewritten}" (Expo project: versions that match its SDK).\n` : '';
