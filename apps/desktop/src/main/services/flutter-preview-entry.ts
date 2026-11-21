@@ -83,10 +83,19 @@ class _AtomvsSafeAreaState extends State<_AtomvsSafeArea> {
   JSFunction? onMessage;
   Timer? probe;
   String lastReport = '';
+  FlutterExceptionHandler? _prevOnError;
+  int overflowErrors = 0;
 
   @override
   void initState() {
     super.initState();
+    _prevOnError = FlutterError.onError;
+    FlutterError.onError = (FlutterErrorDetails details) {
+      if (details.exceptionAsString().contains('RenderFlex overflowed by')) {
+        overflowErrors++;
+      }
+      _prevOnError?.call(details);
+    };
     // The device or orientation changed: the shim has set the new values as CSS variables.
     onMessage = ((JSObject event) {
       final data = event['data'];
@@ -103,6 +112,9 @@ class _AtomvsSafeAreaState extends State<_AtomvsSafeArea> {
 
   @override
   void dispose() {
+    if (_prevOnError != null) {
+      FlutterError.onError = _prevOnError;
+    }
     globalContext.callMethod('removeEventListener'.toJS, 'message'.toJS, onMessage);
     probe?.cancel();
     super.dispose();
@@ -144,6 +156,7 @@ class _AtomvsSafeAreaState extends State<_AtomvsSafeArea> {
         'insetTop': insets.top,
         'insetBottom': insets.bottom,
         'navItems': navItems,
+        'overflowErrors': overflowErrors,
         'texts': texts.take(400).toList(),
       };
       final json = report.toString();

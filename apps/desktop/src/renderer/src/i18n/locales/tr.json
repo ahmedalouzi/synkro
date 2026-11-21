@@ -311,6 +311,33 @@
       "browse": "Gözat",
       "save": "Kaydet"
     },
+    "doctor": {
+      "sectionLabel": "Ortam Tanılama",
+      "title": "Atomvs Doctor",
+      "desc": "Flutter SDK, başlangıç kilitleri, Node/npm, Android araçları ve disk alanını tek yerde kontrol edin.",
+      "runCheck": "Kontrol Et",
+      "running": "Kontrol ediliyor…",
+      "checking": "Ortam kontrol ediliyor…",
+      "fixing": "Düzeltiliyor…",
+      "statusOk": "Tüm kontroller başarılı",
+      "statusWarn": "{count} uyarı",
+      "statusError": "{count} sorun bulundu",
+      "checks": {
+        "flutterSdk": "Flutter SDK",
+        "startupLock": "Flutter Başlangıç Kilidi",
+        "nodeNpm": "Node.js ve npm (Expo)",
+        "androidToolchain": "Android SDK, Java ve adb",
+        "diskSpace": "Disk Alanı"
+      },
+      "fixes": {
+        "chooseFlutterSdk": "Flutter SDK Seç",
+        "releaseStartupLock": "Başlangıç Kilidini Aç",
+        "cleanAtomvsCache": "Atomvs Önbelleğini Temizle",
+        "installFlutterGuide": "Flutter Kurulum Rehberi",
+        "installNodeGuide": "Node.js Kurulum Rehberi",
+        "installAndroidGuide": "Android Kurulum Rehberi"
+      }
+    },
     "privacy": {
       "title": "Anonim Kullanım Verileri",
       "desc": "Atomvs'i geliştirmeye yardımcı olmak için özellik kullanımı ve kilitlenme sayılarını paylaşın. Asla kod, dosya adı veya kişisel veri içermez."
@@ -466,6 +493,7 @@
     "workbench.action.terminal.runSelectedText": "Seçili Metni Çalıştır",
     "workbench.action.terminal.clear": "Terminali Temizle",
     "workbench.action.terminal.kill": "Terminali Sonlandır",
+    "peep.runDoctor": "Atomvs Doctor",
     "workbench.action.keybindingsReference": "Klavye Kısayolları Referansı",
     "workbench.action.toggleDevTools": "Geliştirici Araçlarını Aç/Kapat",
     "workbench.action.reloadWindow": "Pencereyi Yeniden Yükle",
@@ -513,6 +541,7 @@
       "lockSynced": "Flutter klasörünüz {folder} içinde; bu, Flutter komutlarının bitmesini engelleyebilir. Klasörü dışarı taşımak (örneğin C:\\src\\flutter) genellikle sorunu çözer.",
       "notCode": "Bu, uygulamanızın kodundaki bir sorun değil.",
       "openSettings": "Flutter konumunu seç",
+      "openDoctor": "Atomvs Doctor'ı Aç",
       "retry": "Yeniden dene"
     }
   },

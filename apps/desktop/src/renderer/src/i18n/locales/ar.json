@@ -311,6 +311,33 @@
       "browse": "استعراض",
       "save": "حفظ"
     },
+    "doctor": {
+      "sectionLabel": "فحص البيئة",
+      "title": "Atomvs Doctor",
+      "desc": "افحص Flutter SDK وأقفال التشغيل وNode/npm وأدوات Android ومساحة القرص في مكان واحد.",
+      "runCheck": "تشغيل الفحص",
+      "running": "جارٍ الفحص…",
+      "checking": "جارٍ فحص البيئة…",
+      "fixing": "جارٍ الإصلاح…",
+      "statusOk": "جميع الفحوصات سليمة",
+      "statusWarn": "{count} تحذير",
+      "statusError": "تم العثور على {count} مشكلة",
+      "checks": {
+        "flutterSdk": "حزمة Flutter SDK",
+        "startupLock": "قفل تشغيل Flutter",
+        "nodeNpm": "Node.js و npm (Expo)",
+        "androidToolchain": "Android SDK و Java و adb",
+        "diskSpace": "مساحة القرص"
+      },
+      "fixes": {
+        "chooseFlutterSdk": "اختر مجلد Flutter SDK",
+        "releaseStartupLock": "تحرير قفل التشغيل",
+        "cleanAtomvsCache": "تنظيف ذاكرة Atomvs المؤقتة",
+        "installFlutterGuide": "دليل تثبيت Flutter",
+        "installNodeGuide": "دليل تثبيت Node.js",
+        "installAndroidGuide": "دليل إعداد Android"
+      }
+    },
     "privacy": {
       "title": "بيانات الاستخدام مجهولة الهوية",
       "desc": "شارك بيانات الميزات وإحصائيات الأعطال للمساعدة في تحسين Atomvs. لا يتم تضمين أي كود أو أسماء ملفات أو بيانات شخصية."
@@ -466,6 +493,7 @@
     "workbench.action.terminal.runSelectedText": "تشغيل النص المحدد",
     "workbench.action.terminal.clear": "مسح الطرفية",
     "workbench.action.terminal.kill": "إنهاء الطرفية",
+    "peep.runDoctor": "Atomvs Doctor",
     "workbench.action.keybindingsReference": "مرجع اختصارات لوحة المفاتيح",
     "workbench.action.toggleDevTools": "تبديل أدوات المطور",
     "workbench.action.reloadWindow": "إعادة تحميل النافذة",
@@ -513,6 +541,7 @@
       "lockSynced": "مجلد Flutter لديك داخل {folder}، وهذا قد يمنع أوامر Flutter من الانتهاء. نقله إلى خارجه (مثلًا إلى C:\\src\\flutter) يحل المشكلة عادةً.",
       "notCode": "هذه ليست مشكلة في كود تطبيقك.",
       "openSettings": "اختر موقع Flutter",
+      "openDoctor": "افتح Atomvs Doctor",
       "retry": "إعادة المحاولة"
     }
   },

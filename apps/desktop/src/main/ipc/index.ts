@@ -3,8 +3,8 @@ import { ipcMain, dialog, app, BrowserWindow, screen, Notification } from 'elect
 import { handleWindowOpenSafely } from '../safe-external';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
-import { IPC_CHANNELS, IPC_EVENTS, parsePreviewRuntimeReport } from '@peep/shared';
-import type { ClaudeIdeStatus, ClaudeIdeToolResult, InlineCompletionRequest, InlineEditRequest, Settings, SshTarget } from '@peep/shared';
+import { IPC_CHANNELS, IPC_EVENTS, classifyFailure, parsePreviewRuntimeReport } from '@peep/shared';
+import type { ClaudeIdeStatus, ClaudeIdeToolResult, DoctorFixKind, InlineCompletionRequest, InlineEditRequest, Settings, SshTarget } from '@peep/shared';
 import { InlineEditService } from '../services/inline-edit-service';
 import { InlineCompletionService } from '../services/inline-completion-service';
 import { DatabaseService } from '../services/db';
@@ -35,6 +35,7 @@ import { ClaudeIdeServer } from '../services/claude-ide-server';
 import { PublishService } from '../services/publish-service';
 import { DeviceService } from '../services/device-service';
 import { OAuthService } from '../services/oauth-service';
+import { DoctorService } from '../services/doctor-service';
 
 
 let db: DatabaseService | null = null;
@@ -120,6 +121,44 @@ async function openProjectAtPath(
   return project;
 }
 
+let reportFailureToSentry:
+  | ((source: string, errorOrMessage: unknown, extra?: Record<string, unknown>, tags?: Record<string, string>) => void)
+  | null = null;
+
+function broadcastSettingsUpdated(partial: Partial<Settings>): void {
+  const safePartial: Partial<Settings> = {};
+  if ('telemetryEnabled' in partial) safePartial.telemetryEnabled = partial.telemetryEnabled;
+  if ('locale' in partial) safePartial.locale = partial.locale;
+  if ('theme' in partial) safePartial.theme = partial.theme;
+  if ('autoSave' in partial) safePartial.autoSave = partial.autoSave;
+  if ('flutterSdkPath' in partial) safePartial.flutterSdkPath = partial.flutterSdkPath;
+  if ('developerMode' in partial) safePartial.developerMode = partial.developerMode;
+  if (Object.keys(safePartial).length === 0) return;
+
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) {
+      win.webContents.send(IPC_EVENTS.SETTINGS_UPDATED, safePartial);
+    }
+  }
+}
+
+function capturePreviewFailureToSentry(framework: string, error: unknown): void {
+  if (!telemetryService.isEnabled() || !reportFailureToSentry) return;
+  const message = error instanceof Error ? error.message : String(error);
+  const logs = previewManager.getLog();
+  const classified = classifyFailure({ error: message, logs });
+  reportFailureToSentry(
+    'preview-start',
+    error,
+    { logsTail: logs.slice(-2000) },
+    {
+      framework,
+      failure_class: classified?.classId ?? 'unclassified',
+      failure_subkind: classified?.subKind ?? 'unknown',
+    },
+  );
+}
+
 async function onProjectOpened(
   projectPath: string,
   registry: PlatformRegistry,
@@ -155,14 +194,21 @@ async function onProjectOpened(
   previewManager.start(projectRoot, provider).catch((error) => {
     const message = error instanceof Error ? error.message : String(error);
     mainWindow?.webContents.send(IPC_EVENTS.PREVIEW_LOG, `[preview error] ${message}`);
+    capturePreviewFailureToSentry(provider.env?.framework ?? provider.id, error);
   });
 }
 
 interface IpcDependencies {
   syncSentryOptIn: (enabled: boolean) => void;
+  reportDesktopFailureToSentry?: (
+    source: string,
+    errorOrMessage: unknown,
+    extra?: Record<string, unknown>,
+    tags?: Record<string, string>,
+  ) => void;
 }
 
-export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies): Promise<{
+export async function registerIpcHandlers({ syncSentryOptIn, reportDesktopFailureToSentry }: IpcDependencies): Promise<{
   db: DatabaseService;
   workspace: WorkspaceManager;
   flutter: FlutterService;
@@ -174,6 +220,8 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
   telemetryService: TelemetryService;
   autoUpdateService: AutoUpdateService;
 }> {
+  reportFailureToSentry = reportDesktopFailureToSentry ?? null;
+
   // IPC Validation Wrapper
   const originalHandle = ipcMain.handle.bind(ipcMain);
   ipcMain.handle = (channel: string, listener: (...args: any[]) => any) => {
@@ -256,6 +304,31 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
   registerApprovalIpc(ipcMain, approvals);
   const projectService = new ProjectService(platformRegistry, workspace);
   const deviceService = new DeviceService();
+  const doctorService = new DoctorService({
+    processManager,
+    getConfiguredFlutterSdkPath: () => db?.getSettingsRaw().flutterSdkPath,
+    setConfiguredFlutterSdkPath: async (sdkPath) => {
+      await db!.setSettings({ flutterSdkPath: sdkPath });
+      flutter.setSdkPath(sdkPath);
+      processManager.setFlutterSdkPath(sdkPath);
+      terminalService.setFlutterSdkPath(sdkPath);
+      broadcastSettingsUpdated({ flutterSdkPath: sdkPath });
+    },
+    getOwnedPids: () => [...processManager.pids(), ...terminalService.pids()],
+  });
+
+  ipcMain.handle(IPC_CHANNELS.DOCTOR_RUN, async (_event, projectPath?: string) => {
+    const rawTarget = projectPath ?? workspace.getProject()?.path;
+    const resolvedTarget = rawTarget ? path.resolve(rawTarget) : undefined;
+    return doctorService.runDoctor(resolvedTarget);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.DOCTOR_FIX, async (event, fixKind: DoctorFixKind, projectPath?: string) => {
+    const rawTarget = projectPath ?? workspace.getProject()?.path;
+    const resolvedTarget = rawTarget ? path.resolve(rawTarget) : undefined;
+    const win = BrowserWindow.fromWebContents(event.sender) ?? mainWindow;
+    return doctorService.applyFix(fixKind, resolvedTarget, win);
+  });
 
   ipcMain.handle(IPC_CHANNELS.DEVICE_GET_LIST, async () => {
     const sdkPath = db?.getSettingsRaw().flutterSdkPath;
@@ -732,6 +805,11 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
       processManager.setFlutterSdkPath(partial.flutterSdkPath);
       terminalService.setFlutterSdkPath(partial.flutterSdkPath);
     }
+    if ('telemetryEnabled' in partial && typeof partial.telemetryEnabled === 'boolean') {
+      await telemetryService.setEnabled(partial.telemetryEnabled);
+      syncSentryOptIn(partial.telemetryEnabled);
+    }
+    broadcastSettingsUpdated(partial);
     return db!.getSettings();
   });
 
@@ -754,7 +832,12 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
   });
 
   ipcMain.handle(IPC_CHANNELS.PREVIEW_START, async (_event, projectPath: string) => {
-    return previewManager.start(projectPath, flutter);
+    try {
+      return await previewManager.start(projectPath, flutter);
+    } catch (error) {
+      capturePreviewFailureToSentry('flutter', error);
+      throw error;
+    }
   });
 
   ipcMain.handle(IPC_CHANNELS.PREVIEW_STOP, () => {
@@ -1066,6 +1149,7 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
     await telemetryService.setEnabled(enabled);
     syncSentryOptIn(enabled);
     await db!.setSettings({ telemetryEnabled: enabled });
+    broadcastSettingsUpdated({ telemetryEnabled: enabled });
   });
 
   // ── Auto-update ────────────────────────────────────────────────────────────
@@ -1366,7 +1450,12 @@ export async function registerIpcHandlers({ syncSentryOptIn }: IpcDependencies):
     }
     
     console.log('[DEBUG_RUNTIME] Calling previewManager.start with projectRoot');
-    return previewManager.start(projectRoot, provider);
+    try {
+      return await previewManager.start(projectRoot, provider);
+    } catch (error) {
+      capturePreviewFailureToSentry(provider.env?.framework ?? 'react-native', error);
+      throw error;
+    }
   });
 
   ipcMain.handle(IPC_CHANNELS.RN_STOP_PREVIEW, async (_event, _projectPath: string) => {

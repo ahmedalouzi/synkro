@@ -197,6 +197,8 @@ export const MENUS: TopMenu[] = [
   {
     id: 'help', label: 'Help', mnemonic: 'h',
     items: [
+      'peep.runDoctor',
+      '-',
       'workbench.action.showCommands',
       'workbench.action.keybindingsReference',
       '-',

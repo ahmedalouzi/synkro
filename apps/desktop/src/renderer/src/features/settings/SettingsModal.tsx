@@ -5,6 +5,7 @@ import { getCommand, isCommandEnabled, runCommand } from '../../commands/command
 import { useWorkspaceStore } from '../../stores/workspace-store';
 import { MODELS } from '../chat/models';
 import { openWebPage } from '../../config/web';
+import { DoctorCard } from './DoctorCard';
 import './SettingsModal.css';
 
 /**
@@ -574,21 +575,34 @@ export function SettingsModal({ open, onClose, initialSection, standalone }: Set
     ),
 
     sdk: (
-      <Card>
-        <Row
-          title={t('settings.sdk.title')}
-          description={sdkVersion ? t('settings.sdk.detectedDesc', { version: sdkVersion }) : t('settings.sdk.notDetectedDesc')}
+      <>
+        <DoctorCard
+          projectPath={project?.path}
           query={query}
-        >
-          <span className={`sx-status ${sdkVersion ? 'sx-status--ok' : 'sx-status--warn'}`}>{sdkVersion ? t('settings.sdk.detected') : t('settings.sdk.notFound')}</span>
-        </Row>
-        <Row title={t('settings.sdk.pathTitle')} description={t('settings.sdk.pathDesc')} query={query}>
-          <input className="sx-input sx-input--wide" placeholder="C:\src\flutter" value={flutterPath} onChange={(e) => setFlutterPath(e.target.value)} />
-          <button type="button" className="sx-btn" onClick={() => void handleBrowseSdk()}>{t('settings.sdk.browse')}</button>
-          <button type="button" className="sx-btn sx-btn--primary" disabled={flutterPath.trim() === savedFlutterPath} onClick={() => void handleSaveSdk()}>{t('settings.sdk.save')}</button>
-        </Row>
-        {sdkStatus && <div className="sx-note">{sdkStatus}</div>}
-      </Card>
+          onSdkUpdated={() => {
+            void window.peep.getSettings().then((s) => {
+              setFlutterPath(s.flutterSdkPath ?? '');
+              setSavedFlutterPath(s.flutterSdkPath ?? '');
+            });
+            void window.peep.detectFlutterSdk().then((sdk) => setSdkVersion(sdk?.version ?? null));
+          }}
+        />
+        <Card>
+          <Row
+            title={t('settings.sdk.title')}
+            description={sdkVersion ? t('settings.sdk.detectedDesc', { version: sdkVersion }) : t('settings.sdk.notDetectedDesc')}
+            query={query}
+          >
+            <span className={`sx-status ${sdkVersion ? 'sx-status--ok' : 'sx-status--warn'}`}>{sdkVersion ? t('settings.sdk.detected') : t('settings.sdk.notFound')}</span>
+          </Row>
+          <Row title={t('settings.sdk.pathTitle')} description={t('settings.sdk.pathDesc')} query={query}>
+            <input className="sx-input sx-input--wide" placeholder="C:\src\flutter" value={flutterPath} onChange={(e) => setFlutterPath(e.target.value)} />
+            <button type="button" className="sx-btn" onClick={() => void handleBrowseSdk()}>{t('settings.sdk.browse')}</button>
+            <button type="button" className="sx-btn sx-btn--primary" disabled={flutterPath.trim() === savedFlutterPath} onClick={() => void handleSaveSdk()}>{t('settings.sdk.save')}</button>
+          </Row>
+          {sdkStatus && <div className="sx-note">{sdkStatus}</div>}
+        </Card>
+      </>
     ),
 
     privacy: (

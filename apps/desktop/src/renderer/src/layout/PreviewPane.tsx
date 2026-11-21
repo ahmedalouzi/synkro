@@ -1,5 +1,5 @@
 import { useI18n } from '../i18n';
-import { parseFlutterEnvironmentProblem } from '@peep/shared';
+import { classifyFailure, parseFlutterEnvironmentProblem } from '@peep/shared';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { usePreviewStore } from '../stores/preview-store';
 import { useWorkspaceStore } from '../stores/workspace-store';
@@ -332,9 +332,12 @@ Please modify the selected element and its corresponding component files as foll
   // A problem with the Flutter installation, not the code (SDK inside OneDrive, startup lock held outside Atomvs):
   // its own explanation and no Auto-Fix (the agent cannot fix it in code, and must not stop the user's processes).
   const flutterEnvProblem = platform === 'flutter' && session?.status === 'error' ? parseFlutterEnvironmentProblem(session.error) : null;
+  const classifiedFailure = session?.status === 'error' ? classifyFailure({ error: session.error }) : null;
 
   const handleOpenSdkSettings = () => {
-    if (typeof (window.peep as any)?.openSettings === 'function') {
+    if (typeof window.peep?.openSettingsWindow === 'function') {
+      void window.peep.openSettingsWindow('sdk');
+    } else if (typeof (window.peep as any)?.openSettings === 'function') {
       (window.peep as any).openSettings('sdk');
     } else {
       window.dispatchEvent(
@@ -548,9 +551,13 @@ Please modify the selected element and its corresponding component files as foll
                       )}
                       <p className="preview-env-problem__note">{t('preview.flutterEnv.notCode')}</p>
                       <div className="preview-env-problem__actions">
-                        {flutterEnvProblem.kind === 'sdk-in-synced-folder' && (
+                        {flutterEnvProblem.kind === 'sdk-in-synced-folder' ? (
                           <button type="button" id="preview-flutter-env-settings" className="preview-retry-btn preview-retry-btn--primary" onClick={handleOpenSdkSettings}>
                             {t('preview.flutterEnv.openSettings')}
+                          </button>
+                        ) : (
+                          <button type="button" id="preview-flutter-env-settings" className="preview-retry-btn preview-retry-btn--primary" onClick={handleOpenSdkSettings}>
+                            {t('preview.flutterEnv.openDoctor')}
                           </button>
                         )}
                         <button type="button" id="preview-flutter-env-retry" className="preview-retry-btn" onClick={handleStart} disabled={!project}>
@@ -598,17 +605,36 @@ Please modify the selected element and its corresponding component files as foll
                     </div>
                   ) : session?.status === 'error' ? (
                     <div className="preview-placeholder preview-placeholder--error">
-                      <span className="preview-placeholder__icon">⚠️</span>
-                      <h3>Preview failed</h3>
-                      <p>{session.error ?? `Could not start ${getPlatformLabel(platform)} preview.`}</p>
-                      <button type="button" className="preview-retry-btn"
-                        onClick={handleStart} disabled={!project}>Retry</button>
-                      <button type="button" className="preview-retry-btn"
-                        onClick={handleAutoHeal} disabled={!project}
-                        style={{ marginLeft: '8px', background: 'var(--gold)', color: '#000', borderColor: 'var(--gold)' }}
-                      >
-                        ✨ Auto-Fix Build
-                      </button>
+                      <span className="preview-placeholder__icon">{classifiedFailure?.classId === 'environment' ? '🩺' : '⚠️'}</span>
+                      <h3>{classifiedFailure ? classifiedFailure.title : 'Preview failed'}</h3>
+                      <p>{classifiedFailure ? classifiedFailure.plainMessage : (session.error ?? `Could not start ${getPlatformLabel(platform)} preview.`)}</p>
+                      {classifiedFailure && !classifiedFailure.canAgentFixInCode ? (
+                        <div className="preview-env-problem__actions">
+                          {classifiedFailure.classId === 'environment' && (
+                            <button
+                              type="button"
+                              className="preview-retry-btn preview-retry-btn--primary"
+                              onClick={handleOpenSdkSettings}
+                            >
+                              {t('preview.flutterEnv.openDoctor')}
+                            </button>
+                          )}
+                          <button type="button" className="preview-retry-btn" onClick={handleStart} disabled={!project}>
+                            {t('preview.flutterEnv.retry')}
+                          </button>
+                        </div>
+                      ) : (
+                        <>
+                          <button type="button" className="preview-retry-btn"
+                            onClick={handleStart} disabled={!project}>Retry</button>
+                          <button type="button" className="preview-retry-btn"
+                            onClick={handleAutoHeal} disabled={!project}
+                            style={{ marginLeft: '8px', background: 'var(--gold)', color: '#000', borderColor: 'var(--gold)' }}
+                          >
+                            ✨ Auto-Fix Build
+                          </button>
+                        </>
+                      )}
                     </div>
                   ) : null}
                   {selectedDeviceId !== 'browser' && isRunning && (

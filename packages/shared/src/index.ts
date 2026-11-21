@@ -53,7 +53,7 @@ export interface PreviewRuntimeReport {
 }
 
 export type PreviewLayoutIssueKind = 'tab-bar-under-home-indicator' | 'tab-labels-clipped'
-  | 'content-under-status-bar' | 'content-under-home-indicator' | 'too-many-tabs';
+  | 'content-under-status-bar' | 'content-under-home-indicator' | 'too-many-tabs' | 'flutter-renderflex-overflow';
 export interface PreviewLayoutIssue { kind: PreviewLayoutIssueKind; message: string }
 
 /** What the preview shim measures of a bottom tab bar ([role=tablist] in the lower half of the screen), in CSS px. */
@@ -122,6 +122,8 @@ export interface FlutterLayoutMeasurement {
   insetBottom: number;
   navItems: number;
   texts: Array<{ top: number; bottom: number; appBar: boolean; nav: boolean; clipped: boolean }>;
+  /** Number of RenderFlex overflow errors observed by the preview entrypoint. */
+  overflowErrors?: number;
 }
 
 /**
@@ -129,7 +131,8 @@ export interface FlutterLayoutMeasurement {
  * Dynamic Island, a 7-item bottom navigation with cut labels down at the home indicator):
  *  - text under the status bar, or under the home indicator / gesture bar;
  *  - more than 5 bottom-navigation destinations;
- *  - bottom-navigation labels that do not fit.
+ *  - bottom-navigation labels that do not fit;
+ *  - RenderFlex overflow errors reported during layout.
  * Self-contained like tabBarLayoutIssues: serialised into the page shim.
  */
 export function flutterLayoutIssues(m: FlutterLayoutMeasurement): PreviewLayoutIssue[] {
@@ -137,6 +140,8 @@ export function flutterLayoutIssues(m: FlutterLayoutMeasurement): PreviewLayoutI
     + 'bottom navigation bar in SafeArea: they keep it clear of the status bar / Dynamic Island and the home indicator.';
   const NAV_FIX = 'Use at most 5 bottom-navigation destinations (move the rest into a "More" tab or a Drawer) with short labels '
     + '(one or two short words), so every label fits.';
+  const OVERFLOW_FIX = 'Wrap overflowing Row/Column children in Expanded or Flexible, or make the container scrollable '
+    + '(SingleChildScrollView / ListView).';
   const issues: PreviewLayoutIssue[] = [];
   const texts = Array.isArray(m.texts) ? m.texts : [];
   const homeTop = m.innerHeight - m.insetBottom;
@@ -163,11 +168,17 @@ export function flutterLayoutIssues(m: FlutterLayoutMeasurement): PreviewLayoutI
   if (cut.length) {
     issues.push({ kind: 'tab-labels-clipped', message: `${cut.length} bottom-navigation label(s) do not fit and are cut or wrapped. ` + NAV_FIX });
   }
+  if (typeof m.overflowErrors === 'number' && m.overflowErrors > 0) {
+    issues.push({
+      kind: 'flutter-renderflex-overflow',
+      message: `${m.overflowErrors} RenderFlex overflow error(s) occurred on screen. ` + OVERFLOW_FIX,
+    });
+  }
   return issues.slice(0, 5);
 }
 
 const LAYOUT_KINDS = new Set<string>(['tab-bar-under-home-indicator', 'tab-labels-clipped', 'content-under-status-bar',
-  'content-under-home-indicator', 'too-many-tabs']);
+  'content-under-home-indicator', 'too-many-tabs', 'flutter-renderflex-overflow']);
 
 /**
  * The agent's proposed-edits event: main sends { edits, threadId }. Read as if it were the array, it threw
@@ -902,6 +913,9 @@ export const IPC_CHANNELS = {
   CLOUD_BUILD_CHECK_DEPS: 'cloudBuild:checkDeps',
   CLOUD_BUILD_FIX_DEPS: 'cloudBuild:fixDeps',
   CLOUD_BUILD_SHORT_LINK: 'cloudBuild:shortLink',
+  // Atomvs Doctor
+  DOCTOR_RUN: 'doctor:run',
+  DOCTOR_FIX: 'doctor:fix',
 } as const;
 
 export interface ConnectedDevice {
@@ -1282,6 +1296,9 @@ export interface IpcApi {
   openSettingsWindow?: (section?: string) => Promise<void>;
   onSettingsUpdated?: (callback: (settings: Partial<Settings>) => void) => () => void;
   onSettingsSection?: (callback: (section: string) => void) => () => void;
+  // Atomvs Doctor
+  runDoctor: (projectPath?: string) => Promise<import('./doctor').DoctorReport>;
+  fixDoctorCheck: (fixKind: import('./doctor').DoctorFixKind, projectPath?: string) => Promise<import('./doctor').DoctorFixResult>;
 }
 
 declare global {
@@ -1354,3 +1371,37 @@ export interface AIGateway {
 
 export { ProviderError } from './provider-error';
 export { syncedFolderOf, flutterEnvironmentMessage, parseFlutterEnvironmentProblem, FLUTTER_STARTUP_LOCK_LINE, type FlutterEnvironmentProblem } from './flutter-environment';
+export {
+  evaluateFlutterSdkCheck,
+  evaluateStartupLockCheck,
+  evaluateNodeNpmCheck,
+  evaluateAndroidToolchainCheck,
+  evaluateDiskSpaceCheck,
+  summarizeDoctorReport,
+  DISK_ERROR_THRESHOLD_BYTES,
+  DISK_WARN_THRESHOLD_BYTES,
+  type DoctorCheckId,
+  type DoctorStatus,
+  type DoctorFixKind,
+  type DoctorCheckItem,
+  type DoctorReport,
+  type DoctorFixResult,
+  type FlutterSdkCheckInput,
+  type StartupLockCheckInput,
+  type NodeNpmCheckInput,
+  type AndroidToolchainCheckInput,
+  type DiskSpaceCheckInput,
+} from './doctor';
+export {
+  scrubPiiString,
+  scrubValue,
+  scrubSentryBreadcrumb,
+  scrubSentryEvent,
+  type SentryScrubOptions,
+} from './sentry-scrubber';
+export {
+  classifyFailure,
+  type FailureClassId,
+  type FailureClassification,
+  type FailureClassificationInput,
+} from './failure-classes';

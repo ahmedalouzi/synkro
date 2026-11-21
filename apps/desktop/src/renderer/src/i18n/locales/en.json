@@ -311,6 +311,33 @@
       "browse": "Browse",
       "save": "Save"
     },
+    "doctor": {
+      "sectionLabel": "Environment Diagnostics",
+      "title": "Atomvs Doctor",
+      "desc": "Check Flutter SDK, startup locks, Node/npm, Android tools, and disk space in one place.",
+      "runCheck": "Run Check",
+      "running": "Checking…",
+      "checking": "Checking environment…",
+      "fixing": "Fixing…",
+      "statusOk": "All checks passed",
+      "statusWarn": "{count} warning(s)",
+      "statusError": "{count} issue(s) found",
+      "checks": {
+        "flutterSdk": "Flutter SDK",
+        "startupLock": "Flutter Startup Lock",
+        "nodeNpm": "Node.js & npm (Expo)",
+        "androidToolchain": "Android SDK, Java & adb",
+        "diskSpace": "Disk Space"
+      },
+      "fixes": {
+        "chooseFlutterSdk": "Choose Flutter SDK",
+        "releaseStartupLock": "Release Startup Lock",
+        "cleanAtomvsCache": "Clean Atomvs Cache",
+        "installFlutterGuide": "Install Flutter Guide",
+        "installNodeGuide": "Install Node.js Guide",
+        "installAndroidGuide": "Android Setup Guide"
+      }
+    },
     "privacy": {
       "title": "Anonymous Usage Data",
       "desc": "Share feature usage and crash counts to help improve Atomvs. Never includes code, file names or personal data."
@@ -466,6 +493,7 @@
     "workbench.action.terminal.runSelectedText": "Run Selected Text",
     "workbench.action.terminal.clear": "Clear Terminal",
     "workbench.action.terminal.kill": "Kill Terminal",
+    "peep.runDoctor": "Atomvs Doctor",
     "workbench.action.keybindingsReference": "Keyboard Shortcuts Reference",
     "workbench.action.toggleDevTools": "Toggle Developer Tools",
     "workbench.action.reloadWindow": "Reload Window",
@@ -513,6 +541,7 @@
       "lockSynced": "Your Flutter folder is inside {folder}, which can keep Flutter commands from finishing. Moving it out (for example to C:\\src\\flutter) usually fixes this.",
       "notCode": "This isn't a problem in your app's code.",
       "openSettings": "Choose Flutter location",
+      "openDoctor": "Open Atomvs Doctor",
       "retry": "Retry"
     }
   },
